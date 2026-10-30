@@ -22,7 +22,7 @@ import { detectEnv, canonicalize, loadRegistry } from '../src/lib/registry.mjs';
 import { Store } from '../src/lib/store.mjs';
 import { replay } from '../src/lib/reducer.mjs';
 import { takeSnapshot } from '../src/lib/snapshot.mjs';
-import { runAgentsJson, claudeBin } from '../src/lib/discovery.mjs';
+import { runAgentsJson, claudeBin, evaluateSeparateDiscovery } from '../src/lib/discovery.mjs';
 import { EVENTS } from '../src/lib/setup.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -250,11 +250,14 @@ if (want('Q07')) {
 if (want('Q18')) {
   if (env !== 'win') rec('Q18', 'NOT TESTED', ['only meaningful on native Windows']);
   else if (!opt['wsl-distro'] || !opt['wsl-config']) rec('Q18', 'NOT TESTED', ['pass --wsl-distro NAME --wsl-config PATH (the WSL config dir, e.g. /home/you/.mini-summa-poc/config-wsl-Ubuntu)']);
-  else try {
-    const w = await runAgentsJson({ configDir: L.config }); const l = await runAgentsJson({ wslDistro: opt['wsl-distro'], configDir: opt['wsl-config'] });
-    const wi = new Set(w.raw.map((x) => x.sessionId)); const overlap = l.raw.filter((x) => wi.has(x.sessionId));
-    rec('Q18', Array.isArray(l.raw) && overlap.length === 0 ? 'PASS' : 'FAIL', [`windows lists ${w.raw.length}, WSL ${opt['wsl-distro']} lists ${l.raw.length}, overlapping ids ${overlap.length}`, 'WSL pid liveness is unknown from Windows by design']);
-  } catch (e) { rec('Q18', 'FAIL', String(e.message).slice(0, 300)); }
+  else {
+    // Each environment is queried on its own so a failure is attributed to the right side, never ignored.
+    const q = async (o) => { try { return (await runAgentsJson(o)).raw; } catch (e) { return e; } };
+    const win = await q({ configDir: L.config });
+    const wsl = await q({ wslDistro: opt['wsl-distro'], configDir: opt['wsl-config'] });
+    const v = evaluateSeparateDiscovery({ win, wsl, expect: { win: opt['expect-win'], wsl: opt['expect-wsl'] } });
+    rec('Q18', v.status, v.notes);
+  }
 }
 
 // Q17

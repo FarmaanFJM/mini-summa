@@ -31,7 +31,7 @@ Q13 records **suspected** presence loss, not confirmed termination. Q14 captured
 
 ## Run the tests
 ```
-npm test        # 122 automated tests, no network, no Claude calls
+npm test        # 131 automated tests, no network, no Claude calls
 ```
 Qualification on a real machine (hooks, discovery, resume, kill) is separate: `docs/QUALIFICATION.md`.
 

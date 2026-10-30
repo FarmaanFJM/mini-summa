@@ -26,7 +26,7 @@ cd Mini-Summa
 git switch research/claude-integration-poc
 cd poc\claude-integration
 
-npm test                                              # expect: 122 pass, 0 fail. Any failure is a result: copy it.
+npm test                                              # expect: 131 pass, 0 fail. Any failure is a result: copy it.
 node scripts\qualify.mjs run                          # non-interactive tests Q01 to Q04, Q06, Q07, Q15 to Q17
 ```
 Interactive run (free). The script prints a command; paste it into a **second** PowerShell window. Accept the folder-trust
@@ -65,12 +65,26 @@ node scripts/qualify.mjs run --live --only Q08,Q09,Q10,Q12,Q13          # add --
 The WSL run keeps its config and repositories in `~/.mini-summa-poc` but writes its spool and reports to
 `%LOCALAPPDATA%\MiniSummaPoc` through `/mnt/c/...`, which is how events cross the boundary.
 
-Back in **PowerShell**, finish the cross-boundary test and the separate discovery of WSL sessions:
+Back in **PowerShell**, finish the cross-boundary test:
 ```powershell
 node scripts\qualify.mjs run --only Q05
-node scripts\qualify.mjs run --only Q18 --wsl-distro Ubuntu --wsl-config /home/YOURNAME/.mini-summa-poc/config-wsl-Ubuntu
+```
+**Q18 needs one live idle session in each environment**, because an empty listing proves nothing. Make two UUIDs and start one session in each (no prompt, so no model usage):
+```powershell
+$uw = [guid]::NewGuid(); $uw          # note it
+# second PowerShell window:
+$env:CLAUDE_CONFIG_DIR = "$env:LOCALAPPDATA\MiniSummaPoc\config-win"; Set-Location "$env:LOCALAPPDATA\MiniSummaPoc\work\projA"; claude --session-id $uw
+```
+```bash
+ul=$(uuidgen); echo $ul               # note it, in a second Ubuntu terminal:
+cd ~/.mini-summa-poc/work/projW && CLAUDE_CONFIG_DIR=~/.mini-summa-poc/config-wsl-Ubuntu claude --session-id $ul
+```
+With both sessions sitting idle, in the first PowerShell window:
+```powershell
+node scripts\qualify.mjs run --only Q18 --wsl-distro Ubuntu --wsl-config /home/YOURNAME/.mini-summa-poc/config-wsl-Ubuntu --expect-win <uw> --expect-wsl <ul>
 node scripts\qualify.mjs merge "$env:LOCALAPPDATA\MiniSummaPoc\qualification\report-win.json" "$env:LOCALAPPDATA\MiniSummaPoc\qualification\report-wsl-Ubuntu.json"
 ```
+Then exit both sessions with `/exit`.
 
 ## C. Tests and what makes each one PASS
 | ID | Passes when | Runs in |
@@ -92,7 +106,7 @@ node scripts\qualify.mjs merge "$env:LOCALAPPDATA\MiniSummaPoc\qualification\rep
 | Q15 | re-delivered spool files and a second ingestor process change nothing | each |
 | Q16 | hash of your normal settings, CLAUDE.md, rules, commands, agents, skills and hooks is unchanged | each |
 | Q17 | case, slash and trailing-separator spellings are one directory key; `wslpath -w` agrees with the canonical key | each |
-| Q18 | Windows lists its sessions and the WSL distribution's separately, with no overlap | Windows |
+| Q18 | both environments answered, each lists at least one valid session id (and the ones you started, if `--expect-*` is given), and **no id appears in both**. Empty listings, missing ids or a session that was never started give NOT TESTED; a failed query or a shared id gives FAIL | Windows, with live sessions |
 
 PASS is recorded only in the environment that ran the test. A timeout while waiting for you is NOT TESTED, never FAIL.
 

@@ -76,3 +76,36 @@ export function pidAlive(pid, { remote = false } = {}) {
   if (remote || !Number.isInteger(pid)) return null;
   try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
+
+// Q18: do native Windows and one WSL distribution discover their sessions SEPARATELY?
+// Decided from two `agents --json` arrays. PASS needs real evidence in BOTH environments, so an empty listing, a
+// listing without usable ids, or a failed query can never count as "separation".
+//   FAIL        a query failed or returned a non-array; the same session id appears in both; an expected id is
+//               missing from its own environment or present in the other one
+//   NOT TESTED  no valid, independently identified session in one or both environments (nothing to separate)
+//   PASS        at least one valid session in each, no shared id, and any expected ids found where they belong
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function evaluateSeparateDiscovery({ win, wsl, expect = {} }) {
+  const notes = [];
+  for (const [name, v] of [['Windows', win], ['WSL', wsl]]) {
+    if (v instanceof Error) return { status: 'FAIL', notes: [`${name} discovery failed: ${String(v.message).slice(0, 200)}`] };
+    if (!Array.isArray(v)) return { status: 'FAIL', notes: [`${name} discovery did not return a list`] };
+  }
+  const ids = (list) => list.filter((s) => s && typeof s.sessionId === 'string' && UUID.test(s.sessionId)).map((s) => s.sessionId.toLowerCase());
+  const w = ids(win); const l = ids(wsl);
+  const unidentified = (win.length - w.length) + (wsl.length - l.length);
+  notes.push(`Windows lists ${win.length} (${w.length} with a valid session id), WSL lists ${wsl.length} (${l.length} with a valid session id)`);
+  if (unidentified) notes.push(`${unidentified} listed session(s) have no valid session id and are not counted as evidence`);
+  const shared = w.filter((x) => l.includes(x));
+  if (shared.length) return { status: 'FAIL', notes: [...notes, `identity collision: ${shared.length} session id(s) appear in both environments`] };
+  const ew = expect.win?.toLowerCase(); const el = expect.wsl?.toLowerCase();
+  if (ew && l.includes(ew)) return { status: 'FAIL', notes: [...notes, 'the Windows session id was listed inside WSL'] };
+  if (el && w.includes(el)) return { status: 'FAIL', notes: [...notes, 'the WSL session id was listed by Windows'] };
+  if (ew && !w.includes(ew)) return { status: 'NOT TESTED', notes: [...notes, 'the expected Windows session was not listed: not started yet, or not discovered'] };
+  if (el && !l.includes(el)) return { status: 'NOT TESTED', notes: [...notes, 'the expected WSL session was not listed: not started yet, or not discovered'] };
+  if (w.length === 0 || l.length === 0) {
+    return { status: 'NOT TESTED', notes: [...notes, `no valid live session was established in ${w.length === 0 && l.length === 0 ? 'either environment' : w.length === 0 ? 'Windows' : 'WSL'}: start an idle session there first (see docs/QUALIFICATION.md), then rerun`] };
+  }
+  notes.push('WSL pid liveness is unknown from Windows by design');
+  return { status: 'PASS', notes };
+}
