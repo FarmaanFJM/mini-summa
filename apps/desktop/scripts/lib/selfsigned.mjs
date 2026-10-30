@@ -36,7 +36,9 @@ const oid = (dotted) => {
 const utc = (date) => der(UTC_TIME, Buffer.from(`${date.toISOString().replace(/[-:T]/g, '').slice(2, 14)}Z`, 'ascii'));
 const name = (cn) => der(SEQUENCE, der(SET, der(SEQUENCE, oid('2.5.4.3'), der(UTF8_STRING, Buffer.from(cn, 'utf8')))));
 const extension = (id, critical, value) => der(SEQUENCE, oid(id), ...(critical ? [der(BOOLEAN, Buffer.from([0xff]))] : []), der(OCTET_STRING, value));
-const pem = (label, buf) => `-----BEGIN ${label}-----\n${buf.toString('base64').replace(/(.{64})/g, '$1\n')}\n-----END ${label}-----\n`;
+// Lines of 64 characters, and no empty line before the END marker (a base64 length that is an exact multiple of 64 used to leave one,
+// which OpenSSL refuses; a certificate for two host names is exactly that long).
+const pem = (label, buf) => `-----BEGIN ${label}-----\n${buf.toString('base64').match(/.{1,64}/g).join('\n')}\n-----END ${label}-----\n`;
 
 /** @param {string[]} hosts DNS names the certificate is valid for (the first is also the common name). */
 export function makeSelfSigned(hosts) {
