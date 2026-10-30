@@ -108,7 +108,7 @@ Keep that keystore out of the repository. Do not add a `google-services.json` un
   error" (add `--gradle-arg --info` to see every attempt). What helps, in this order:
   1. **Patience, spaced out.** Gradle 9.4.1 does retry a 429, but by default only 3 tries 1 s and 2 s apart, and a failed POM
      lookup switches the whole repository off for the rest of the build. `npm run build:apk` therefore passes Gradle's own retry
-     settings (10 tries per file, the wait starting at 1.5 s and doubling after each try, so the last try comes about 12 minutes
+     settings (10 tries per file, the wait starting at 1.5 s and doubling after each try, so the last try comes about 13 minutes
      after the first) unless you set them yourself, and it runs Gradle again after a pause when a download was refused:
      `--retries` (default 2) and `--wait` (default 60 s, doubling). Gradle keeps every file it downloaded, so each run continues
      where the last one stopped. To set the same for every Gradle build, put this in `~/.gradle/gradle.properties` (outside the
@@ -128,8 +128,8 @@ Keep that keystore out of the repository. Do not add a `google-services.json` un
      (`--signatures`), and only then installs it into `~/ms-maven`. It refuses a file that has no published checksum. Copy
      `scripts/android/local-maven.init.gradle` to `~/.gradle/init.d/`: it adds that folder as a repository **in front of** the
      plugin, buildscript and project repositories and removes or disables nothing, so every other file still comes from the normal
-     repositories with the checks they have. Gradle takes a library from the repository that supplied its POM, which is why the tool
-     installs the `.pom` (and `.module`) next to each file. Usage: `node scripts/android/prefetch-maven.mjs --signatures --log
+     repositories with the checks they have. Gradle normally fetches a module's files from the repository that supplied its metadata, which is why
+     the tool installs the `.pom` (and `.module`) next to each file. Usage: `node scripts/android/prefetch-maven.mjs --signatures --log
      <gradle output> [<url>...]`; `--gav group:artifact:version` names a module directly. To list what is still missing without
      touching the network, run `./gradlew assembleRelease --offline --continue` in `apps/android/android`, save its output and pass
      it to `--log`; Gradle then downloads the rest itself. The signature check needs `gpg`; a public key that keys.openpgp.org lists
@@ -297,7 +297,7 @@ what Gradle had cached by then, and the last three runs stalled on `com.facebook
 
 **What produced the APK**, in this order (times are the sandbox clock):
 
-1. The settings were corrected to 10 tries per file and a wait that starts at 1.5 s and doubles, so the last try comes about 12 minutes
+1. The settings were corrected to 10 tries per file and a wait that starts at 1.5 s and doubles, so the last try comes about 13 minutes
    after the first. This is ordinary patience, not a way around the limit. The first run with them downloaded the Fresco AARs on the first
    try and went past the old stall for the first time; the first 194 downloads of that run had no 429 at all.
 2. Then three streaks of refusals. Gradle's own backoff outlasted two: a POM (3 min 11 s, success on try 8) and the 57 KB
