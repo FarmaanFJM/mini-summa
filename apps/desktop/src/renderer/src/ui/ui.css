@@ -1,0 +1,153 @@
+/* Design kit styles. Builds on the vendored sm-* presets and only reads tokens. */
+
+/* ---------------------------------------------------------------- Buttons */
+.ms-btn--sm { height: var(--control-h-sm); padding: 0 10px; border-radius: var(--r-sm); font-size: var(--fs-sm); }
+.ms-btn__label { overflow: hidden; text-overflow: ellipsis; }
+/* The bundle hard-codes #444545 for pressed secondary buttons; use the palette step instead. */
+.sm-btn:not(.sm-btn--primary):not(.sm-btn--ghost):not(.sm-btn--danger):active:not(:disabled) { background: var(--s5); }
+.sm-dialog .sm-btn:not(.sm-btn--primary):not(.sm-btn--danger):hover:not(:disabled) { background: var(--s5); }
+.sm-icon-btn { transition: background var(--dur), color var(--dur); }
+.sm-icon-btn:active:not(:disabled) { background: var(--s4); }
+.sm-icon-btn[aria-pressed="true"] { background: var(--s3); color: var(--text); }
+.sm-icon-btn:disabled { opacity: 0.4; cursor: default; }
+.sm-icon-btn:focus-visible { outline: 1.5px solid var(--focus); outline-offset: 1px; }
+
+/* ---------------------------------------------------------------- Tooltip */
+.ms-tooltip-wrap { display: contents; }
+.ms-tooltip {
+  position: fixed; z-index: 130; max-width: 280px; padding: 4px 8px; border-radius: var(--r-sm);
+  background: var(--s4); color: var(--text); box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-pop);
+  font: 500 var(--fs-sm)/1.4 var(--font); pointer-events: none; white-space: normal; overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------- Dialog */
+.sm-dialog { max-width: 100%; }
+.ms-dialog--sm { width: min(420px, 100%); }
+.ms-dialog--md { width: min(520px, 100%); }
+.ms-dialog--lg { width: min(680px, 100%); }
+.ms-dialog__desc { margin: 0; padding: 4px 20px 0; color: var(--text-2); }
+.ms-dialog__body { color: var(--text); display: flex; flex-direction: column; gap: var(--sp-4); padding-top: var(--sp-3); padding-bottom: var(--sp-2); }
+.ms-dialog__body:empty { display: none; }
+.ms-dialog__error { margin: 0; color: var(--danger); font-size: var(--fs-sm); }
+.sm-dialog:focus { outline: none; }
+.sm-dialog .sm-icon-btn:hover:not(:disabled) { background: var(--s4); }
+.sm-dialog .sm-btn--ghost { background: none; }
+.sm-dialog .sm-btn--ghost:hover:not(:disabled) { background: var(--s4); }
+.sm-backdrop { background: rgba(5, 6, 7, 0.62); }
+
+/* ---------------------------------------------------------------- Fields */
+.ms-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ms-field__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
+.ms-field__label { font-size: var(--fs-sm); font-weight: 500; color: var(--text-2); }
+.ms-field__aside { font-size: var(--fs-sm); color: var(--text-2); }
+.ms-field__hint { font-size: var(--fs-sm); color: var(--text-2); }
+.ms-field__error { font-size: var(--fs-sm); color: var(--danger); }
+.ms-field .sm-select { width: 100%; }
+.sm-input[aria-invalid="true"] { box-shadow: 0 0 0 1px var(--danger); }
+.sm-input[aria-invalid="true"]:focus-visible { box-shadow: 0 0 0 1px var(--danger); }
+.ms-textarea { height: auto; min-height: 72px; padding-top: 8px; padding-bottom: 8px; resize: vertical; line-height: 1.5; }
+.sm-dialog .sm-input { background: var(--s4); }
+.sm-dialog .sm-select { background: var(--s4); }
+.sm-dialog .sm-select:hover, .sm-dialog .sm-select[aria-expanded="true"] { background: var(--s5); }
+
+/* Switch: neutral, a light track when on (P15). */
+.ms-switch { display: inline-flex; align-items: center; gap: var(--sp-3); }
+.ms-switch__track {
+  position: relative; width: 34px; height: 20px; flex: none; padding: 0; border: 0; border-radius: 10px;
+  background: var(--s4); cursor: pointer; transition: background var(--dur) var(--ease);
+}
+.ms-switch__thumb {
+  position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--text-2); transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.ms-switch__track[aria-checked="true"] { background: var(--text-2); }
+.ms-switch__track[aria-checked="true"] .ms-switch__thumb { transform: translateX(14px); background: var(--s0); }
+.ms-switch__track:disabled { opacity: 0.45; cursor: default; }
+.ms-switch__label { color: var(--text); }
+
+/* Checkbox and radio: the shared outlined box (the one control allowed an outline of its own). */
+.ms-choice { position: relative; display: inline-flex; align-items: center; gap: var(--sp-2); cursor: pointer; color: var(--text); }
+.ms-choice__input { position: absolute; opacity: 0; width: 16px; height: 16px; margin: 0; cursor: pointer; }
+.ms-choice__box { box-shadow: inset 0 0 0 1.5px var(--text-3); }
+.ms-choice__input:checked + .ms-choice__box { background: var(--text); color: var(--s0); box-shadow: none; }
+.ms-choice__input:focus-visible + .ms-choice__box { outline: 1.5px solid var(--focus); outline-offset: 1px; }
+.ms-choice__input:disabled + .ms-choice__box { opacity: 0.45; }
+.ms-choice--radio .ms-choice__box { border-radius: 50%; }
+.ms-choice__dot { width: 6px; height: 6px; border-radius: 50%; background: transparent; }
+.ms-choice__input:checked + .ms-choice__box .ms-choice__dot { background: var(--s0); }
+.ms-choice__label { font-size: var(--fs-md); }
+
+/* ---------------------------------------------------------------- Select / options */
+.ms-option { align-items: flex-start; }
+.ms-option__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ms-option__desc { color: var(--text-2); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-menu { background: var(--s4); }
+.sm-menu__item:hover:not(:disabled):not([aria-disabled="true"]), .sm-menu__item.is-active { background: var(--s5); }
+.sm-menu__item:focus-visible { outline: none; background: var(--s5); }
+.sm-menu__item[aria-selected="true"] .ms-option__desc { color: var(--text-2); }
+.sm-select { height: var(--control-h); }
+.sm-select:focus-visible { outline: 1.5px solid var(--focus); outline-offset: 1px; }
+
+/* ---------------------------------------------------------------- Tabs */
+.ms-tabs { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.ms-tabs::-webkit-scrollbar { display: none; }
+.ms-tab { position: relative; display: inline-flex; align-items: center; flex: none; height: var(--control-h-sm); border-radius: var(--r-sm); color: var(--text-2); transition: background var(--dur), color var(--dur); }
+.ms-tab:hover { background: var(--s2); color: var(--text); }
+.ms-tab[data-selected] { background: var(--s3); color: var(--text); }
+.ms-tab__main {
+  display: inline-flex; align-items: center; gap: 7px; height: 100%; padding: 0 8px 0 10px; border: 0; background: none;
+  color: inherit; font: 500 var(--fs-sm)/1 var(--font); cursor: pointer; border-radius: var(--r-sm); white-space: nowrap;
+}
+.ms-tab__main:focus-visible { outline-offset: -1.5px; }
+.ms-tab__label { display: inline-flex; align-items: baseline; gap: 6px; }
+.ms-tab__close {
+  display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 4px; padding: 0; border: 0; border-radius: 4px;
+  background: none; color: var(--text-3); cursor: pointer; opacity: 0; transition: opacity var(--dur), background var(--dur), color var(--dur);
+}
+.ms-tab:hover .ms-tab__close, .ms-tab[data-selected] .ms-tab__close, .ms-tab__close:focus-visible { opacity: 1; }
+.ms-tab__close:hover { background: var(--s4); color: var(--text); }
+.ms-tab__close:focus-visible { outline: 1.5px solid var(--focus); outline-offset: 0; }
+.ms-tab:not(:has(.ms-tab__close)) .ms-tab__main { padding-right: 10px; }
+
+/* ---------------------------------------------------------------- Tag, section, kbd */
+.ms-tag {
+  display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border: 0; border-radius: var(--r-sm);
+  background: var(--s3); color: var(--text-2); font: 500 var(--fs-xs)/1 var(--font); white-space: nowrap;
+}
+.ms-tag--action { cursor: pointer; }
+.ms-tag--action:hover { background: var(--s4); color: var(--text); }
+.ms-tag--action[aria-pressed="true"] { background: var(--select-strong); color: var(--text); }
+
+.ms-section { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.ms-section__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: var(--control-h-sm); }
+.ms-section__title { font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+.ms-section__actions { display: flex; align-items: center; gap: var(--sp-1); }
+
+.ms-kbd {
+  display: inline-block; min-width: 20px; padding: 1px 6px; border-radius: 4px; background: var(--s3); color: var(--text-2);
+  font: 500 var(--fs-xs)/1.5 var(--font); text-align: center;
+}
+
+/* ---------------------------------------------------------------- Split pane */
+.ms-split { display: grid; width: 100%; height: 100%; min-width: 0; min-height: 0; }
+.ms-split__pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.ms-split__divider { position: relative; z-index: 2; touch-action: none; background: transparent; }
+.ms-split--horizontal > .ms-split__divider { cursor: col-resize; }
+.ms-split--vertical > .ms-split__divider { cursor: row-resize; }
+.ms-split__divider::before { content: ""; position: absolute; background: var(--line); transition: background var(--dur) var(--ease); }
+.ms-split--horizontal > .ms-split__divider::before { top: 0; bottom: 0; left: 4px; width: 1px; }
+.ms-split--vertical > .ms-split__divider::before { left: 0; right: 0; top: 4px; height: 1px; }
+.ms-split__divider:hover::before, .ms-split__divider.is-dragging::before { background: var(--text-3); }
+.ms-split__divider:focus-visible { outline: none; }
+.ms-split__divider:focus-visible::before { background: var(--focus); }
+.ms-split--horizontal > .ms-split__divider:focus-visible::before { left: 3px; width: 3px; }
+.ms-split--vertical > .ms-split__divider:focus-visible::before { top: 3px; height: 3px; }
+
+/* ---------------------------------------------------------------- Empty states and loading rows */
+.sm-empty__text { line-height: 1.5; }
+.ms-skeleton-list { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
+.ms-skeleton-row { height: 28px; border-radius: var(--r-sm); background: linear-gradient(90deg, var(--s2), var(--s3), var(--s2)); background-size: 200% 100%; animation: sm-shimmer 1.4s linear infinite; opacity: 0.7; }
+@media (prefers-reduced-motion: reduce) { .ms-skeleton-row { animation: none; } }
+
+/* Toast region is portaled; keep it above dialogs and the floating menus. */
+.sm-toast-region { z-index: 140; }

@@ -107,6 +107,10 @@ export class Reducer {
     if (s.gen.n > 0) s.generations.push({ ...s.gen, phase: s.gen.phase === 'live' ? 'superseded' : s.gen.phase, unresolved: s.unresolved });
     s.unresolved = [];
     s.gen = { n: s.gen.n + 1, phase: 'live', proc, start: null, open, term: null };
+    // A new incarnation has not been listed by any snapshot yet. What discovery saw of the previous one must not carry over,
+    // or a full snapshot that does not list the new process would declare it "lost" on the strength of the old one
+    // (docs/CHANGES-FROM-POC.md, change 4). When discovery itself opens the generation it records the listing right after.
+    s.in_prev_snapshot = false; s.observed = null;
     if (s.gen.n > 1) this.#emit('generation', s, { cause_key: cause.key, raw_seq: cause.seq, generation: s.gen.n, why });
   }
 
@@ -280,10 +284,14 @@ export class Reducer {
     const bg = (p.background_tasks?.length ?? 0) + (p.session_crons?.length ?? 0);
     const taskId = `${s.key}:${p.prompt_id ?? 'none'}`;
     const bodyHash = sha(msg);
+    // How much the hook had to hide or cut when it captured this Stop (never what). Counts for the whole hook payload, as the
+    // capture script records them in its transport; 0 when the entry carries none (docs/CHANGES-FROM-POC.md, change 8).
+    const count = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : 0);
     const base = {
       session_id: s.session_id, env: s.env, generation: s.gen.n, project_id: s.project?.id ?? null,
       project_name: s.project?.name ?? null, cwd: s.cwd, prompt_id: p.prompt_id ?? null, task_id: taskId,
       body: msg, body_sha256: bodyHash, stop_hook_active: Boolean(p.stop_hook_active), late, captured_seq: entry.seq,
+      redactions: count(entry.transport?.redactions), truncations: count(entry.transport?.truncations),
     };
     // Same prompt + same text is one report. With no prompt_id a task cannot be identified, so each
     // distinct logical Stop is its own report rather than risk merging two tasks.

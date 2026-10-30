@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Mini-Summa tab focus</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="page">
+    <h1 class="title">Mini-Summa tab focus</h1>
+
+    <section class="block" aria-labelledby="status-label">
+      <h2 id="status-label" class="label">Status</h2>
+      <p id="status-headline" class="status-headline" role="status" aria-live="polite">Checking</p>
+      <p id="status-detail" class="muted" hidden></p>
+    </section>
+
+    <section class="block">
+      <label class="label" for="core-url">Core address</label>
+      <div class="row">
+        <input id="core-url" class="sm-input" type="text" inputmode="url" autocomplete="off" spellcheck="false" value="http://127.0.0.1:47811">
+        <button id="save-address" type="button" class="sm-btn" hidden>Save</button>
+      </div>
+    </section>
+
+    <form id="pair-form" class="block" autocomplete="off" novalidate>
+      <label class="label" for="link">Pairing link</label>
+      <input id="link" class="sm-input" type="text" autocomplete="off" spellcheck="false" placeholder="minisumma://pair?...">
+      <details class="manual">
+        <summary>Enter the details manually</summary>
+        <div class="manual-fields">
+          <label class="label" for="offer-id">Offer id</label>
+          <input id="offer-id" class="sm-input" type="text" autocomplete="off" spellcheck="false">
+          <label class="label" for="code">Code</label>
+          <input id="code" class="sm-input" type="text" autocomplete="off" spellcheck="false">
+          <label class="label" for="device-name">Device name</label>
+          <input id="device-name" class="sm-input" type="text" autocomplete="off" maxlength="80">
+        </div>
+      </details>
+      <p id="message" class="message" role="alert" hidden></p>
+      <button id="pair" type="submit" class="sm-btn sm-btn--primary"><span id="pair-spinner" class="sm-spinner" aria-hidden="true" hidden></span>Pair</button>
+    </form>
+
+    <section id="paired" class="block" hidden>
+      <p id="paired-line"></p>
+      <button id="unpair" type="button" class="sm-btn sm-btn--danger-quiet">Unpair this browser</button>
+      <p class="muted">Unpairing only forgets the token in this browser. To revoke it in Mini-Summa, remove the device there.</p>
+    </section>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

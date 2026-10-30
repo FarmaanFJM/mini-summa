@@ -8,7 +8,7 @@
 //                                            real from --settings (and the config dir's settings.json), a permission
 //                                            dialog that waits for Enter / Esc, report markers, SessionEnd on exit.
 //
-// Everything it records goes under $FAKE_CLAUDE_STATE_DIR:
+// Everything it records goes under the state directory <state>:
 //   live/<pid>.json                 registration of a running session (status idle|busy|waiting); listed by `agents`
 //                                   only while the pid is alive
 //   externals.json                  array of extra `agents --json` entries (sessions "started elsewhere"); never filtered
@@ -16,12 +16,18 @@
 //   context-<sessionId>.txt         additionalContext returned by SessionStart hooks (exists iff the latest start had one)
 //   hooks-<sessionId>.jsonl         one line per hook command that ran: {event, command, code, timedOut, ms}
 //   size-<sessionId>.json           the terminal size the session sees (updated on resize)
+//   env-<sessionId>.json            names of the environment variables it was started with, plus TERM, COLORTERM and
+//                                   CLAUDE_CONFIG_DIR (values of nothing else: tests check what was passed on or removed)
 //   config/projects/<dir>/<id>.jsonl  the transcript (created at the first prompt: only then does --resume find it).
-//                                   Under $CLAUDE_CONFIG_DIR instead of config/ when that variable is set.
+//                                   Under $CLAUDE_CONFIG_DIR instead of <state>/config when that variable is set; its
+//                                   settings.json hooks run too, as the user-level hooks of the real CLI do.
 //
 // Directives in a prompt steer the "model": [[fake:tool bash "echo hi"]], [[fake:permission]], [[fake:input]],
 // [[fake:report status=complete task="Fix login"]], [[fake:error]], [[fake:sleep=300]], [[fake:say "text"]],
 // [[fake:crash]]. Without a directive the reply echoes the prompt and the turn ends with a plain Stop (no marker).
+//
+// <state> is `--fake-state-dir <dir>` (anywhere in the arguments; fakeClaudeCommand() puts it in prefixArgs, so several
+// fakes with different directories can run in one process) or else $FAKE_CLAUDE_STATE_DIR.
 //
 // Knobs (environment): FAKE_CLAUDE_THINK_MS (default 120, pause before a turn acts), FAKE_CLAUDE_NOTIFY_MS (default
 // 6000, delay of the permission_prompt Notification, as observed on the real CLI), FAKE_CLAUDE_IDLE_NOTIFY_MS (default 0 =
@@ -112,9 +118,17 @@ function parseArgs(argv) {
 // ---------------------------------------------------------------------------------------------------------------
 // State directory helpers
 
-const STATE_DIR = process.env.FAKE_CLAUDE_STATE_DIR || null;
+// The state directory comes from `--fake-state-dir <dir>` (what fakeClaudeCommand() puts in prefixArgs, so several fakes
+// with different directories can coexist in one process) or else from $FAKE_CLAUDE_STATE_DIR.
+const ARGV = process.argv.slice(2);
+let stateDirArg = null;
+for (let i = 0; i < ARGV.length; i++) {
+  if (ARGV[i] === '--fake-state-dir' && i + 1 < ARGV.length) { stateDirArg = ARGV[i + 1]; ARGV.splice(i, 2); break; }
+  if (ARGV[i].startsWith('--fake-state-dir=')) { stateDirArg = ARGV[i].slice('--fake-state-dir='.length); ARGV.splice(i, 1); break; }
+}
+const STATE_DIR = stateDirArg ? path.resolve(stateDirArg) : process.env.FAKE_CLAUDE_STATE_DIR || null;
 const requireStateDir = () => {
-  if (!STATE_DIR) fail('fake-claude: FAKE_CLAUDE_STATE_DIR is not set. Set it to the directory the test uses for this fake CLI.', 2);
+  if (!STATE_DIR) fail('fake-claude: no state directory. Pass --fake-state-dir <dir> or set FAKE_CLAUDE_STATE_DIR to the directory the test uses for this fake CLI.', 2);
   return STATE_DIR;
 };
 const liveDir = () => path.join(requireStateDir(), 'live');
@@ -235,25 +249,38 @@ function hooksFor(sources, event, payload) {
   return found;
 }
 
+function killTree(child) {
+  try {
+    if (process.platform === 'win32') spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true });
+    else process.kill(-child.pid, 'SIGKILL');          // the hook runs in its own process group (detached)
+  } catch { try { child.kill('SIGKILL'); } catch { /* already gone */ } }
+}
+
 function runHookCommand(hook, payload, cwd) {
   const started = Date.now();
   const timeoutMs = (Number.isFinite(hook.timeout) ? hook.timeout : 60) * 1000;
   return new Promise((resolve) => {
     const env = { ...process.env, CLAUDE_PROJECT_DIR: cwd };
-    let child;
-    if (hook.shell === 'powershell') {
-      child = spawn(process.platform === 'win32' ? 'powershell.exe' : 'pwsh', ['-NoProfile', '-NonInteractive', '-Command', hook.command], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-    } else {
-      child = spawn(hook.command, { cwd, env, shell: true, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
-    }
+    const options = { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32' };
+    const child = hook.shell === 'powershell'
+      ? spawn(process.platform === 'win32' ? 'powershell.exe' : 'pwsh', ['-NoProfile', '-NonInteractive', '-Command', hook.command], options)
+      : spawn(hook.command, { ...options, shell: true });
     let stdout = '';
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
+    let settled = false;
+    const finish = (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code, stdout, timedOut, ms: Date.now() - started });
+    };
+    // On timeout the whole process tree is killed and the hook is reported as timed out without waiting for its pipes.
+    const timer = setTimeout(() => { timedOut = true; killTree(child); finish(null); }, timeoutMs);
     child.stdout.on('data', (d) => { if (stdout.length < 1_000_000) stdout += d; });
     child.stderr.on('data', () => {});
     child.stdin.on('error', () => {});
-    child.on('error', () => { clearTimeout(timer); resolve({ code: null, stdout, timedOut, ms: Date.now() - started }); });
-    child.on('close', (code) => { clearTimeout(timer); resolve({ code, stdout, timedOut, ms: Date.now() - started }); });
+    child.on('error', () => finish(null));
+    child.on('close', (code) => finish(code));
     child.stdin.end(JSON.stringify(payload));
   });
 }
@@ -330,6 +357,12 @@ async function runInteractive(parsed) {
     if (!findTranscript(value)) fail(`No conversation found with session ID: ${value}`);
     sessionId = value.toLowerCase();
     source = 'resume';
+    if (!name) {
+      try {
+        const first = fs.readFileSync(findTranscript(value), 'utf8').split('\n', 1)[0];
+        name = JSON.parse(first).name ?? null;
+      } catch { /* an unnamed session */ }
+    }
   } else if (explicitId) {
     if (!UUID_RE.test(explicitId)) fail('Error: Invalid session ID. Must be a valid UUID.');
     sessionId = explicitId.toLowerCase();
@@ -430,7 +463,10 @@ async function runInteractive(parsed) {
   const transcript = (entry) => {
     try {
       fs.mkdirSync(path.dirname(S.transcriptPath), { recursive: true });
-      fs.appendFileSync(S.transcriptPath, `${JSON.stringify({ ...entry, sessionId, cwd, timestamp: new Date().toISOString() })}\n`);
+      const lines = [];
+      if (!fs.existsSync(S.transcriptPath) && S.name) lines.push({ type: 'session', name: S.name });
+      lines.push(entry);
+      fs.appendFileSync(S.transcriptPath, lines.map((l) => `${JSON.stringify({ ...l, sessionId, cwd, timestamp: new Date().toISOString() })}\n`).join(''));
     } catch { /* ignore */ }
   };
 
@@ -469,7 +505,7 @@ async function runInteractive(parsed) {
   const bold = (s) => `\x1b[1m${s}\x1b[22m`;
   const dim = (s) => `\x1b[2m${s}\x1b[22m`;
   const accent = (s) => `\x1b[38;5;209m${s}\x1b[39m`;
-  const showPrompt = () => { S.buffer = ''; out(`\n${accent('>')} `); };
+  const showPrompt = () => out(`\n${accent('>')} ${S.buffer}`);
   const say = (text) => out(`\n${accent('●')} ${text.replace(/\n/g, '\n  ')}\n`);
 
   // --- turns
@@ -527,7 +563,6 @@ async function runInteractive(parsed) {
   const useTool = async (toolName, input, { permission }, signal) => {
     const id = toolUseId();
     await fireHook('PreToolUse', { tool_name: toolName, tool_input: input, tool_use_id: id });
-    signal.throwIfAborted?.();
     if (signal.aborted) throw new Interrupted();
     out(`\n${accent('●')} ${bold(toolName)}(${toolName === 'Bash' ? input.command : JSON.stringify(input)})\n`);
     if (permission && S.permissionMode !== 'bypassPermissions') {
@@ -771,6 +806,7 @@ async function runInteractive(parsed) {
     }
   });
   process.stdin.on('end', () => { unregister(); cleanupTty(); process.exit(0); });
+  process.stdin.on('error', () => { unregister(); process.exit(0); });
   process.stdin.resume();
   process.stdout.on('resize', () => { const s = writeSize(); out(`\n${dim(`[terminal resized to ${s.cols}x${s.rows}]`)}\n`); });
 
@@ -778,6 +814,10 @@ async function runInteractive(parsed) {
   fs.mkdirSync(liveDir(), { recursive: true });
   writeSize();
   publish();
+  writeJsonAtomic(stateFile(`env-${sessionId}.json`), {
+    names: Object.keys(process.env).sort(),
+    TERM: process.env.TERM ?? null, COLORTERM: process.env.COLORTERM ?? null, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? null,
+  });
   out(`\x1b]0;Claude Code${S.name ? ` - ${S.name}` : ''}\x07`);
   out(`${accent('✻')} ${bold('Welcome to Claude Code')} ${dim(`(fake ${VERSION})`)}\n`);
   out(`  ${dim('cwd:')} ${cwd}\n  ${dim('session:')} ${sessionId}${S.name ? `  ${dim('name:')} ${S.name}` : ''}\n  ${dim('model:')} ${S.model}${S.source === 'resume' ? `  ${dim('(resumed)')}` : ''}\n`);
@@ -795,7 +835,7 @@ async function runInteractive(parsed) {
 // ---------------------------------------------------------------------------------------------------------------
 // Entry
 
-const parsed = parseArgs(process.argv.slice(2));
+const parsed = parseArgs(ARGV);
 if (parsed.has('--version', '-v')) {
   process.stdout.write(`${VERSION} (Claude Code)\n`);
   process.exit(0);

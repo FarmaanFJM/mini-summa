@@ -1,0 +1,99 @@
+// Plain-language facts about a session, in one place so the banner, the tabs and the panels always agree.
+import { envLabel, shortSessionId } from '@minisumma/shared';
+import type { PendingAction, ProjectResolution, SessionOrigin, SessionState, SessionView } from '@minisumma/shared';
+
+export const ORIGIN_LABEL: Record<SessionOrigin, string> = { managed: 'managed', external: 'external', background: 'background' };
+
+export type DotTone = 'busy' | 'idle' | 'attention' | 'error' | 'off';
+
+/** The colour family of a session's state dot. Colour never carries the meaning alone: the state label always sits beside it. */
+export function dotTone(session: Pick<SessionView, 'state' | 'availability'>): DotTone {
+  if (session.availability === 'disconnected' || session.availability === 'ended') return session.state === 'error' ? 'error' : 'off';
+  switch (session.state) {
+    case 'working': return 'busy';
+    case 'needs_permission': case 'needs_input': return 'attention';
+    case 'error': return 'error';
+    case 'ended': case 'presence_lost': case 'unknown': return 'off';
+    default: return 'idle';
+  }
+}
+
+/** "a1b2c3d4": what people see and say aloud. The full key stays the identity. */
+export const shortId = (session: Pick<SessionView, 'key'>): string => shortSessionId(session.key);
+
+/** "managed, Windows" / "external, WSL (Ubuntu)". */
+export const originAndEnv = (session: Pick<SessionView, 'origin' | 'env'>): string => `${ORIGIN_LABEL[session.origin]}, ${envLabel(session.env)}`;
+
+/** Accessible name and tooltip of a session tab. */
+export const tabTitle = (session: SessionView): string =>
+  `Session ${shortId(session)}, ${originAndEnv(session)}. ${session.stateLabel}.`;
+
+export const RESOLUTION_TEXT: Record<ProjectResolution, string> = {
+  managed: 'Started by Mini-Summa',
+  manual: 'Assigned by you',
+  matched: 'Matched by its folder',
+  unregistered_directory: 'Its folder is not in any project',
+  ambiguous: 'Its folder matches more than one project',
+  no_cwd: 'Its folder is unknown',
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Where typing goes
+
+export type InputTarget =
+  /** Keystrokes in the terminal reach this managed, live session. */
+  | { kind: 'managed'; text: string }
+  /** Managed and live, but the link to the core is down. */
+  | { kind: 'paused'; text: string }
+  /** A managed session that is not running. */
+  | { kind: 'not_running'; text: string }
+  /** Observed only. Mini-Summa cannot type into it, whatever the person does. */
+  | { kind: 'observed'; text: string };
+
+/**
+ * The exact statement shown above the terminal. It names the project, the session and how it was started, because a
+ * keystroke in the wrong session is the one mistake this app must make impossible to overlook.
+ */
+export function describeInputTarget(session: SessionView, projectName: string | null, live: boolean): InputTarget {
+  const where = `${projectName ?? 'No project'} / Session ${shortId(session)}`;
+  const how = originAndEnv(session);
+  if (session.origin !== 'managed') {
+    return { kind: 'observed', text: `No input: ${where} (${how}) is observed. Mini-Summa cannot type into it.` };
+  }
+  if (session.availability !== 'live') {
+    return { kind: 'not_running', text: `No input: ${where} (${how}) is not running.` };
+  }
+  if (!live) {
+    return { kind: 'paused', text: `Input is paused: the connection to Mini-Summa was lost. It would go to ${where} (${how}).` };
+  }
+  return { kind: 'managed', text: `Input goes to: ${where} (${how})` };
+}
+
+/** What Claude is waiting for, in words, from the open permission request when there is one. */
+export function waitingFor(session: SessionView, actions: readonly PendingAction[]): string | null {
+  if (session.state === 'needs_permission') {
+    const open = actions.find((a) => a.kind === 'permission' && a.status === 'pending' && a.sessionKey === session.key);
+    return open ? `Claude is asking for permission: ${open.summary}. Answer it in the terminal.` : 'Claude is asking for permission. Answer it in the terminal.';
+  }
+  if (session.state === 'needs_input') return 'Claude is waiting for your answer. Reply in the terminal.';
+  return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Time, in the units people use
+
+export function formatRelative(iso: string | null, now: number = Date.now()): string {
+  if (!iso) return '';
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return '';
+  const seconds = Math.max(0, Math.round((now - then) / 1000));
+  if (seconds < 45) return 'just now';
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? 'yesterday' : `${days} days ago`;
+}
+
+export type SessionStateName = SessionState;

@@ -9,6 +9,11 @@ import path from 'node:path';
 // The functions here own the FILES (listing, parsing, ordering, moving). They own no durable state: the caller supplies
 // `appendRaw`, which does the durable append and is idempotent per transport_id (the Store appends to raw.jsonl, the
 // Mini-Summa core appends to SQLite).
+//
+// Two deliberate differences from the proof of concept (docs/CHANGES-FROM-POC.md, changes 1 and 5):
+//   * a record that names a clock domain but whose monotonic_ns is not a decimal integer is quarantined, instead of
+//     making the ordering step throw on every pass and wedging the whole spool;
+//   * a file that another ingestor already moved away is skipped, instead of aborting the pass with ENOENT.
 
 const SPOOL_SCHEMA = 'mini-summa.spool/1';
 
@@ -16,6 +21,32 @@ const SPOOL_SCHEMA = 'mini-summa.spool/1';
 export function pendingSpoolFiles(spoolDir) {
   if (!fs.existsSync(spoolDir)) return [];
   return fs.readdirSync(spoolDir).filter((f) => f.endsWith('.json') && !f.startsWith('.')).sort();
+}
+
+// The hook writes `process.hrtime.bigint().toString()`: decimal digits. A missing value counts as 0 when ordering, as it
+// always did. A JSON number is accepted when it is a non-negative safe integer. Anything else (hex, text, a fraction, a
+// sign, padding, a boolean, an object) is not a clock reading, and BigInt() of it would throw inside the sort.
+const DECIMAL = /^[0-9]+$/;
+function isClockReading(value) {
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'string') return DECIMAL.test(value);
+  if (typeof value === 'number') return Number.isSafeInteger(value) && value >= 0;
+  return false;
+}
+
+// Move <spoolDir>/<name> into <spoolDir>/<sub>/. Returns false when the file is already gone, which means another
+// ingestor moved it first (to done/ or quarantine/): there is nothing left to do for it. An ENOENT while the source still
+// exists means the destination folder vanished; that is retried once and then reported. Every other error propagates.
+function moveInto(spoolDir, sub, name) {
+  const from = path.join(spoolDir, name); const dir = path.join(spoolDir, sub);
+  for (let attempt = 0; ; attempt++) {
+    fs.mkdirSync(dir, { recursive: true });
+    try { fs.renameSync(from, path.join(dir, name)); return true; } catch (err) {
+      if (err?.code !== 'ENOENT') throw err;
+      if (!fs.existsSync(from)) return false;
+      if (attempt >= 1) throw err;
+    }
+  }
 }
 
 // Ingest the pending spool files of one directory.
@@ -38,11 +69,12 @@ export function ingestSpoolFiles(spoolDir, { only } = {}, appendRaw) {
     try {
       const rec = JSON.parse(fs.readFileSync(full, 'utf8'));
       if (rec.schema !== SPOOL_SCHEMA || !rec.payload || !rec.transport) throw new Error('not a spool record');
-      parsed.push({ f, full, rec });
-    } catch {
-      fs.mkdirSync(path.join(spoolDir, 'quarantine'), { recursive: true });
-      fs.renameSync(full, path.join(spoolDir, 'quarantine', f));
-      res.quarantined++;
+      // The monotonic value only matters (and is only ever parsed) when a clock domain is named, exactly as in the sort below.
+      if ((rec.transport.clock_domain ?? '') && !isClockReading(rec.transport.monotonic_ns)) throw new Error('monotonic_ns is not a decimal integer');
+      parsed.push({ f, rec });
+    } catch (err) {
+      if (err?.code === 'ENOENT') continue; // vanished between the listing and the read: another ingestor took it
+      if (moveInto(spoolDir, 'quarantine', f)) res.quarantined++;
     }
   }
   parsed.sort((a, b) => {
@@ -56,12 +88,11 @@ export function ingestSpoolFiles(spoolDir, { only } = {}, appendRaw) {
     }
     return a.f < b.f ? -1 : a.f > b.f ? 1 : 0;
   });
-  for (const { f, full, rec } of parsed) {
+  for (const { f, rec } of parsed) {
     const stored = appendRaw({ kind: 'hook', transport: rec.transport, payload: rec.payload });
     if (stored) res.ingested++; else res.already_ingested++;
     // A crash between append and rename leaves the file in place; the next run skips it by transport_id.
-    fs.mkdirSync(path.join(spoolDir, 'done'), { recursive: true });
-    fs.renameSync(full, path.join(spoolDir, 'done', f));
+    moveInto(spoolDir, 'done', f);
   }
   return res;
 }

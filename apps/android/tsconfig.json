@@ -1,0 +1,21 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "forceConsistentCasingInFileNames": true,
+    // React Native supplies fetch, AbortController and timers. Leaving the DOM lib out avoids a second, conflicting
+    // declaration of fetch when the shared SDK source is type-checked together with the app.
+    "lib": ["ESNext"],
+    "types": ["jest"],
+    "paths": {
+      "@minisumma/shared": ["../../packages/shared/src/index.ts"],
+      "zod": ["./node_modules/zod"]
+    }
+  },
+  "include": ["app", "src", "test", "expo-env.d.ts"],
+  "exclude": ["node_modules", "android", "ios", "dist", ".expo"]
+}

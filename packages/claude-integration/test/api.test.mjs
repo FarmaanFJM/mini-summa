@@ -73,3 +73,14 @@ test('package.json points at files that exist and keeps its name and scripts; bu
   const ignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8').split(/\r?\n/);
   assert.ok(ignore.includes('dist/'), 'dist/ is build output');
 });
+
+test('docs/CHANGES-FROM-POC.md has one section per divergence, and each has regression tests titled "CHANGE n"', () => {
+  const doc = fs.readFileSync(path.join(root, 'docs', 'CHANGES-FROM-POC.md'), 'utf8');
+  const sources = fs.readdirSync(path.join(root, 'test')).filter((f) => f.endsWith('.test.mjs'))
+    .map((f) => fs.readFileSync(path.join(root, 'test', f), 'utf8')).join('\n');
+  assert.equal([...doc.matchAll(/^## \d+\. /gm)].length, 8, 'eight numbered sections');
+  for (let n = 1; n <= 8; n++) {
+    assert.match(doc, new RegExp(`^## ${n}\\. `, 'm'), `section ${n}`);
+    assert.ok(new RegExp(`test\\('CHANGE ${n}[: ]`).test(sources), `a test titled "CHANGE ${n}"`);
+  }
+});

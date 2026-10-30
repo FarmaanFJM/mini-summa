@@ -48,22 +48,55 @@ export function claudeBin(env = process.env, platform = process.platform) {
   return env.MINI_SUMMA_CLAUDE_BIN || (platform === 'win32' ? 'claude.exe' : 'claude');
 }
 
-// Runs `claude agents --json`. With wslDistro it runs inside that distribution through wsl.exe, so the
-// answer describes WSL sessions (their own ~/.claude), never Windows ones.
-export function runAgentsJson({ configDir, cwd, all, wslDistro, timeoutMs = 20000, bin } = {}) {
+// One argument of a command line that cmd.exe will parse. Inside double quotes cmd treats nothing as special except the
+// percent sign (an environment variable is expanded even there), the exclamation mark when delayed expansion happens to be
+// switched on, and the double quote itself, which cannot be escaped reliably. Those, and control characters, are refused
+// instead of being passed on in a way that might run something else. A trailing backslash is doubled: the program that
+// finally reads the line (node, behind the npm shim) would take `\"` as an escaped quote.
+function quoteForCmd(arg) {
+  if (/[\u0000-\u001f"%!]/.test(arg)) {
+    throw new Error(`cannot pass ${JSON.stringify(arg)} through cmd.exe: it contains a control character, a double quote, a percent sign or an exclamation mark`);
+  }
+  if (/^[A-Za-z0-9_.:+\\/-]+$/.test(arg)) return arg;
+  return `"${arg.replace(/\\+$/, (run) => run + run)}"`;
+}
+
+// The process to start for `claude agents --json`, as data, so the Windows rules can be unit-tested on any machine.
+//   file, args        the command as the caller sees it (what is reported back, and in error messages)
+//   spawnFile, spawnArgs, windowsVerbatimArguments
+//                     what is really started. For everything except a .cmd or .bat shim on Windows this is the same as
+//                     file and args. An npm install of Claude Code is such a shim, and it cannot be started without a
+//                     shell; Node's own `shell: true` pastes the arguments together without quoting, so a shim path or a
+//                     --cwd with a space broke it. Instead: cmd.exe /d /s /c "<each part quoted>", passed verbatim.
+//                     (Not run on Windows by the tests of this package.)
+export function agentsCommand({ configDir, cwd, all, wslDistro, bin, platform = process.platform, comSpec = process.env.ComSpec } = {}) {
   const args = ['agents', '--json'];
   if (all) args.push('--all');
   if (cwd) args.push('--cwd', cwd);
-  const env = { ...process.env };
-  if (configDir && !wslDistro) env.CLAUDE_CONFIG_DIR = configDir;
-  let file = bin ?? claudeBin(); let argv = args;
+  let file = bin ?? claudeBin(process.env, platform); let argv = args;
   if (wslDistro) {
     const inner = configDir ? ['env', `CLAUDE_CONFIG_DIR=${configDir}`, 'claude', ...args] : ['claude', ...args];
     file = 'wsl.exe'; argv = ['-d', wslDistro, '--exec', ...inner];
   }
-  const shell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(file);
+  const command = { file, args: argv, spawnFile: file, spawnArgs: argv, windowsVerbatimArguments: false };
+  if (platform === 'win32' && /\.(cmd|bat)$/i.test(file)) {
+    command.spawnFile = comSpec || 'cmd.exe';
+    command.spawnArgs = ['/d', '/s', '/c', `"${[file, ...argv].map(quoteForCmd).join(' ')}"`];
+    command.windowsVerbatimArguments = true;
+  }
+  return command;
+}
+
+// Runs `claude agents --json`. With wslDistro it runs inside that distribution through wsl.exe, so the
+// answer describes WSL sessions (their own ~/.claude), never Windows ones.
+export function runAgentsJson({ configDir, cwd, all, wslDistro, timeoutMs = 20000, bin } = {}) {
+  const env = { ...process.env };
+  if (configDir && !wslDistro) env.CLAUDE_CONFIG_DIR = configDir;
+  let command;
+  try { command = agentsCommand({ configDir, cwd, all, wslDistro, bin }); } catch (err) { return Promise.reject(err); }
+  const { file, args: argv, spawnFile, spawnArgs, windowsVerbatimArguments } = command;
   return new Promise((resolve, reject) => {
-    execFile(file, argv, { env, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, shell, windowsHide: true }, (err, stdout, stderr) => {
+    execFile(spawnFile, spawnArgs, { env, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, windowsVerbatimArguments, windowsHide: true }, (err, stdout, stderr) => {
       if (err) return reject(Object.assign(new Error(`${file} ${argv.join(' ')} failed: ${err.message}`), { stderr }));
       try { resolve({ raw: JSON.parse(stdout), args: argv, file }); }
       catch { reject(new Error(`unparsable output: ${stdout.slice(0, 200)}`)); }

@@ -258,7 +258,11 @@ export interface RunAgentsJsonOptions {
   wslDistro?: string;
   /** Default 20000. */
   timeoutMs?: number;
-  /** Executable to run instead of `claudeBin()`. */
+  /**
+   * Executable to run instead of `claudeBin()`. On Windows a `.cmd` or `.bat` shim (what an npm install of Claude Code
+   * is) is started through `cmd.exe /d /s /c` with every part quoted, so a path or `cwd` with spaces works. A `cwd` or
+   * shim path containing a double quote, `%`, `!` or a control character is rejected there. Not tested on Windows.
+   */
   bin?: string;
 }
 
@@ -394,7 +398,11 @@ export interface SpoolIngestResult {
   ingested: number;
   /** Receipts the store already had (same `transport_id`). Their files are still moved to `done/`. */
   already_ingested: number;
-  /** Files that are not spool records, moved to `quarantine/` untouched. */
+  /**
+   * Files this pass moved to `quarantine/` untouched: anything that is not a `mini-summa.spool/1` record, and a record that
+   * names a clock domain but whose `monotonic_ns` is not a decimal integer (it cannot be ordered, and would otherwise make
+   * every pass fail). A file another ingestor moved away first is skipped and counted nowhere.
+   */
   quarantined: number;
 }
 
@@ -403,8 +411,9 @@ export function pendingSpoolFiles(spoolDir: string): string[];
 
 /**
  * Ingests the pending files of one spool directory through `appendRaw`: parse and validate, quarantine anything that is
- * not a `mini-summa.spool/1` record, order by monotonic clock inside one clock domain (otherwise by file name), append,
- * then move each file to `done/`.
+ * not a `mini-summa.spool/1` record (or whose `monotonic_ns` is not a decimal integer while a clock domain is named),
+ * order by monotonic clock inside one clock domain (otherwise by file name), append, then move each file to `done/`.
+ * A file that another ingestor has already moved (ENOENT) is skipped; any other file-system error propagates.
  *
  * `appendRaw` runs synchronously. It must return the stored entry (any truthy value) for a new receipt and `null` for one
  * it already has: a falsy result is counted as already ingested, so a callback that forgets to return anything is
@@ -506,9 +515,9 @@ export interface TakeSnapshotResult {
 
 /**
  * Runs one discovery call and records it as an interval: hooks already pending are ingested first, hooks that land while
- * the call is in flight are listed in `interval.uncertain`. If `run` fails or is interrupted it appends a
- * `discovery_error` (no snapshot, so nothing is inferred as gone) and rejects with the original error. Output that is
- * not an array also rejects, but after the pending hooks were drained and without a `discovery_error` entry.
+ * the call is in flight are listed in `interval.uncertain`. If `run` fails or is interrupted, or its output is not a
+ * listing (not an array, or an entry that is not an object), it appends one `discovery_error` (no snapshot, so nothing is
+ * inferred as gone, and the spool is left undrained) and rejects with the error.
  */
 export function takeSnapshot(opts: TakeSnapshotOptions): Promise<TakeSnapshotResult>;
 
@@ -657,7 +666,9 @@ export interface ReducerSession {
   occ: Map<string, number>;
   /** Keyed by `<session key>:<prompt id>`. */
   tasks: Map<string, TaskRecord>;
+  /** The latest listing of the current generation's process, or null if no snapshot has listed it. Reset when a generation opens. */
   observed: SessionObservation | null;
+  /** True once a snapshot has listed the current generation. Only then can a full snapshot that lacks it report "presence lost". Reset when a generation opens. */
   in_prev_snapshot: boolean;
   last_prompt_mark: ClockMarker | null;
   gen: Generation;
@@ -703,6 +714,14 @@ export interface ReportBase {
   /** The Stop belonged to an older prompt or to a stale generation. */
   late: boolean;
   captured_seq: number;
+  /**
+   * How many credential-like values the hook replaced with `[REDACTED]` when it captured this Stop (never which). The count is
+   * for the whole hook payload, so it can include values that are not in `body`; when it is above 0 the stored `body` may
+   * not be exactly what the model wrote. 0 when the log entry carries no count.
+   */
+  redactions: number;
+  /** How many over-long strings the hook cut (only inside `tool_input` and `tool_response`, never in `body`). 0 when unknown. */
+  truncations: number;
 }
 
 /** A final message that satisfied the marker protocol. `verified` is always false: the marker is a declaration. */
@@ -861,6 +880,7 @@ export function replay(entries: Iterable<ReducerEntry>, registry: RegistryResolv
 /* ----------------------------------------------------------------------------------------------------------------- */
 
 export interface HookCommandOptions {
+  /** Required. Selects the command form (`win` is PowerShell, anything else is POSIX) and is written as `--env`. */
   env: EnvId;
   /**
    * Absolute path of the executable that runs the capture script: node, or with `runAsNode` the application's own
@@ -871,9 +891,9 @@ export interface HookCommandOptions {
   capture: string;
   spool: string;
   registry: string;
-  /** Names this registration. Two registrations must use different ids. */
+  /** Names this registration. Two registrations must use different ids. A token: see {@link hookCommand}. */
   handler: string;
-  /** The hook event the command is registered for. */
+  /** The hook event the command is registered for. A token: see {@link hookCommand}. */
   event: string;
   /**
    * Set `ELECTRON_RUN_AS_NODE=1` for this one invocation so an Electron executable acts as Node. POSIX and WSL:
@@ -903,9 +923,15 @@ export interface BuildSettingsOptions extends Omit<HookCommandOptions, 'handler'
 }
 
 /**
- * One hook command line. Throws if a field is missing or if a path contains a character that is unsafe inside the shell
- * string (a double quote, `$`, a backtick or a line break): such a hook is refused rather than written broken. The four
- * paths are quoted; `handler`, `event` and the environment id are not quoted or checked, so keep them plain identifiers.
+ * One hook command line. Throws if a field is missing (`env` included) or if a path contains a character that is unsafe
+ * inside the shell string (a double quote, `$`, a backtick or a line break): such a hook is refused rather than written
+ * broken. The four paths are always quoted.
+ *
+ * `handler`, `event` and `env` are tokens: they are refused if they contain a quote of any kind (also the typographic
+ * ones), a backtick, `$`, a control character or a line break. A token made only of letters, digits and `_ . : + = % @ / -`
+ * is written as it is (so are `,` in a POSIX shell and `\` in PowerShell; PowerShell quotes a leading `@` and the lone
+ * `--%`), which gives the usual ids the same line as always. Anything else is put in double quotes, correctly for the
+ * form: `wsl:My Distro` becomes `"wsl:My Distro"`. In PowerShell a token that needs quotes must not end in a backslash.
  */
 export function hookCommand(opts: HookCommandOptions): HookCommandDefinition;
 /** User-level `settings.json` hooks for all nine events. */

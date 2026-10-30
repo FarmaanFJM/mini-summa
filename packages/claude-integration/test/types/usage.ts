@@ -147,10 +147,15 @@ export function reportExample(reports: Iterable<Report>, candidates: Iterable<Ca
     const neverVerified: false = r.verified;
     const status: 'complete' | 'partial' | 'blocked' = r.declared_status;
     out.push(`${r.report_id} ${r.source} ${status} ${r.task_title} ${r.body.length} ${r.late} ${neverVerified} ${r.has_heading}`);
+    const hidden: number = r.redactions; // credential-like values the hook replaced when it captured this Stop
+    const cut: number = r.truncations;
+    // @ts-expect-error the counts are numbers, not text
+    const notNumber: string = r.redactions;
+    out.push(`${hidden} credential-like strings were hidden, ${cut} cut ${String(notNumber)}`);
     // @ts-expect-error a marker is a declaration; nothing in the types lets it become verified
     r.verified = true;
   }
-  for (const k of candidates) out.push(`${k.candidate_id} ${k.reason} ${k.declared_status ?? 'none'} ${k.task_title ?? 'none'} ${k.promoted}`);
+  for (const k of candidates) out.push(`${k.candidate_id} ${k.reason} ${k.declared_status ?? 'none'} ${k.task_title ?? 'none'} ${k.promoted} ${k.redactions} ${k.truncations}`);
   return out;
 }
 
@@ -174,7 +179,7 @@ export function storeExample(dir: string, spool: string): { counts: SpoolIngestR
   const fresh: DerivedEvent[] = store.persist(reducer);
   const promoted = store.promote('abc');
   const status: 'user_promoted' = promoted.source;
-  void [status, store.torn, store.dir, store.rawPath, store.derivedPath, store.transportIds.has('x'), store.announced.size, store.loadRaw().length];
+  void [status, promoted.redactions, promoted.truncations, store.torn, store.dir, store.rawPath, store.derivedPath, store.transportIds.has('x'), store.announced.size, store.loadRaw().length];
   return { counts, fresh, raw: store.raw };
 }
 
@@ -241,6 +246,9 @@ export const spoolTid: string = tidOfSpoolName('00000000000000001000-abc.json');
 
 const base = { env: 'win' as const, node: 'C:\\Program Files\\MiniSumma\\MiniSumma.exe', capture: 'C:\\x\\capture.mjs', spool: 'C:\\x\\spool', registry: 'C:\\x\\registry.json' };
 export const hook = hookCommand({ ...base, handler: 'h1', event: 'Stop', runAsNode: true });
+export const quotedEnv = hookCommand({ ...base, env: 'wsl:My Distro', handler: 'h1', event: 'Stop' }); // "wsl:My Distro" is quoted for the shell
+// @ts-expect-error env is required: it used to be written as the text "undefined"
+hookCommand({ node: base.node, capture: base.capture, spool: base.spool, registry: base.registry, handler: 'h1', event: 'Stop' });
 export const hookShell: 'powershell' | undefined = hook.shell;
 export const hookText: string = `${hook.type} ${hook.timeout} ${hook.command}`;
 export const settings = buildSettings({ ...base, env: 'posix', node: '/usr/bin/node', handlers: ['h1', 'h2'], runAsNode: false });

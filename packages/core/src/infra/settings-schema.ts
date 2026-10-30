@@ -29,7 +29,7 @@ const int = (min: number, max: number): Leaf => ({ t: 'num', min, max, int: true
 const oneOf = (...values: string[]): Leaf => ({ t: 'enum', values });
 
 export const SETTINGS_SPEC: SettingsSpec<Settings> = {
-  chatgpt: { mode: oneOf('embedded', 'external'), externalBrowser: oneOf('default', 'extension'), pasteAssist: bool },
+  chatgpt: { mode: oneOf('embedded', 'external'), externalBrowser: oneOf('default', 'extension') },
   layout: {
     orientation: oneOf('auto', 'landscape', 'portrait'),
     landscapeRatio: num(0.15, 0.85),
