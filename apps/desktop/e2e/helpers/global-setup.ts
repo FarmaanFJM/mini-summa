@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
-import { APP_DIR, APP_DIR_ENV, META_FILE, REPO_ROOT, RESULTS_DIR } from './env.ts';
+import { APP_DIR, APP_DIR_ENV, HISTORY_FILE, META_FILE, REPO_ROOT, RESULTS_DIR } from './env.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -15,6 +15,28 @@ function run(label: string, command: string, args: string[], cwd: string): void 
     const tail = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.split('\n').slice(-40).join('\n');
     throw new Error(`${label} failed (exit ${result.status}). A build can fail while somebody else is editing the sources; look at the output before blaming the tests.\n${tail}`);
   }
+}
+
+/** Best effort: which source the run was built from. Reading the repository's state never changes it. */
+function sourceState(): { commit: string | null; uncommittedChanges: boolean | null } {
+  const git = (args: string[]) => spawnSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' });
+  const head = git(['rev-parse', '--short', 'HEAD']);
+  const status = git(['status', '--porcelain', '--untracked-files=no']);
+  return {
+    commit: head.status === 0 ? head.stdout.trim() : null,
+    uncommittedChanges: status.status === 0 ? status.stdout.trim().length > 0 : null,
+  };
+}
+
+/** What the display is: the suite is meant to run under Xvfb, and the report says so only when that is what it found. */
+function displayServer(): string {
+  if (process.platform !== 'linux') return process.platform;
+  const display = process.env.DISPLAY ?? '';
+  const list = spawnSync('ps', ['-eo', 'args'], { encoding: 'utf8' });
+  const line = (list.stdout ?? '').split('\n').find((l) => /(^|\/)Xvfb(\s|$)/.test(l.trim().split(/\s+/)[0] ?? '') && l.trim().split(/\s+/)[1] === display);
+  if (!line) return `X display ${display} (server not identified as Xvfb)`;
+  const screen = /-screen\s+\d+\s+(\d+x\d+x\d+)/.exec(line)?.[1];
+  return `Xvfb ${display}${screen ? ` (${screen})` : ''}`;
 }
 
 /**
@@ -39,8 +61,11 @@ export default async function setup(): Promise<() => Promise<void>> {
   if (process.platform === 'linux' && !process.env.DISPLAY) {
     throw new Error('No DISPLAY. The acceptance suite drives a real Electron window: run it under Xvfb, for example  xvfb-run -a npm run e2e');
   }
-  fs.rmSync(RESULTS_DIR, { recursive: true, force: true });
+  // A fresh results directory for every run; only the log of earlier runs (written by e2e/run.mjs) is kept.
   fs.mkdirSync(RESULTS_DIR, { recursive: true });
+  for (const entry of fs.readdirSync(RESULTS_DIR)) {
+    if (path.join(RESULTS_DIR, entry) !== HISTORY_FILE) fs.rmSync(path.join(RESULTS_DIR, entry), { recursive: true, force: true });
+  }
 
   const preset = process.env[APP_DIR_ENV];
   const built = preset ? null : buildPrivateApp();
@@ -58,6 +83,8 @@ export default async function setup(): Promise<() => Promise<void>> {
     electron: electronPackage.version,
     playwright: playwrightPackage.version,
     display: process.env.DISPLAY ?? null,
+    displayServer: displayServer(),
+    source: sourceState(),
     appBuild: preset ? `reused ${appDir}` : 'built for this run',
     runningAsRoot: typeof process.getuid === 'function' && process.getuid() === 0,
   }, null, 2));

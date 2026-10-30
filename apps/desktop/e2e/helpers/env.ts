@@ -8,11 +8,11 @@ export const REPO_ROOT = path.resolve(APP_DIR, '../..');
 
 /** Everything a run produces (JSON results, evidence, failure artifacts). Git-ignored; docs/ACCEPTANCE.md is the committed summary. */
 export const RESULTS_DIR = path.join(E2E_DIR, 'results');
-export const EVIDENCE_FILE = path.join(RESULTS_DIR, 'evidence.jsonl');
-export const NOT_TESTED_FILE = path.join(RESULTS_DIR, 'not-tested.jsonl');
 export const META_FILE = path.join(RESULTS_DIR, 'meta.json');
 export const ARTIFACTS_DIR = path.join(RESULTS_DIR, 'artifacts');
 export const JSON_RESULTS_FILE = path.join(RESULTS_DIR, 'vitest-results.json');
+/** One line per finished run, appended by e2e/run.mjs. The only file in the results directory that survives into the next run. */
+export const HISTORY_FILE = path.join(RESULTS_DIR, 'runs.jsonl');
 
 /** The built app tree that the tests launch. Set by global setup (a private build), or by the caller to reuse a build. */
 export const APP_DIR_ENV = 'MINISUMMA_E2E_APP_DIR';

@@ -1,28 +1,125 @@
-[
-  { "id": "A01", "title": "Mini-Summa launches successfully" },
-  { "id": "A02", "title": "A new project can be registered" },
-  { "id": "A03", "title": "Its repository directory can be selected" },
-  { "id": "A04", "title": "Its ChatGPT conversation URL can be configured" },
-  { "id": "A05", "title": "The linked existing conversation can be opened" },
-  { "id": "A06", "title": "Claude Code launches in the correct directory" },
-  { "id": "A07", "title": "Terminal input and output work" },
-  { "id": "A08", "title": "Terminal resize works" },
-  { "id": "A09", "title": "Switching projects does not terminate unrelated sessions" },
-  { "id": "A10", "title": "Multiple projects can be active" },
-  { "id": "A11", "title": "Multiple sessions can belong to one project" },
-  { "id": "A12", "title": "Portrait layout works" },
-  { "id": "A13", "title": "Landscape layout works" },
-  { "id": "A14", "title": "Pane resizing works (draggable divider; proportions persist)" },
-  { "id": "A15", "title": "Claude activity appears in the feed" },
-  { "id": "A16", "title": "A completion report can be captured" },
-  { "id": "A17", "title": "The report remains linked to the correct project" },
-  { "id": "A18", "title": "The report can be copied in full" },
-  { "id": "A19", "title": "The correct ChatGPT conversation can be opened for handoff" },
-  { "id": "A20", "title": "A report cannot be accidentally routed to another project's mapped conversation" },
-  { "id": "A21", "title": "Desktop notifications work" },
-  { "id": "A22", "title": "Project and session records persist after restart" },
-  { "id": "A23", "title": "Pending reports persist after restart" },
-  { "id": "A24", "title": "Hook installation is permission-gated" },
-  { "id": "A25", "title": "Runtime secrets remain outside the repository" },
-  { "id": "CRIT", "title": "Critical cross-project scenario: a report from A is handed off to A's conversation while B is selected" }
-]
+{
+  "behaviours": [
+    {
+      "id": "A01",
+      "title": "Mini-Summa launches successfully"
+    },
+    {
+      "id": "A02",
+      "title": "A new project can be registered"
+    },
+    {
+      "id": "A03",
+      "title": "Its repository directory can be selected"
+    },
+    {
+      "id": "A04",
+      "title": "Its ChatGPT conversation URL can be configured"
+    },
+    {
+      "id": "A05",
+      "title": "The linked existing conversation can be opened"
+    },
+    {
+      "id": "A06",
+      "title": "Claude Code launches in the correct directory"
+    },
+    {
+      "id": "A07",
+      "title": "Terminal input and output work"
+    },
+    {
+      "id": "A08",
+      "title": "Terminal resize works"
+    },
+    {
+      "id": "A09",
+      "title": "Switching projects does not terminate unrelated sessions"
+    },
+    {
+      "id": "A10",
+      "title": "Multiple projects can be active"
+    },
+    {
+      "id": "A11",
+      "title": "Multiple sessions can belong to one project"
+    },
+    {
+      "id": "A12",
+      "title": "Portrait layout works"
+    },
+    {
+      "id": "A13",
+      "title": "Landscape layout works"
+    },
+    {
+      "id": "A14",
+      "title": "Pane resizing works (draggable divider; proportions persist)"
+    },
+    {
+      "id": "A15",
+      "title": "Claude activity appears in the feed"
+    },
+    {
+      "id": "A16",
+      "title": "A completion report can be captured"
+    },
+    {
+      "id": "A17",
+      "title": "The report remains linked to the correct project"
+    },
+    {
+      "id": "A18",
+      "title": "The report can be copied in full"
+    },
+    {
+      "id": "A19",
+      "title": "The correct ChatGPT conversation can be opened for handoff"
+    },
+    {
+      "id": "A20",
+      "title": "A report cannot be accidentally routed to another project's mapped conversation"
+    },
+    {
+      "id": "A21",
+      "title": "Desktop notifications work"
+    },
+    {
+      "id": "A22",
+      "title": "Project and session records persist after restart"
+    },
+    {
+      "id": "A23",
+      "title": "Pending reports persist after restart"
+    },
+    {
+      "id": "A24",
+      "title": "Hook installation is permission-gated"
+    },
+    {
+      "id": "A25",
+      "title": "Runtime secrets remain outside the repository"
+    },
+    {
+      "id": "CRIT",
+      "title": "Critical cross-project scenario: a report from A is handed off to A's conversation while B is selected"
+    }
+  ],
+  "extras": [
+    {
+      "id": "X01",
+      "title": "The Handoff card follows the delivery after \"Copy and open\" and \"I sent it\"",
+      "why": "Regression check for a defect this suite found: the core's event bus numbered a nested event with the newer sequence number, the window dropped it as stale, and the Handoff card stayed on its first state while the queue and the API had moved on."
+    },
+    {
+      "id": "X02",
+      "title": "The window reopens on the project that was selected when it was closed",
+      "why": "Regression check for a defect this suite found: the core listened on a random port, so every start had a new web origin and the window lost everything it keeps in localStorage."
+    },
+    {
+      "id": "X03",
+      "title": "A session that ended says why in words, not as an internal code",
+      "why": "Regression check for a defect this suite found: the notice under a finished session printed the terminal manager's internal code (\"exited\", \"app_exit\") instead of a sentence."
+    }
+  ]
+}
