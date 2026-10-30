@@ -11,8 +11,8 @@ export function isAwaitingHandoff(report: ReportSummary): boolean {
   return report.delivery === null ? true : HANDOFF_PENDING.has(report.delivery.state);
 }
 
-/** A session that needs the person: permission, input, an error, a lost presence or an abnormal end (not a plain report). */
-export const needsAttention = (session: SessionView): boolean => session.attention !== null && session.attention.kind !== 'report';
+/** A session that needs the person: permission, input, an error, a lost presence or an abnormal end (not a plain report). A session whose terminal went on as another one (/clear, /resume) is history, not an abnormal end. */
+export const needsAttention = (session: SessionView): boolean => session.attention !== null && session.attention.kind !== 'report' && !session.replacedBy;
 
 export const isLiveSession = (session: SessionView): boolean => session.availability === 'live';
 

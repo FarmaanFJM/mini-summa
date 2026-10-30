@@ -22,6 +22,8 @@ export interface UiState extends TabModel {
   terminalFocus: { key: SessionKey; nonce: number } | null;
   /** Managed terminals that are still starting, with the moment each was first seen so. Drives the "answer in the terminal" hint. */
   startingSince: Record<string, StartingMark>;
+  /** Sessions the person opened on purpose as history (they were replaced inside their terminal). Their tab does not move on to the successor. */
+  history: SessionKey[];
 }
 
 export interface UiActions {
@@ -34,6 +36,8 @@ export interface UiActions {
   openProjectDialog(state: ProjectDialogState): void;
   closeProjectDialog(): void;
   focusTerminal(key: SessionKey): void;
+  /** Remember that the person wants this replaced session as it is. */
+  keepHistory(key: SessionKey): void;
 }
 
 export type UiStore = StoreApi<UiState & UiActions>;
@@ -60,6 +64,7 @@ export function createUiStore(now: () => number = () => Date.now()): UiStore { /
     projectDialog: null,
     terminalFocus: null,
     startingSince: {},
+    history: [],
     noteSessions(sessions) {
       const current = get();
       const next = withAutoTabs({ openTabs: current.openTabs, dismissed: current.dismissed }, sessions);
@@ -73,5 +78,6 @@ export function createUiStore(now: () => number = () => Date.now()): UiStore { /
     openProjectDialog(state) { set({ projectDialog: state }); },
     closeProjectDialog() { set({ projectDialog: null }); },
     focusTerminal(key) { set((s) => ({ terminalFocus: { key, nonce: (s.terminalFocus?.nonce ?? 0) + 1 } })); },
+    keepHistory(key) { if (!get().history.includes(key)) set((s) => ({ history: [...s.history, key] })); },
   }));
 }

@@ -3,10 +3,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  directive, FAKE_CLAUDE_SCRIPT, readHookRuns, readLiveFiles, readReceived, readTerminalSize,
+  directive, FAKE_CLAUDE_SCRIPT, readHookRuns, readLiveFiles, readReceived, readTerminalSize, typedCommand,
 } from '../../../../packages/core/src/testing/fake-claude/index.ts';
 
-export { directive, readHookRuns, readLiveFiles, readReceived, readTerminalSize };
+export { directive, readHookRuns, readLiveFiles, readReceived, readTerminalSize, typedCommand };
 
 /**
  * The `claude` that MINISUMMA_CLAUDE_BIN points at: a shell wrapper that runs the fake with its state directory. The node

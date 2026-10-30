@@ -12,7 +12,7 @@ import { InputBanner, StateDot } from './sessionParts';
 import { pickSelectedTab, selectionAfterClose, visibleTabs } from './tabs';
 import { TerminalSlot } from './TerminalSlot';
 import { useSessionActions } from './useSessionActions';
-import { envLabel } from '@minisumma/shared';
+import { envLabel, shortSessionId } from '@minisumma/shared';
 
 export interface ClaudePaneProps {
   project: Project;
@@ -106,9 +106,16 @@ export function ClaudePane({ project, visible, maximized, onToggleMaximize }: Cl
     ] : []),
   ];
 
+  // Sessions whose terminal went on as another session (/clear, /resume inside it): ended history, newest first.
+  const replaced = sessions
+    .filter((s) => s.origin === 'managed' && s.replacedBy && s.projectId === project.id)
+    .sort((a, b) => (b.lastActivityAt ?? b.startedAt ?? '').localeCompare(a.lastActivityAt ?? a.startedAt ?? ''))
+    .slice(0, 10);
+
   const sessionItems: MenuEntry[] = [
     ...observedGroup('In this project', observed.filter((s) => s.projectId === project.id), actions.show),
     ...observedGroup('Not assigned to a project', observed.filter((s) => s.projectId === null), actions.show),
+    ...historyGroup('Replaced inside their terminal', replaced, actions.showHistory),
   ];
 
   const active = visible && selected !== null && selected.origin === 'managed' && selected.availability === 'live';
@@ -200,6 +207,18 @@ function observedGroup(heading: string, list: SessionView[], show: (key: Session
     { type: 'heading', label: heading },
     ...list.map((s): MenuEntry => ({
       label: `${shortId(s)}, ${ORIGIN_LABEL[s.origin]}, ${s.stateLabel}`,
+      onSelect: () => show(s.key),
+    })),
+  ];
+}
+
+/** Sessions that ended because their terminal went on as another session: kept as history, opened on request. */
+function historyGroup(heading: string, list: SessionView[], show: (key: SessionKey) => void): MenuEntry[] {
+  if (list.length === 0) return [];
+  return [
+    { type: 'heading', label: heading },
+    ...list.map((s): MenuEntry => ({
+      label: `${shortId(s)}, ${ORIGIN_LABEL[s.origin]}, ${s.stateLabel}, went on as ${shortSessionId(s.replacedBy ?? '')}`,
       onSelect: () => show(s.key),
     })),
   ];

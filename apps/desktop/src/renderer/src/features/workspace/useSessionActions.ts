@@ -16,6 +16,8 @@ export interface SessionActions {
   start(options: StartOptions): Promise<SessionView | null>;
   /** Make an existing session the visible tab. */
   show(key: SessionKey, opts?: { focus?: boolean }): void;
+  /** Open a session that was replaced inside its terminal, as the history it is: its tab stays, it does not move on to its successor. */
+  showHistory(key: SessionKey): void;
   /** Hide a tab. The session itself keeps running. */
   close(key: SessionKey, selectedAfter: SessionKey | null): void;
 }
@@ -32,6 +34,11 @@ export function useSessionActions(project: Project): SessionActions {
     route.selectSession(project.id, key);
     if (opts?.focus !== false) ui.getState().focusTerminal(key);
   }, [project.id, route, ui]);
+
+  const showHistory = useCallback((key: SessionKey) => {
+    ui.getState().keepHistory(key);
+    show(key, { focus: false });
+  }, [show, ui]);
 
   const start = useCallback(async (options: StartOptions): Promise<SessionView | null> => {
     setStarting(true);
@@ -62,5 +69,5 @@ export function useSessionActions(project: Project): SessionActions {
     route.selectSession(project.id, selectedAfter);
   }, [project.id, route, ui]);
 
-  return { starting, start, show, close };
+  return { starting, start, show, showHistory, close };
 }

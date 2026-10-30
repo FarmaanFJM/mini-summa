@@ -69,7 +69,18 @@ import { SidebarContent } from '../shell/SidebarSlot';
 `canOfferTyping(session)` (`features/workspace/sessionModel.ts`) says whether Mini-Summa may offer to type for the person (send a
 prompt, answer a permission request). It is false for observed sessions, sessions that are not running, and a terminal that is still
 starting (state `unknown`, labelled "Starting"): Claude Code's trust dialog defaults to "No, exit", so a blind Enter can end the session.
-What the person types themselves in the terminal is never held back.
+What the person types themselves in the terminal is never held back. The same goes for a running terminal whose conversation was
+replaced (/clear, /resume) while the new session is not identified (`isReplacedUnidentified`: the view is live with a `termination`):
+`noticeFor` shows the core's reason, `describeInputTarget` says `replaced`, and nothing offers to type for the person.
+
+### A terminal that goes on as another session
+
+When Claude replaces the conversation inside a managed terminal, the core keeps the terminal managed under a NEW session key and the old
+session becomes ended history that names its successor (`SessionView.replacedBy`). `app/followSessions.ts` (started by the runtime) moves
+the old session's tab to the new one in place (`replaceTab`), moves the project's remembered choice (so the core's `ui` copy and a restart
+follow), and passes the keyboard on if the person was typing. The old session is listed in the Sessions menu ("Replaced inside their
+terminal"); opening it there keeps it open as history (`ui.keepHistory`). Pure rules: `successorOf`, `replacementMoves` in
+`features/workspace/tabs.ts`.
 
 ## Tests
 

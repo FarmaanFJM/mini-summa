@@ -8,15 +8,15 @@
 
 | | |
 | --- | --- |
-| Date | 2026-10-30 20:21 UTC |
+| Date | 2026-10-30 20:57 UTC |
 | Platform | Linux 6.18.44-fc-v185 x64 under Xvfb :99 (1280x1024x24), as root (Electron is started with --no-sandbox, which Playwright adds for root) |
 | Electron | 45.1.0 (Chromium inside it; Node v22.22.0 runs the tests; Playwright 1.64.1 drives the window) |
-| Source | commit fd557c7 |
+| Source | commit 793a039 plus uncommitted changes (the run tested the working tree, not the commit alone) |
 | App build | built for this run: `electron-vite build` into a private temporary directory, plus the hook bundle; the run launches that build, never `apps/desktop/out` |
-| Duration | 2 min 51 s for the whole run (build, tests, clean-up); the tests themselves took 2 min 41 s added together |
+| Duration | 3 min 03 s for the whole run (build, tests, clean-up); the tests themselves took 2 min 52 s added together |
 | Behaviours (26: A01 to A25 and the critical scenario) | **25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED** |
-| Extra checks (not among the 25) | 5 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED |
-| Tests executed | 37 in all: 36 passed, 0 failed, 1 not tested |
+| Extra checks (not among the 25) | 6 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED |
+| Tests executed | 38 in all: 37 passed, 0 failed, 1 not tested |
 
 ## Results
 
@@ -62,6 +62,7 @@ Not among the 25 behaviours. Each guards a defect that this suite found in the p
 | X03 | A session that ended says why in words, not as an internal code | PASS | — |
 | X04 | The test sandbox is closed: the app reaches the chatgpt.com stand-in and no other host | PASS | — |
 | X05 | A report is handed over and confirmed from the workspace, without going back to Reports | PASS | — |
+| X06 | After /clear inside a managed terminal the Claude pane follows to the new session, and a restart reopens on it | PASS | — |
 
 ## What was observed
 
@@ -73,11 +74,11 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A02. A new project can be registered (PASS)
 
-- empty form refused ("Give the project a name."), nothing created; "Alpha" created through the dialog, selected in the sidebar, stored with id prj_a7c77c978ca65154 and root /tmp/ms-e2e-9jcHVp/repos/Alpha
+- empty form refused ("Give the project a name."), nothing created; "Alpha" created through the dialog, selected in the sidebar, stored with id prj_36cb11d660594bf7 and root /tmp/ms-e2e-ztcgY0/repos/Alpha
 
 ### A03. Its repository directory can be selected (PASS)
 
-- Browse asked the native picker ("Choose the repository folder", openDirectory+createDirectory); a cancelled pick changed nothing; the picked folder /tmp/ms-e2e-13Ld91/repos/Picked was listed, a duplicate was refused, and the project was stored with exactly that root
+- Browse asked the native picker ("Choose the repository folder", openDirectory+createDirectory); a cancelled pick changed nothing; the picked folder /tmp/ms-e2e-1KOuuJ/repos/Picked was listed, a duplicate was refused, and the project was stored with exactly that root
 
 ### A04. Its ChatGPT conversation URL can be configured (PASS)
 
@@ -89,7 +90,7 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A06. Claude Code launches in the correct directory (PASS)
 
-- project folder "/tmp/ms-e2e-yOpNr6/repos/My App (v2)" (space and brackets); core cwd, /proc/22710/cwd, the process's own registration and the banner on screen all name that folder; session 8e0d1f7c is managed and bound to the project
+- project folder "/tmp/ms-e2e-x0Rpvd/repos/My App (v2)" (space and brackets); core cwd, /proc/3417/cwd, the process's own registration and the banner on screen all name that folder; session ea4fa28d is managed and bound to the project
 
 ### A07. Terminal input and output work (PASS)
 
@@ -101,15 +102,15 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A09. Switching projects does not terminate unrelated sessions (PASS)
 
-- Alpha's session (pid 23489) stayed live, same pid and generation, while Beta was selected and used; output typed into Alpha during that time arrived; switching back showed one terminal with both the earlier and the background text; Beta's screen never showed Alpha's text
+- Alpha's session (pid 3915) stayed live, same pid and generation, while Beta was selected and used; output typed into Alpha during that time arrived; switching back showed one terminal with both the earlier and the background text; Beta's screen never showed Alpha's text
 
 ### A10. Multiple projects can be active (PASS)
 
-- three projects, three live managed sessions (pids 23839, 24005, 24107) in three folders at once; the sidebar showed "1 live session" on each; each project showed its own terminal and received only its own typed message
+- three projects, three live managed sessions (pids 4148, 4168, 4188) in three folders at once; the sidebar showed "1 live session" on each; each project showed its own terminal and received only its own typed message
 
 ### A11. Multiple sessions can belong to one project (PASS)
 
-- two managed sessions of one project (pids 24777 and 24819) in the same folder, two tabs; typed text reached only the selected tab's process; each tab showed its own session id; closing a tab left its process running
+- two managed sessions of one project (pids 4398 and 4418) in the same folder, two tabs; typed text reached only the selected tab's process; each tab showed its own session id; closing a tab left its process running
 
 ### A12. Portrait layout works (PASS)
 
@@ -125,15 +126,15 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A15. Claude activity appears in the feed (PASS)
 
-- with the Activity view open: "Claude session started", "Needs permission", "Needs your input", "Error in" and "Report ready: Ship the importer" appeared for Alpha / 62cd387c as Claude did each thing (kinds report_ready, error, turn_ended, needs_input, needs_permission, session_started); unread count shown in the sidebar; clicking the report entry opened the report
+- with the Activity view open: "Claude session started", "Needs permission", "Needs your input", "Error in" and "Report ready: Ship the importer" appeared for Alpha / 7191ac21 as Claude did each thing (kinds report_ready, error, turn_ended, needs_input, needs_permission, session_started); unread count shown in the sidebar; clicking the report entry opened the report
 
 ### A16. A completion report can be captured (PASS)
 
-- typing "Wrap up the storage layer ..." in the terminal produced one report (marker, declared complete, session efd3c488); a turn without the marker made no report but was kept as an "other message"; partial and blocked were captured as declared; the queue row and the report page show the declaration, the project and the full text
+- typing "Wrap up the storage layer ..." in the terminal produced one report (marker, declared complete, session 46ac13b7); a turn without the marker made no report but was kept as an "other message"; partial and blocked were captured as declared; the queue row and the report page show the declaration, the project and the full text
 
 ### A17. The report remains linked to the correct project (PASS)
 
-- Alpha's Claude finished while Beta was selected: the report is stored under Alpha (project id prj_3a1d1fc5) and Alpha's session; Beta has none; the sidebar counted it on Alpha's row only; the report page's project and session links lead to Alpha; filtering by Beta shows nothing; after renaming Alpha the report still belongs to it (same project id) and its project button leads there (the report keeps the name it was captured under: "Alpha")
+- Alpha's Claude finished while Beta was selected: the report is stored under Alpha (project id prj_d0ab8b5d) and Alpha's session; Beta has none; the sidebar counted it on Alpha's row only; the report page's project and session links lead to Alpha; filtering by Beta shows nothing; after renaming Alpha the report still belongs to it (same project id) and its project button leads there (the report keeps the name it was captured under: "Alpha")
 
 ### A18. The report can be copied in full (PASS)
 
@@ -165,11 +166,11 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A24. Hook installation is permission-gated (PASS)
 
-- the dialog named /tmp/ms-e2e-2OyRYP/home/.claude/settings.json and listed 95 added lines, identical to the core's plan, with no line removed; before agreement the button was disabled, a forced click on it and the Enter key changed nothing, and the file, byte for byte, and the backups folder were untouched (also after Cancel); a file edited while the dialog was open produced "nothing was written" and withdrew the agreement; after reading and agreeing again, hooks were added next to the person's own Stop and PreToolUse hooks, theme, permissions and model, with a backup equal to the old file; removal asked the same way and restored the file byte for byte
+- the dialog named /tmp/ms-e2e-SaPZFG/home/.claude/settings.json and listed 95 added lines, identical to the core's plan, with no line removed; before agreement the button was disabled, a forced click on it and the Enter key changed nothing, and the file, byte for byte, and the backups folder were untouched (also after Cancel); a file edited while the dialog was open produced "nothing was written" and withdrew the agreement; after reading and agreeing again, hooks were added next to the person's own Stop and PreToolUse hooks, theme, permissions and model, with a backup equal to the old file; removal asked the same way and restored the file byte for byte
 
 ### A25. Runtime secrets remain outside the repository (PASS)
 
-- data directory data (0700) holds the database (0600), spool, logs and managed settings, and the report text; neither the desktop token nor a device token (msv_...) is on disk in the clear anywhere in the sandbox (152 files scanned); the project's repository was unchanged (29 entries, no .claude or CLAUDE.md); 1104 files of this repository's work tree were scanned for the tokens and the report text: none; the app was launched with the repository as its working directory
+- data directory data (0700) holds the database (0600), spool, logs and managed settings, and the report text; neither the desktop token nor a device token (msv_...) is on disk in the clear anywhere in the sandbox (152 files scanned); the project's repository was unchanged (29 entries, no .claude or CLAUDE.md); 1112 files of this repository's work tree were scanned for the tokens and the report text: none; the app was launched with the repository as its working directory
 
 ### CRIT. Critical cross-project scenario: a report from A is handed off to A's conversation while B is selected (PASS)
 
@@ -186,7 +187,7 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 *Why this check exists:* Regression check for a defect this suite found: the core listened on a random port, so every start had a new web origin and the window lost everything it keeps in localStorage. The core still has to take another port when 47811 is busy, so the check runs twice: on the same origin, and with 47811 held by another listener for the second launch (a different origin), where the window must restore itself from what the core remembers.
 
 - *The window reopens on the project that was selected when it was closed*: the window reopened on Beta, as it was left, on the same origin (http://127.0.0.1:47811)
-- *The window reopens where it was left when the origin changed (the core had to take another port)*: the core could not take its preferred port 47811 for the second launch (a throw-away listener held it) and listened on 39583, so the window's origin changed (http://127.0.0.1:47811 -> http://127.0.0.1:39583) and the localStorage of the old origin could not carry anything over; the window still reopened on Beta, kept Alpha's second conversation (its pane loaded it, not the first one) and kept the setup checklist hidden; the state came from the core's settings (ui.route, ui.perProject, ui.setup)
+- *The window reopens where it was left when the origin changed (the core had to take another port)*: the core could not take its preferred port 47811 for the second launch (a throw-away listener held it) and listened on 41171, so the window's origin changed (http://127.0.0.1:47811 -> http://127.0.0.1:41171) and the localStorage of the old origin could not carry anything over; the window still reopened on Beta, kept Alpha's second conversation (its pane loaded it, not the first one) and kept the setup checklist hidden; the state came from the core's settings (ui.route, ui.perProject, ui.setup)
 
 ### X03. A session that ended says why in words, not as an internal code (PASS)
 
@@ -199,7 +200,7 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 *Why this check exists:* Not a product behaviour: it proves the suite's own promise that nothing a test does can reach a real host (other host names do not resolve, from either of the app's network sessions).
 
-- the app runs with host-resolver-rules "MAP chatgpt.com 127.0.0.1:37723, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost" and no proxy; 6 other host names (example.org, example.com, google.com, three openai.com names) all failed with net::ERR_NAME_NOT_RESOLVED from both of the app's network sessions, and none of the 12 attempts reached the stand-in; chatgpt.com answered with status 200 from the stand-in and was recorded as one GET. Host names only: an address typed as an IP number is not covered by host rules, and no test uses one
+- the app runs with host-resolver-rules "MAP chatgpt.com 127.0.0.1:44395, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost" and no proxy; 6 other host names (example.org, example.com, google.com, three openai.com names) all failed with net::ERR_NAME_NOT_RESOLVED from both of the app's network sessions, and none of the 12 attempts reached the stand-in; chatgpt.com answered with status 200 from the stand-in and was recorded as one GET. Host names only: an address typed as an IP number is not covered by host rules, and no test uses one
 
 ### X05. A report is handed over and confirmed from the workspace, without going back to Reports (PASS)
 
@@ -208,6 +209,12 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 - *A report is handed over and confirmed from the workspace, without going back to Reports*: Claude finished "Strip the legacy endpoints" while Alpha was open: a strip "Report ready: ..." appeared above the panes (Copy and open, Open report) and the native view moved below it (view 506x767 equals its slot); "Copy and open" in the strip left the whole message on the clipboard, loaded https://chatgpt.com/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa in the embedded view (the stand-in saw only that GET, the composer stayed empty) and the delivery became awaiting_user_send while the strip said "Waiting for you to send ... It is not marked as sent until you press I sent it."; "I sent it" (keyboard, Enter) made it user_confirmed_sent with one confirmed_sent event after the part_copied one, the strip disappeared, and the queue ("Review awaiting you") and the card ("You confirmed it was sent") agreed; the window never left the workspace until the person opened Reports to look
 - *The strip fits portrait and landscape, a collapsed sidebar, several reports and a very long title*: the strip kept the native view under it in landscape (strip 1348px wide with the sidebar collapsed), in portrait (69px tall, buttons under the text, no horizontal scrolling) and with a 123-character title (cut to two lines, whole in its tooltip and accessible name, "+1 more" for the other report); "Not sure" took the long report out of the strip and the other one took its place
 - *A long report is copied part by part from the strip, and "I sent it" comes after the last part*: a 20698-character report (made a report from an unmarked message) showed a strip with "Copy and open" and no prepared message (showing it prepared nothing); each press copied the next part exactly as the core holds it (2 parts, "Part k of 2 is on your clipboard", "k of 2 parts are copied"), "I sent it" appeared only after the last part, and after it the delivery was user_confirmed_sent
+
+### X06. After /clear inside a managed terminal the Claude pane follows to the new session, and a restart reopens on it (PASS)
+
+*Why this check exists:* Regression check for a known gap: when Claude replaces the conversation inside a running terminal (/clear, /resume) the core keeps the terminal managed under a new session id and the old session becomes history, but the window used to leave the person on the old, ended tab. This proves, in the real window with the fake Claude CLI, that the pane ends on the new session's tab, that it is the same terminal and typing still reaches the process, that the old session stays reachable as ended history, and that a restart reopens on the new session.
+
+- in a managed session 30a4dd39 the person typed /clear: the fake CLI ended it and started bb17a3d5 in the same process (pid 7431); the core kept the terminal managed (old session replacedBy bb17a3d5, new one live and managed), the Claude pane showed exactly one tab, the new session's, selected and not ended, with no "session ended" notice; the screen kept the earlier output and showed the new conversation; typing "after the clear" reached the new session (the old one received nothing more); the Sessions menu listed "30a4dd39, managed, Session ended, went on as bb17a3d5"; the core's settings remembered bb17a3d5 as the project's tab; after quitting and starting again on the same data directory the pane reopened on bb17a3d5 (ended, with Resume) and not on 30a4dd39
 
 ## Not tested
 
@@ -253,4 +260,5 @@ One line per `npm run e2e` that ran every test. Runs are recorded by `e2e/run.mj
 | 2026-10-30 18:04 UTC | 2 min 23 s | 25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED | 4 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED | 0 |
 | 2026-10-30 18:06 UTC | 2 min 27 s | 25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED | 4 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED | 0 |
 | 2026-10-30 20:10 UTC | 3 min 39 s | 24 PASS, 1 FAIL, 1 PARTIAL, 0 NOT TESTED | 4 PASS, 1 FAIL, 0 PARTIAL, 0 NOT TESTED | 1 |
-| 2026-10-30 20:21 UTC (this report) | 2 min 51 s | 25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED | 5 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED | 0 |
+| 2026-10-30 20:21 UTC | 2 min 51 s | 25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED | 5 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED | 0 |
+| 2026-10-30 20:57 UTC (this report) | 3 min 03 s | 25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED | 6 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED | 0 |

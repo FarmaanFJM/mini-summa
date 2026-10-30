@@ -52,7 +52,7 @@
 .ms-input__icon { vertical-align: -2px; color: var(--text-3); margin-right: 2px; }
 .ms-input__lead { color: var(--text-2); }
 .ms-input__target { color: var(--text); font-weight: 500; }
-.ms-input[data-kind="observed"] .ms-input__target, .ms-input[data-kind="not_running"] .ms-input__target, .ms-input[data-kind="paused"] .ms-input__target { color: var(--text-2); font-weight: 400; }
+.ms-input[data-kind="observed"] .ms-input__target, .ms-input[data-kind="not_running"] .ms-input__target, .ms-input[data-kind="paused"] .ms-input__target, .ms-input[data-kind="replaced"] .ms-input__target { color: var(--text-2); font-weight: 400; }
 .ms-input__state { display: inline-flex; align-items: center; gap: 7px; flex: none; color: var(--text-2); }
 
 .ms-claude__body { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--term-bg); position: relative; }

@@ -15,10 +15,11 @@ export const emptyTabs = (): TabModel => ({ openTabs: {}, dismissed: [] });
 
 /**
  * A managed session the person should see without asking: it is running, it just ended badly, or Mini-Summa lost its
- * terminal (after a restart, say) and the person has to decide what to do about it.
+ * terminal (after a restart, say) and the person has to decide what to do about it. Not one whose terminal went on as
+ * another session (/clear, /resume inside it): that session is history, and the tab belongs to its successor.
  */
 const deservesTab = (s: SessionView): boolean =>
-  s.origin === 'managed' && (s.availability === 'live' || s.availability === 'disconnected' || s.attention?.kind === 'abnormal_end' || s.attention?.kind === 'error');
+  s.origin === 'managed' && !s.replacedBy && (s.availability === 'live' || s.availability === 'disconnected' || s.attention?.kind === 'abnormal_end' || s.attention?.kind === 'error');
 
 /** Open a tab for every managed session worth showing (live, lost, or ended with an error) that has none yet and was not closed on purpose. */
 export function withAutoTabs(model: TabModel, sessions: readonly SessionView[]): TabModel {
@@ -98,4 +99,57 @@ export function newestSession(tabs: readonly SessionView[]): SessionView | undef
   let best: SessionView | undefined;
   for (const tab of tabs) if (best === undefined || (tab.startedAt ?? '') >= (best.startedAt ?? '')) best = tab;
   return best;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// A terminal that went on as another session
+
+/**
+ * The live managed session that owns the terminal of `key` now, following `replacedBy` through any number of /clear and
+ * /resume. Null when `key` was not replaced, when the next session is not (yet) known to this window, when it is not managed, or
+ * when the one at the end of the chain is not running: there is nothing to move to, and nothing is guessed.
+ */
+export function successorOf(key: SessionKey, sessions: readonly SessionView[]): SessionView | null {
+  const byKey = new Map(sessions.map((s) => [s.key, s]));
+  const seen = new Set<SessionKey>([key]);
+  let current = byKey.get(key);
+  while (current && current.origin === 'managed' && current.replacedBy) {
+    const next = byKey.get(current.replacedBy);
+    if (!next || next.origin !== 'managed' || seen.has(next.key)) return null;
+    seen.add(next.key);
+    if (!next.replacedBy) return next.availability === 'live' ? next : null;
+    current = next;
+  }
+  return null;
+}
+
+export interface TabMove { projectId: string; from: SessionKey; to: SessionKey }
+
+/**
+ * The tabs and remembered choices that must move on: every tab, and every remembered selection, of a managed session whose terminal
+ * went on as another live managed session of the same project. `kept` are sessions the person opened on purpose as history (from the
+ * Sessions menu): they stay where they are. A move is listed once per project and session.
+ */
+export function replacementMoves(
+  model: TabModel, chosen: Readonly<Record<string, SessionKey>>, sessions: readonly SessionView[], kept: readonly SessionKey[] = [],
+): TabMove[] {
+  const byKey = new Map(sessions.map((s) => [s.key, s]));
+  const moves: TabMove[] = [];
+  const seen = new Set<string>();
+  const consider = (projectId: string, key: SessionKey): void => {
+    if (kept.includes(key)) return;
+    const from = byKey.get(key);
+    if (!from || from.origin !== 'managed' || !from.replacedBy) return;
+    const to = successorOf(key, sessions);
+    if (!to) return;
+    // A session the person assigned to another project in the meantime is not this project's to move to.
+    if (from.projectId !== null && to.projectId !== null && from.projectId !== to.projectId) return;
+    const id = `${projectId}\u0000${key}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    moves.push({ projectId, from: key, to: to.key });
+  };
+  for (const [projectId, keys] of Object.entries(model.openTabs)) for (const key of keys) consider(projectId, key);
+  for (const [projectId, key] of Object.entries(chosen)) consider(projectId, key);
+  return moves;
 }

@@ -25,7 +25,22 @@ This page states exactly what Mini-Summa automates and what stays in your hands.
 6. **Notification.** You are told that a report is ready, and which project owns it.
 7. **One-click handoff.** *Copy and open* puts the message (or the next part) on the clipboard and opens or focuses the
    mapped conversation: the embedded ChatGPT view, or, in external-browser mode, the already-open tab if the optional
-   extension is installed, otherwise the default browser.
+   extension is installed, otherwise the default browser. The button is in the Reports queue and, for the project you are looking
+   at, in a **strip at the bottom of the workspace** ("Report ready: <task>"), so you can paste, send and press *I sent it* without
+   leaving ChatGPT and the terminal. After *Copy and open* the strip reads "Waiting for you to send: <task> to <conversation>.
+   It is not marked as sent until you press I sent it." It shows the report that waits longest in the middle of a handoff first,
+   mentions how many others wait, and offers only the main button, *Copy again*, *Open conversation* and *Not sure*; discarding,
+   changing the destination and preparing long messages stay in the Reports queue.
+
+## When Claude does not write the marker
+
+The marker is an instruction Mini-Summa gives the session when it starts (through the SessionStart hook, only for folders that
+belong to a registered project), and a model can ignore an instruction. Measured with the real Claude Code CLI 2.1.314 on Linux, with
+natural prompts that did not mention the marker: the default model wrote it for 3 of 3 tasks and Haiku for 7 of 7 after the
+wording of the instruction was broadened, and none of the 4 plain questions that were not tasks got one
+(`npm run verify:protocol` repeats this against your own Claude). That is a small sample on one machine, not a guarantee. A
+final message without the marker is **not lost and not handed off**: it is stored and shown under *Other messages* in the
+Reports view, where you can still read it and decide yourself.
 
 ## What stays manual, on purpose
 

@@ -130,6 +130,11 @@
       "id": "X05",
       "title": "A report is handed over and confirmed from the workspace, without going back to Reports",
       "why": "Regression check for a known imperfection: after \"Copy and open\" the report card was out of sight, and \"I sent it\" was only on the Reports screen. A strip above the two panes now carries both buttons for the selected project; this proves the whole loop in the real window, that the native ChatGPT view stays under the strip in every layout, and that nothing says \"sent\" before the person does."
+    },
+    {
+      "id": "X06",
+      "title": "After /clear inside a managed terminal the Claude pane follows to the new session, and a restart reopens on it",
+      "why": "Regression check for a known gap: when Claude replaces the conversation inside a running terminal (/clear, /resume) the core keeps the terminal managed under a new session id and the old session becomes history, but the window used to leave the person on the old, ended tab. This proves, in the real window with the fake Claude CLI, that the pane ends on the new session's tab, that it is the same terminal and typing still reaches the process, that the old session stays reachable as ended history, and that a restart reopens on the new session."
     }
   ]
 }

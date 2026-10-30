@@ -88,11 +88,19 @@ These are product rules the code enforces, and tests pin each of them.
   titles, tool input or paths. The project name is visible to Google (Firebase Cloud Messaging) and on a locked phone
   screen. If a project's name is itself sensitive, rename the project or switch off phone push for it in the project's
   notification settings; the phone still shows the event the next time you open the app.
+* **The window's own state** (selected project, open session tabs, divider positions, setup dismissals) is kept by the core in
+  its database so that it survives a restart and a change of port. It holds ids and layout only (project and session ids,
+  divider positions, dismissals), never tokens or report text. Like the rest of the settings it can be read with the read scope
+  (a paired phone has it) and can be changed only with the desktop token.
 * **Your own Firebase project.** Mini-Summa has no cloud service. The service-account key is stored in the data directory
   with owner-only permissions and is never logged or returned by the API.
 * **The phone app** keeps its token in the platform's secure storage (Android Keystore through `expo-secure-store`) and
   talks to your PC only. It refuses plain `http` to anything except loopback and the emulator's host address, so a real
-  phone always connects over the HTTPS address that Tailscale Serve provides.
+  phone always connects over the HTTPS address that Tailscale Serve provides. The built APK asks Android for 8 permissions
+  (camera for the pairing QR code, internet, vibration, notifications, and five that libraries need to receive push and check
+  the network) and 24 more that libraries declare (storage, overlay, microphone, start at boot, launcher badges, biometrics,
+  install referrer) are removed from the manifest; Android cloud backup and cleartext traffic are off. All of that was read
+  back from the built file, not from the configuration ([ANDROID.md](ANDROID.md), "Privacy and permissions").
 
 ## Claude Code hooks
 
@@ -105,7 +113,14 @@ These are product rules the code enforces, and tests pin each of them.
 * If `settings.json` is a symbolic link, the plan names both the link and its real target and warns first when the
   target is outside your Claude configuration folder or inside a Git working tree; a dangling link is refused.
 * The hook command is a short script that always exits 0 and never blocks Claude. It writes one file per event into the
-  spool atomically; the core reads it.
+  spool atomically; the core reads it. On Windows it is run by PowerShell with the application's own executable acting as
+  Node (`ELECTRON_RUN_AS_NODE` is set inside that one command, never in Claude's environment), and the call ends in
+  `| Write-Output` so that PowerShell waits for a GUI-subsystem program; whether Windows PowerShell does is unverified
+  ([audit/windows-desktop.md](audit/windows-desktop.md), W-11).
+* **A managed terminal follows its process, not a hook.** When Claude replaces the conversation inside a terminal Mini-Summa
+  started (`/clear`, `/resume`), the core moves its record to the new session id only when `claude agents --json` shows that
+  the same operating-system process now runs the new session. A hook event alone is never enough, because a hook payload
+  carries an id the sender chose; where the process ids cannot be compared the core leaves the record alone and says so.
 * No file is added to your repositories (no per-repository `CLAUDE.md`). The report protocol is delivered as session
   context by the hook, only for sessions whose folder belongs to a registered project.
 
@@ -124,7 +139,9 @@ These are product rules the code enforces, and tests pin each of them.
 ## What this does not defend against
 
 * **Malware or another process running as you.** It can read the database and the spool and can talk to the loopback API
-  if it learns the desktop token.
+  if it learns the desktop token. On Windows it can also read the ChatGPT sign-in cookies in
+  `%APPDATA%\Mini-Summa\Partitions\chatgpt`: the build's cookie-encryption switch is off, so they are not encrypted at rest
+  (audit item W-12; turning the switch on is a one-line change that was not made because it could not be tried on Windows).
 * **A stolen, unlocked phone that you marked trusted.** Revoke it from Settings > Devices. Keep "trusted" off unless you
   need it.
 * **A Claude session that lies.** The report marker is a declaration by the model, never proof that the work succeeded,
@@ -134,8 +151,9 @@ These are product rules the code enforces, and tests pin each of them.
   name that Windows could resolve in the current folder); PATH entries that are not absolute are ignored; a Claude launcher
   path with shell metacharacters is refused. These are covered by tests that simulate Windows, but they were never run on
   Windows. See [LIMITATIONS.md](LIMITATIONS.md).
-* **Code signing.** The Windows installer is not code-signed, so SmartScreen will warn. An Android APK, when you build one,
-  is signed with a key on your own machine and is meant for sideloading on your own phone.
+* **Code signing.** The Windows installer is not code-signed, so SmartScreen will warn. The Android APK is signed with a
+  throwaway key generated for the build and deleted afterwards (or with your own key, `MINISUMMA_KEYSTORE`); it is meant for
+  sideloading on your own phone, and Play Protect warns about an unknown developer.
 
 ## The independent security review
 

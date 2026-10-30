@@ -173,6 +173,44 @@ export class DemoServer {
     }
   }
 
+  /**
+   * What the core does when Claude replaces the conversation inside a managed terminal (/clear, /resume): the terminal (screen,
+   * scrollback, attached clients) goes on under a NEW session key; the old session becomes ended history and names its successor.
+   * `order` is which of the two views the window hears about first: the real core emits both in one pass, in either order.
+   * Returns the new session.
+   */
+  replaceConversation(oldKey: SessionKey, options: { newSessionId?: string; cause?: 'clear' | 'resume'; order?: 'old-first' | 'new-first'; successorLive?: boolean } = {}): SessionView {
+    const old = this.session(oldKey);
+    if (old.origin !== 'managed' || old.availability !== 'live') throw new ApiError(409, 'invalid_state', 'Only a running managed terminal can go on as another session.');
+    const sessionId = options.newSessionId ?? `${uid('c').slice(2)}-0000-4000-8000-${Math.random().toString(16).slice(2, 14).padEnd(12, '0')}`;
+    const newKey = `${old.env}|${sessionId}` as SessionKey;
+    const at = nowIso();
+    const next: SessionView = {
+      ...structuredClone(old), key: newKey, sessionId, state: 'waiting_for_you', stateLabel: 'Waiting for you', attention: null, termination: null,
+      resumable: false, startedAt: at, lastActivityAt: at, isProjectDefault: old.isProjectDefault, generation: 1,
+    };
+    delete next.replacedBy;
+    const cause = options.cause ?? 'clear';
+    const reason = cause === 'clear'
+      ? `The conversation was cleared with /clear. The same terminal went on as session ${sessionId.slice(0, 8)}; this session is kept as history.`
+      : `Another conversation was resumed in the same terminal (/resume). The terminal went on as session ${sessionId.slice(0, 8)}; this session is kept as history.`;
+    // The terminal moves with its screen and its clients; the old key keeps none.
+    const terminal = this.terminals.get(oldKey);
+    if (terminal) { this.terminals.delete(oldKey); this.terminals.set(newKey, terminal); }
+    for (const socket of this.transport.sockets) if (socket.attached.delete(oldKey)) socket.attached.add(newKey);
+    old.availability = 'resumable'; old.resumable = true; old.state = 'ended'; old.stateLabel = 'Session ended'; old.attention = null; old.pid = null;
+    old.termination = { kind: 'observed', reason, at };
+    old.terminal = old.terminal ? { ...old.terminal, exited: true } : null;
+    old.replacedBy = newKey;
+    old.isProjectDefault = false;
+    this.data.sessions.push(next);
+    const project = old.projectId ? this.data.projects.find((p) => p.id === old.projectId) : undefined;
+    if (project && project.defaultSessionKey === oldKey) { project.defaultSessionKey = newKey; this.touchProject(project); }
+    if (options.successorLive === false) { next.availability = 'resumable'; next.state = 'ended'; next.stateLabel = 'Session ended'; next.terminal = next.terminal ? { ...next.terminal, exited: true } : null; next.pid = null; }
+    if ((options.order ?? 'old-first') === 'old-first') { this.touchSession(old); this.touchSession(next); } else { this.touchSession(next); this.touchSession(old); }
+    return next;
+  }
+
   // ------------------------------------------------------------------------------------------ lookups
 
   private project(id: string): Project {

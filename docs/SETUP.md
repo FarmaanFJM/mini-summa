@@ -5,7 +5,8 @@ This is the desktop guide: install, start, register projects, map ChatGPT conver
 
 ## What you need
 
-* Windows 10 (21H2) or Windows 11, 64-bit. Mini-Summa runs without administrator rights.
+* Windows 10 (21H2) or Windows 11, 64-bit (the installer refuses anything older than Windows 10 version 1809). Mini-Summa runs
+  without administrator rights.
 * **Claude Code**, installed and logged in. Open PowerShell and run `claude --version`; if that prints a version you are
   ready. Claude Code on Windows needs Git for Windows. If you work inside WSL2, install Claude Code in the distribution too.
 * A **ChatGPT** account and at least one existing conversation for each project you want to connect.
@@ -26,10 +27,12 @@ npm install
 npm run dist:win
 ```
 
-The installer appears in `apps/desktop/release/` (`Mini-Summa-Setup-<version>.exe`). Run it: it installs for your user only,
-needs no administrator prompt and adds a Start Menu entry. The installer is **not code-signed**, so Windows SmartScreen shows
-"Windows protected your PC": choose **More info**, then **Run anyway**. (On Linux, `dist:win` needs `wine` and produces the
-same unsigned installer; it has not been installed on Windows from there. See [WINDOWS_VERIFICATION.md](WINDOWS_VERIFICATION.md).)
+The installer appears in `apps/desktop/release/` (`Mini-Summa-Setup-<version>.exe`). Run it: it installs for your user only
+(under `%LOCALAPPDATA%\Programs\Mini-Summa`), needs no administrator prompt, adds a Start Menu entry and registers the
+`minisumma://` link. The installer is **not code-signed**, so Windows SmartScreen shows "Windows protected your PC": choose
+**More info**, then **Run anyway**. **Neither the installer nor the application has been run on Windows yet**: the installer in this
+repository's status report was built on Linux with `wine`, which is also how `dist:win` works there. Building it on Windows is
+untried too. [WINDOWS_VERIFICATION.md](WINDOWS_VERIFICATION.md) is the checklist for the first run; start with its step 11.
 
 To run from source instead: `npm install`, then `npm run dev`. The desktop app starts its own local service; you never start a
 server yourself.
@@ -102,6 +105,9 @@ project's folder. Type in it as you would anywhere else.
 * Several sessions can run per project, and several projects can be active at once. Switching projects only changes what you see:
   no terminal is restarted. Quitting Mini-Summa ends the terminals it owns; the sessions stay in the list as **resumable** and
   **Resume** continues them with `claude --resume`.
+* Closing the window with the X **quits** Mini-Summa; there is no run-in-the-tray mode. If terminals are running it asks once
+  ("Quit and end terminals" or Cancel), then hides the window, ends the terminals, stops the local service and exits. The tray icon
+  offers Open, Quiet mode and Quit.
 * The window follows its shape: ChatGPT on the left and Claude on the right when it is wide, ChatGPT above Claude when it is
   tall. Drag the divider to change the proportion (it is remembered per orientation), double-click a pane header or use
   Ctrl+Shift+arrow to maximize one pane, and choose the orientation yourself in the view menu if you do not want automatic.
@@ -111,12 +117,14 @@ project's folder. Type in it as you would anywhere else.
 When a Claude session finishes a task it ends its message with the report block. Mini-Summa gives managed sessions the
 instructions for that automatically through the hook it started them with, only in folders that belong to a registered project. Then:
 
-1. The report appears in the project's feed and in **Reports**, and you get a notification.
-2. Open it. It shows the full text, the session it came from, and its destination conversation.
-3. **Copy and open** puts the whole message on the clipboard and brings the mapped conversation to the front.
-   Long reports are split into numbered parts, and each part is copied in turn.
+1. The report appears in the project's feed and in **Reports**, and you get a notification. A strip at the bottom of the
+   workspace says "Report ready: <task>" for the project you are looking at.
+2. Open it, or just use the strip. The report shows the full text, the session it came from, and its destination conversation.
+3. **Copy and open** (on the report or in the strip) puts the whole message on the clipboard and brings the mapped conversation to
+   the front. Long reports are split into numbered parts, and each part is copied in turn.
 4. Paste and press Send in ChatGPT yourself.
-5. Press **I sent it** (or **Not sure**, or **Discard**). Mini-Summa records what you say; it cannot see ChatGPT.
+5. Press **I sent it** (the strip keeps it within reach: "Waiting for you to send ..."), or **Not sure**, or **Discard** (in
+   Reports). Mini-Summa records what you say; it cannot see ChatGPT.
 6. Later you can note that ChatGPT answered, paste the answer's follow-up, and, if you want Claude to act on it, send it to a
    verified Claude session. That last step types into the terminal only after you approve exactly that text.
 
@@ -152,4 +160,5 @@ Sessions you start yourself are observed: reports, activity and notifications wo
 | A report says "no destination" | The project has no conversation mapped. Add one and the report can be handed off. |
 | No toasts | Windows Focus assist or Do not disturb is on, or Mini-Summa quiet mode is on. |
 
-Logs: `%APPDATA%\Mini-Summa\data\logs`. They never contain tokens or report text.
+Logs: `%APPDATA%\Mini-Summa\logs\main.log` (the application shell: start, quit, links, second launches) and
+`%APPDATA%\Mini-Summa\data\logs` (the local service). They never contain tokens or report text.

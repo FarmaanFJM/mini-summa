@@ -24,12 +24,12 @@ export interface InputBannerProps {
 export function InputBanner({ session, projectName, actions }: InputBannerProps) {
   const live = useApp((s) => s.connection === 'live');
   const target = describeInputTarget(session, projectName, live);
-  const lead = target.kind === 'managed' ? 'Input goes to:' : null;
+  const lead = target.kind === 'managed' || target.kind === 'replaced' ? 'Input goes to:' : null;
   const rest = lead ? target.text.slice(lead.length).trimStart() : target.text;
   return (
     <div className="ms-input" data-kind={target.kind}>
       <p className="ms-input__text" title={target.text}>
-        {target.kind !== 'managed' ? <><Icon name="ban" size={14} className="ms-input__icon" />{' '}</> : null}
+        {target.kind !== 'managed' && target.kind !== 'replaced' ? <><Icon name="ban" size={14} className="ms-input__icon" />{' '}</> : null}
         {lead ? <><span className="ms-input__lead">{lead}</span>{' '}</> : null}
         <span className="ms-input__target">{rest}</span>
       </p>

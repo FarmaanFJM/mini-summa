@@ -378,6 +378,10 @@ export function targetEligibility(session: SessionView): Eligibility {
   if (session.availability === 'ended' || session.availability === 'resumable') {
     return { ok: false, kind: 'not_running', reason: `Ended: this session is not running. ${session.resumable ? 'Resume it in its project first.' : 'It cannot be resumed.'}` };
   }
+  if (session.termination !== null) {
+    // Running, but its conversation was replaced and the new session is not identified: typing for the person could land in the wrong one.
+    return { ok: false, kind: 'not_ready', reason: `Not ready: ${session.termination.reason}` };
+  }
   if (!ACCEPTS_INPUT.has(session.state)) {
     const why: Partial<Record<SessionView['state'], string>> = {
       working: 'Claude is working. Wait until it is waiting for you.',

@@ -8,18 +8,20 @@ building it, a *defect* is something Mini-Summa gets wrong today, and *deferred 
 
 These are not known to be broken. They have never been run, because the build environment was a Linux container with no
 Windows, no WSL2, no phone and no ChatGPT login. Until you have done them, treat the matching feature as **unverified**.
-[WINDOWS_VERIFICATION.md](WINDOWS_VERIFICATION.md) is the 40-minute checklist.
+[WINDOWS_VERIFICATION.md](WINDOWS_VERIFICATION.md) is the 40-minute checklist for the PC and [PHONE_VERIFICATION.md](PHONE_VERIFICATION.md)
+the 30-minute checklist for the phone.
 
 | Not tested | What is covered instead | Risk |
 | --- | --- | --- |
-| **Everything on Windows**: install, start, the folder picker, ConPTY terminals, tray, protocol links, the installer's uninstall | The NSIS installer was built under Wine; Linux builds of the same Electron app pass the smoke and acceptance suites; path and quoting rules are tested with Windows-style strings | The most likely place for a first-run surprise. Terminal behaviour with ConPTY and the unsigned installer's SmartScreen warning are the two to watch. |
-| **WSL2**: launching Claude inside a distribution, `wsl.exe` interop, UNC and `/mnt` paths | Environment ids, path normalisation and command construction have unit tests with recorded `wsl.exe` output | A real distribution may format listings differently. |
+| **Everything on Windows**: install, start, the folder picker, ConPTY terminals, tray, protocol links, the installer's uninstall | The NSIS installer was built under Wine and its pieces were read out of the files (PE headers, manifest, fuses); Linux builds of the same Electron app pass the smoke and acceptance suites; 19 problems in the local service and the hook library and 12 in the desktop shell and installer, found by reading the code, were fixed with tests that **simulate** the Windows condition (paths, quoting, locked files, `taskkill`, UTF-16 output). [audit/windows-core.md](audit/windows-core.md) and [audit/windows-desktop.md](audit/windows-desktop.md) list them and the 39 checks that only a PC can answer | The most likely place for a first-run surprise. ConPTY terminals, the PowerShell hook (next row) and the unsigned installer's SmartScreen warning are the three to watch. |
+| **The Windows hook waits for the program it starts** (audit item W-11) | `Mini-Summa.exe` is a GUI-subsystem program and PowerShell may not wait for those; the hook command now pipes the call into `Write-Output`, which is the usual way to make it wait. Only the text of the command is tested | If it does not wait, reports from Windows sessions may not arrive or may arrive late. One 10-second measurement in PowerShell settles it (step 11 of [WINDOWS_VERIFICATION.md](WINDOWS_VERIFICATION.md)). |
+| **WSL2**: launching Claude inside a distribution, `wsl.exe` interop, UNC and `/mnt` paths | Environment ids, path normalisation (both `\\wsl$\` and `\\wsl.localhost\`, any letter case of the distribution name) and command construction have unit tests with recorded and simulated `wsl.exe` output (UTF-16, helper distributions) | A real distribution may format listings differently, and Claude installed through nvm or `~/.local/bin` is started through a login shell that was never run. |
 | **Windows toast notifications** and click-to-navigate | The notification decision, dedupe, quiet mode and the navigation target are tested; the Electron call is observed with a stand-in | Toasts also depend on Windows Focus assist settings. |
 | **The real ChatGPT site** inside the embedded view: sign-in, loading a conversation, the clipboard permission | A local HTTPS stand-in for `chatgpt.com` exercises the real navigation policy and the real view | ChatGPT may change its pages or refuse embedded browsers (Google sign-in often does). The external-browser mode is the fallback. |
-| **An Android device or emulator** | 216 Jest tests, a script that pairs and connects the phone's own code to the real headless core, and a bundling check | Screens have never been seen on a screen. |
+| **An Android device or emulator** | 216 Jest tests, a script that pairs and connects the phone's own code to the real headless core, a bundling check, and the built APK read back with `apksigner` and `aapt2` (signature, 8 permissions, not debuggable, no backup, no cleartext) | The app has never been installed or started: no screen has been seen, the camera, notifications and Tailscale are untried. |
 | **Real push delivery** (Firebase Cloud Messaging) | Payload building, token registration, minimal payloads and failure handling against a local stand-in | Needs your own Firebase project and a device. |
 | **Real Tailscale** | The status parser and Serve management against recorded and simulated output | `tailscale serve` flags can differ by version. |
-| **An Android APK** | The build passes its prerequisite check and `expo prebuild`, and Gradle got through 94 tasks and 2.3 GB of downloads before Maven Central's HTTP 429 stopped it on the same Fresco libraries three runs in a row (see [ANDROID.md](ANDROID.md), "Build outcome") | No APK exists. Nothing in the app is known to be wrong; run `npm run build:apk` on a normal network. |
+| **The Android APK as a tested product** | The APK **was built** (46.2 MB, arm64, release, SHA-256 in [ANDROID.md](ANDROID.md)) after the Maven Central rate limit was got past with longer retries and a local, checksum-verified copy of 11 files; no verification was bypassed ([ANDROID.md](ANDROID.md), "Build outcome") | It is signed with a throwaway key made for this build, so it can be installed once but a later build cannot update it (uninstall first, or sign your own with `MINISUMMA_KEYSTORE`). Play Protect warns about an unknown developer. |
 
 ## 2. External limitations (not Mini-Summa's to fix)
 
@@ -42,15 +44,6 @@ Windows, no WSL2, no phone and no ChatGPT login. Until you have done them, treat
 
 These are things Mini-Summa gets wrong or does clumsily today. None blocks the core workflow.
 
-* **After "Copy and open" the report card is out of sight.** The handoff takes you to the workspace so that ChatGPT is in front.
-  After you paste and press Send there, you go back to Reports to press **I sent it**; nothing in the workspace offers that
-  button. A short "waiting for you to send" strip in the ChatGPT pane would remove a click. The state itself is recorded
-  correctly and shown in the queue, the feed and the counters.
-* **If the preferred port 47811 is busy at start, the window forgets its own saved state.** The core then takes another port and
-  the window's saved choices (selected project, setup dismissal) belong to the old address. Your projects, sessions and reports
-  are unaffected. The acceptance check for this reports NOT TESTED rather than PASS in that case.
-* **After a graceful "Stop session" the notice says "The terminal process exited with code 0."** instead of "You stopped the
-  session." A forced stop and a quit are worded correctly.
 * **Quitting adds one unread "Session ended" feed entry per running terminal.**
 * **After a restart the previous terminal output is not shown** ("No terminal output is available for this session") until
   the session is resumed; the transcript lives in Claude Code, not in Mini-Summa.

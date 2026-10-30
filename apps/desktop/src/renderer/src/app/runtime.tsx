@@ -14,6 +14,7 @@ import type { RouteActions, RouteState, RouteStore } from './route';
 import { onboardingStore } from './onboardingPrefs';
 import { createMemoryStorage } from './storage';
 import type { KeyValueStorage } from './storage';
+import { createSessionFollower } from './followSessions';
 import { createAppStore } from './store';
 import type { AppState, AppStore } from './store';
 import { createUiSync } from './uiSync';
@@ -91,6 +92,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
     for (const key of terminals.keys()) if (!open.has(key)) terminals.release(key);
   }));
   cleanups.push(native.app.onNavigate((target) => route.getState().go(target)));
+  // After the subscriptions above, so that a session that only just appeared already has its tab when the old one is replaced by it.
+  cleanups.push(createSessionFollower({ store, ui, route, terminals }).dispose);
 
   if (options.startLoader !== false) loader.start();
 

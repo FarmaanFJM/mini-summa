@@ -47,6 +47,8 @@ export type InputTarget =
   | { kind: 'managed'; text: string }
   /** Managed and live, but the link to the core is down. */
   | { kind: 'paused'; text: string }
+  /** The terminal runs, but its conversation was replaced (/clear, /resume) and the new session is not known: it is the terminal that gets the keystrokes. */
+  | { kind: 'replaced'; text: string }
   /** A managed session that is not running. */
   | { kind: 'not_running'; text: string }
   /** Observed only. Mini-Summa cannot type into it, whatever the person does. */
@@ -69,6 +71,10 @@ export function describeInputTarget(session: SessionView, projectName: string | 
   }
   if (!live) {
     return { kind: 'paused', text: `Input is paused while reconnecting. It would go to ${where} (${how}).` };
+  }
+  if (isReplacedUnidentified(session)) {
+    // What the person types reaches the terminal, but that terminal is no longer the session this banner would name.
+    return { kind: 'replaced', text: `Input goes to: the terminal of ${projectName ?? 'No project'}. Its conversation was replaced and the new session is not identified, so Mini-Summa will not type into it for you.` };
   }
   return { kind: 'managed', text: `Input goes to: ${where} (${how})` };
 }
@@ -107,6 +113,13 @@ export type SessionStateName = SessionState;
 
 export interface Notice { tone: 'info' | 'attention' | 'error'; text: string; canResume: boolean }
 
+/**
+ * A running terminal whose conversation was replaced (/clear, /resume inside it) while Mini-Summa has not learned which session the
+ * terminal runs now. The core says why in `termination.reason`, and nothing may type into it from here. (The terminal itself works.)
+ */
+export const isReplacedUnidentified = (session: Pick<SessionView, 'origin' | 'availability' | 'termination'>): boolean =>
+  session.origin === 'managed' && session.availability === 'live' && session.termination !== null;
+
 /** What happened to (or is being asked by) a managed session, in words. Observed sessions have their own panel. */
 export function noticeFor(session: SessionView, actions: readonly PendingAction[]): Notice | null {
   if (session.origin !== 'managed') return null;
@@ -122,6 +135,8 @@ export function noticeFor(session: SessionView, actions: readonly PendingAction[
     const guess = t?.kind === 'suspected' ? ' This is a guess: the session disappeared from Claude\'s list and nothing confirmed that it ended.' : '';
     return { tone: session.state === 'error' ? 'error' : 'info', canResume: session.resumable, text: `This session ended: ${reason}.${guess}` };
   }
+  // Running, but its conversation was replaced and the new session is not identified: the core's own words say what is paused.
+  if (isReplacedUnidentified(session)) return { tone: 'attention', text: session.termination!.reason, canResume: false };
   const waiting = waitingFor(session, actions);
   if (waiting) return { tone: 'attention', text: waiting, canResume: false };
   if (session.state === 'error') return { tone: 'error', text: 'Claude reported an error. Check the terminal.', canResume: false };
@@ -153,9 +168,11 @@ export function isStartingUp(session: Pick<SessionView, 'origin' | 'availability
  * dialog, whose default is "No, exit", and end the session, so no automated typing is offered at all. This does not
  * restrict the person: what they type themselves in the terminal always reaches it.
  */
-export function canOfferTyping(session: Pick<SessionView, 'origin' | 'availability' | 'state'>): boolean {
+export function canOfferTyping(session: Pick<SessionView, 'origin' | 'availability' | 'state'> & Partial<Pick<SessionView, 'termination'>>): boolean {
   return session.origin === 'managed' && session.availability === 'live' && session.state !== 'unknown'
-    && session.state !== 'ended' && session.state !== 'presence_lost';
+    && session.state !== 'ended' && session.state !== 'presence_lost'
+    // a terminal whose conversation was replaced and not identified: typing for the person could land in the wrong session
+    && !(session.termination ?? null);
 }
 
 export const OBSERVED_WHY: Record<'external' | 'background', string> = {

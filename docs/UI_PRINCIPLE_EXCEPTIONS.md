@@ -62,7 +62,10 @@ use neutral tones.
 Four places carry sentences that a minimal interface would drop. Each states a fact that changes what the person does next:
 
 - The line above every terminal: "Input goes to: GitManager / Session a1b2c3d4 (managed, Windows)", or "No input: ... is observed".
-  Typing into the wrong session is the one mistake the app must make impossible to overlook.
+  Typing into the wrong session is the one mistake the app must make impossible to overlook. For a running terminal whose conversation
+  was replaced (/clear, /resume) and whose new session Mini-Summa has not identified, the line and the notice under it say so in the
+  core's own words ("Mini-Summa will not type into it for you"): what the person types in the terminal still arrives, and nothing else
+  may.
 - The observed-session panel ("Why you cannot type here"): without it a read-only terminal looks broken.
 - The starting hint, after 6 seconds in "Starting": "Claude may be waiting for you to answer a question in the terminal, such as
   whether you trust this folder." Claude Code's trust dialog defaults to "No, exit", so Mini-Summa never types for the person while a
