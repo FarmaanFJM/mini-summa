@@ -1,0 +1,31 @@
+{
+  "note": "REAL payload captured from Claude Code, sanitized: paths are masked and session, prompt and tool-use ids are replaced by synthetic ones. The transport block is added by the capture script.",
+  "transport": {
+    "transport_id": "<uuid>",
+    "received_at": "2026-10-30T10:14:23.424Z",
+    "wall_ms": 1793355263424,
+    "monotonic_ns": "1288745145661",
+    "capture_version": 1,
+    "hook_arg": "Notification",
+    "pid": 0,
+    "ppid": 0,
+    "platform": "linux",
+    "claude_project_dir": "<SCRATCH>/work/projA",
+    "claude_config_dir": "<SCRATCH>/config",
+    "claude_code_remote": null,
+    "redactions": 0,
+    "truncations": 0,
+    "truncated_chars": 0,
+    "parse_error": null
+  },
+  "payload": {
+    "session_id": "00000000-0000-4000-8000-000000000007",
+    "transcript_path": "<SCRATCH>/config/projects/<SCRATCH-ENCODED>-work-projA/00000000-0000-4000-8000-000000000007.jsonl",
+    "cwd": "<SCRATCH>/work/projA",
+    "scratchpad_dir": "<SCRATCHPAD-DIR>",
+    "prompt_id": "00000000-0000-4000-8000-000000000008",
+    "hook_event_name": "Notification",
+    "message": "Claude needs your permission",
+    "notification_type": "permission_prompt"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "mini-summa-poc0a",
+  "private": true,
+  "type": "module",
+  "description": "Mini-Summa Experiment A: Claude Code hook capture, ingestion and report capture. Scratch proof of concept, zero dependencies.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  }
+}
