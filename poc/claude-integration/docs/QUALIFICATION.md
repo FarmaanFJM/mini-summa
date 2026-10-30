@@ -12,6 +12,17 @@ yourself. Nothing is copied. Credentials then sit inside the config directory; d
 
 **Reboots.** Nothing here restarts Windows. If `wsl --install` asks for a restart, that is your decision.
 
+## 0. Preflight (read-only, installs nothing)
+```powershell
+$PSVersionTable.PSVersion; [System.Environment]::OSVersion.VersionString
+node --version; git --version; claude --version
+(Get-Command claude -ErrorAction SilentlyContinue).Source          # where Claude Code is installed from
+winget list Anthropic.ClaudeCode 2>$null | Select-String Claude    # installed by winget?
+wsl -l -v                                                          # distributions and their VERSION (needs 2)
+Test-Path "$env:LOCALAPPDATA\MiniSummaPoc"                         # a previous qualification folder?
+```
+Reuse what is already installed; only install what is missing. Nothing in this guide touches `%USERPROFILE%\.claude`.
+
 ## A. Native Windows (PowerShell)
 ```powershell
 # prerequisites (skip what you have)
@@ -69,22 +80,38 @@ Back in **PowerShell**, finish the cross-boundary test:
 ```powershell
 node scripts\qualify.mjs run --only Q05
 ```
-**Q18 needs one live idle session in each environment**, because an empty listing proves nothing. Make two UUIDs and start one session in each (no prompt, so no model usage):
+**Q18 needs one live idle session in each environment**, because an empty listing proves nothing. Shell variables do not survive across
+terminal windows, so the two generated UUIDs are written to a file that every window reads. No placeholders are typed anywhere.
+
+*Window 1 (PowerShell, the control window).* Generate the ids once and keep this window open:
 ```powershell
-$uw = [guid]::NewGuid(); $uw          # note it
-# second PowerShell window:
-$env:CLAUDE_CONFIG_DIR = "$env:LOCALAPPDATA\MiniSummaPoc\config-win"; Set-Location "$env:LOCALAPPDATA\MiniSummaPoc\work\projA"; claude --session-id $uw
+$qdir = Join-Path $env:LOCALAPPDATA "MiniSummaPoc"
+@{ win = [guid]::NewGuid().ToString(); wsl = [guid]::NewGuid().ToString() } | ConvertTo-Json | Set-Content -Path (Join-Path $qdir "q18-ids.json")
+Get-Content (Join-Path $qdir "q18-ids.json")
 ```
+*Window 2 (a second PowerShell window): the Windows session.* It reads its own id from the file:
+```powershell
+$qdir = Join-Path $env:LOCALAPPDATA "MiniSummaPoc"
+$uw = (Get-Content (Join-Path $qdir "q18-ids.json") | ConvertFrom-Json).win
+$env:CLAUDE_CONFIG_DIR = Join-Path $qdir "config-win"
+Set-Location (Join-Path $qdir "work\projA")
+claude --session-id $uw
+```
+*Window 3 (Ubuntu): the WSL session.* It reads the same file through `/mnt/c`:
 ```bash
-ul=$(uuidgen); echo $ul               # note it, in a second Ubuntu terminal:
-cd ~/.mini-summa-poc/work/projW && CLAUDE_CONFIG_DIR=~/.mini-summa-poc/config-wsl-Ubuntu claude --session-id $ul
+winla=$(wslpath "$(cmd.exe /c 'echo %LOCALAPPDATA%' 2>/dev/null | tr -d '\r')")
+ul=$(node -p "JSON.parse(require('fs').readFileSync('$winla/MiniSummaPoc/q18-ids.json','utf8')).wsl")
+echo "WSL session id: $ul"
+cd ~/.mini-summa-poc/work/projW && CLAUDE_CONFIG_DIR=~/.mini-summa-poc/config-wsl-Ubuntu claude --session-id "$ul"
 ```
-With both sessions sitting idle, in the first PowerShell window:
+Accept the folder-trust prompt ("Yes, I trust this folder") and `/login` if asked in each. Type no prompt. With both sessions idle, back in **Window 1**:
 ```powershell
-node scripts\qualify.mjs run --only Q18 --wsl-distro Ubuntu --wsl-config /home/YOURNAME/.mini-summa-poc/config-wsl-Ubuntu --expect-win <uw> --expect-wsl <ul>
-node scripts\qualify.mjs merge "$env:LOCALAPPDATA\MiniSummaPoc\qualification\report-win.json" "$env:LOCALAPPDATA\MiniSummaPoc\qualification\report-wsl-Ubuntu.json"
+$ids = Get-Content (Join-Path $qdir "q18-ids.json") | ConvertFrom-Json
+$wslHome = (wsl -d Ubuntu -- bash -lc 'echo $HOME').Trim()
+node scripts\qualify.mjs run --only Q18 --wsl-distro Ubuntu --wsl-config "$wslHome/.mini-summa-poc/config-wsl-Ubuntu" --expect-win $ids.win --expect-wsl $ids.wsl
+node scripts\qualify.mjs merge "$qdir\qualification\report-win.json" "$qdir\qualification\report-wsl-Ubuntu.json"
 ```
-Then exit both sessions with `/exit`.
+Then type `/exit` in Windows 2 and Ubuntu 3, and delete the ids file: `Remove-Item (Join-Path $qdir "q18-ids.json")`.
 
 ## C. Tests and what makes each one PASS
 | ID | Passes when | Runs in |
