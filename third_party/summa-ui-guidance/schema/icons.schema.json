@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://summa-ui/schema/icons.schema.json",
+  "title": "Summa-UI icon catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source", "grid", "stroke", "usage", "categories", "icons"],
+  "properties": {
+    "source": {
+      "type": "object", "additionalProperties": false, "required": ["name", "version", "license", "url"],
+      "properties": { "name": { "const": "lucide-static" }, "version": { "type": "string" }, "license": { "const": "ISC" }, "url": { "type": "string" } }
+    },
+    "grid": { "type": "integer" },
+    "stroke": { "type": "object", "additionalProperties": false, "required": ["width", "linecap", "linejoin"], "properties": { "width": { "type": "number" }, "linecap": { "type": "string" }, "linejoin": { "type": "string" } } },
+    "usage": { "type": "array", "items": { "type": "string" }, "description": "Guidance rules for using icons." },
+    "categories": { "type": "array", "items": { "type": "string" } },
+    "icons": {
+      "type": "array", "minItems": 60,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["name", "lucide", "category", "tags", "use", "file"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z0-9-]+$", "description": "Summa-UI name (stable). Existing apps use these names." },
+          "lucide": { "type": "string", "pattern": "^[a-z0-9-]+$", "description": "Upstream Lucide icon name." },
+          "category": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "use": { "type": "string", "description": "When to use the icon, one sentence." },
+          "avoid": { "type": "string" },
+          "file": { "type": "string", "pattern": "^icons/svg/[a-z0-9-]+\\.svg$" }
+        }
+      }
+    }
+  }
+}

@@ -80,7 +80,7 @@ export interface ProjectsService {
   /** Throws CoreError(404) when missing. */
   require(id: string): Project;
   create(input: ProjectCreateInput): Project;
-  update(id: string, patch: { name?: string; description?: string | null; githubRepo?: string | null; defaultEnv?: EnvId; notificationPrefs?: Partial<ProjectNotificationPrefs> }): Project;
+  update(id: string, patch: { name?: string; description?: string | null; githubRepo?: string | null; defaultEnv?: EnvId; notificationPrefs?: Partial<ProjectNotificationPrefs>; archived?: boolean }): Project;
   /** archive keeps all history; delete removes the project and everything attached to it, in one transaction. */
   remove(id: string, mode: 'archive' | 'delete'): void;
   reorder(ids: string[]): void;
@@ -132,6 +132,9 @@ export interface CapturedReport {
   capturedSeq: number;
   note: string;
   capturedAt: string;
+  /** From the hook's transport metadata (additive, default 0): strings redacted / truncated at capture. */
+  redactions?: number;
+  truncations?: number;
 }
 
 export interface CapturedCandidate {
@@ -150,6 +153,8 @@ export interface CapturedCandidate {
   bodySha256: string;
   late: boolean;
   capturedAt: string;
+  redactions?: number;
+  truncations?: number;
 }
 
 /** Reducer-derived event, forwarded with the attribution the sessions layer settled on. */
@@ -223,6 +228,7 @@ export interface SessionsService {
   /** Explicit conversation a session reports to, if one was chosen for it. Never inferred. */
   conversationBinding(key: SessionKey): string | null;
   refreshDiscovery(env?: EnvId): Promise<DiscoveryRefreshResult>;
+  discoveryStatus(): { env: EnvId; ok: boolean; lastRunAt: string | null; error: string | null }[];
 
   /** Would typing into this session be safe right now? Never throws; reports the problem in words. */
   targetCheck(key: SessionKey, expectGeneration: number | null): TargetCheck;
@@ -240,6 +246,76 @@ export interface SessionsService {
   subscribe(handlers: ClaudeEventHandlers): () => void;
   /** Loads persisted state, replays the raw log, starts polling/watching. Safe to call once. */
   init(): Promise<void>;
+  shutdown(): Promise<void>;
+}
+
+export interface ManagedSessionRecord {
+  key: SessionKey;
+  env: EnvId;
+  sessionId: string;
+  projectId: string | null;
+  rootId: string | null;
+  cwd: string;
+  name: string | null;
+  mode: 'new' | 'resume';
+  resumedFrom: SessionKey | null;
+  remoteControl: boolean;
+  status: 'running' | 'exited' | 'disconnected';
+  pid: number | null;
+  startedAt: string;
+  exitedAt: string | null;
+  exitCode: number | null;
+  exitSignal: number | null;
+  exitReason: string | null;
+  cols: number;
+  rows: number;
+  /** True once a prompt was submitted, i.e. Claude saved a transcript and `--resume` can work. */
+  prompted: boolean;
+  lastOutputAt: string | null;
+  /** Which run of the app started it. A record from an earlier run can no longer have a live PTY. */
+  appRunId: string;
+  /** Explicit conversation chosen for this session's reports (session_bindings.conversation_id). */
+  conversationId: string | null;
+}
+
+export interface ManagedStartInput {
+  projectId: string;
+  rootId: string | null;
+  env: EnvId;
+  cwd: string;
+  name: string | null;
+  remoteControl: boolean;
+  cols: number;
+  rows: number;
+  mode: 'new' | 'resume';
+  /** For resume: the session id to resume (same environment). */
+  resumeSessionId?: string;
+  conversationId: string | null;
+}
+
+/**
+ * Sessions Mini-Summa starts in its own terminals. Owns the PTYs, the per-session settings file that gives the session
+ * hooks, the managed_sessions rows and the managed rows in session_bindings. Never decides what a session means:
+ * session state comes from hooks and discovery through the reducer, not from terminal output.
+ */
+export interface ManagedManager {
+  /** Marks records from earlier runs as disconnected (their PTYs died with the old process). */
+  init(): void;
+  list(): ManagedSessionRecord[];
+  get(key: SessionKey): ManagedSessionRecord | null;
+  start(input: ManagedStartInput): Promise<ManagedSessionRecord>;
+  stop(key: SessionKey, opts: { force?: boolean }): Promise<ManagedSessionRecord>;
+  /** Raw bytes typed by the user at the desktop terminal. */
+  write(key: SessionKey, data: string): boolean;
+  /** Programmatic user-authored text: bracketed paste for multi-line text, Enter only when `submit` is true. */
+  typeText(key: SessionKey, text: string, opts: { submit: boolean }): Promise<boolean>;
+  /** Keystrokes that answer Claude Code's permission dialog. */
+  sendKeys(key: SessionKey, keys: 'approve' | 'reject'): Promise<boolean>;
+  resize(key: SessionKey, cols: number, rows: number): void;
+  attach(key: SessionKey, size: { cols: number; rows: number }, sink: TerminalSink): TerminalAttachment | { error: string };
+  markPrompted(key: SessionKey): void;
+  onChange(fn: (record: ManagedSessionRecord, previous: ManagedSessionRecord | null) => void): () => void;
+  /** App exit: ends every PTY and records why. Does not claim the sessions survive. */
   shutdown(): Promise<void>;
 }
 
@@ -266,7 +342,7 @@ export interface EnvironmentsService {
   /** Resolve the layout for one environment (cached; refreshed with list({refresh:true})). */
   layout(env: EnvId): Promise<EnvLayout>;
   /** Directory where `claude` for this env can be started from the core: executable plus any wrapper arguments. */
-  claudeCommand(env: EnvId): Promise<{ file: string; prefixArgs: string[] } | null>;
+  claudeCommand(env: EnvId): Promise<{ file: string; prefixArgs: string[]; wslDistro: string | null } | null>;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -319,6 +395,9 @@ export interface PushPayload {
 export interface PushProvider {
   readonly name: 'fcm';
   configured(): boolean;
+  /** Validates and stores the user's Firebase service account (0600, outside the repo). Throws CoreError(400) if invalid. */
+  configureFromJson(json: string): { firebaseProject: string };
+  clear(): void;
   send(targets: { deviceId: string; token: string }[], payload: PushPayload): Promise<{ deviceId: string; result: 'sent' | 'failed' | 'invalid_token'; error?: string }[]>;
 }
 
@@ -326,6 +405,8 @@ export interface NotificationsService {
   /** Applies the master switch, per-project preferences, quiet mode and dedupe, then notifies native and push. */
   consider(activity: ActivityEvent, hint: NotifyHint): Promise<NotificationRecord | null>;
   list(limit?: number): NotificationRecord[];
+  /** Sends a clearly marked test push to every paired device that can receive one. */
+  sendTest(): Promise<{ sent: number; failed: number; skipped: string | null }>;
   prune(olderThanIso: string): number;
 }
 
@@ -361,6 +442,8 @@ export interface DeliveriesService {
   setDestination(id: string, conversationId: string, actor: ActorRef): Delivery;
   setReview(id: string, review: ReviewState, followUpDraft: string | null | undefined, actor: ActorRef): Delivery;
   saveFile(id: string, actor: ActorRef): Promise<{ delivery: Delivery; path: string | null }>;
+  /** Called when an action created from this delivery's follow-up draft was typed into Claude. */
+  markFollowUpSent(deliveryId: string, actionId: string): Delivery | null;
   /** Startup: nothing is auto-advanced. Deliveries stay exactly where the user left them; a restart event is logged. */
   recoverAfterRestart(): void;
   prune(olderThanIso: string): number;
@@ -404,7 +487,7 @@ export interface DevicesService {
   /** The desktop shell's token, generated at startup and kept only in memory (a hash is compared). */
   readonly desktopToken: string;
   authenticate(token: string, via: Principal['via']): Principal | null;
-  createOffer(scopes: Scope[], urls: string[]): PairingOffer;
+  createOffer(scopes: Scope[], urls: string[], kind: 'phone' | 'extension'): PairingOffer;
   redeem(req: { offerId: string; code: string; deviceName: string; platform: Exclude<DevicePlatform, 'desktop'> }, via: Principal['via']): PairingRedeemResult;
   list(): Device[];
   get(id: string): Device | null;

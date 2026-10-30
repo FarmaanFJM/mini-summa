@@ -1,0 +1,107 @@
+{
+  "id": "preset.interaction-states",
+  "name": "Interaction states",
+  "purpose": "One neutral, quiet vocabulary for focus, hover, selection, pressed, disabled and active navigation across every control.",
+  "whenToUse": [
+    "Styling any interactive element: buttons, rows, inputs, nav items, tabs, menu items.",
+    "Showing a selected row, card or list item.",
+    "Indicating the current page in navigation.",
+    "Reviewing a component for P15 and P17 compliance."
+  ],
+  "whenNotToUse": [
+    "Emerald focus rings, emerald selected rows or emerald input outlines (P15).",
+    "Thick or high-contrast outlines (2px and above, white outlines) for ordinary selection or focus (P17).",
+    "A frame, border or left bar to show selection. Selection is a quiet fill.",
+    "Removing the focus indicator (outline: none) without an equally visible replacement.",
+    "Distinct bespoke hover colours per component. Reuse the surface steps."
+  ],
+  "anatomy": [
+    "Focus: keyboard-only :focus-visible ring, 1.5px solid --focus, offset 1px. Text inputs use a 1px --focus box-shadow ring instead.",
+    "Hover: one surface step lighter (--s2 on rows, --s3 to --s4 on buttons, rgba white 0.08 on menu items).",
+    "Selected: --select, a quiet fill. Strong selection (drag, active range): --select-strong.",
+    "Pressed: one step beyond hover (--s3 on rows, #444545 on secondary buttons).",
+    "Disabled: opacity 0.45 and no hover response.",
+    "Active navigation: --s3 background and --text colour with aria-current."
+  ],
+  "variants": [
+    {
+      "id": "focus-ring",
+      "description": "1.5px --focus outline, 1px offset. Inputs: 1px box-shadow.",
+      "useWhen": "Keyboard focus on any control."
+    },
+    {
+      "id": "hover",
+      "description": "Surface step lighter than the resting state.",
+      "useWhen": "Pointer over buttons, rows, menu items, nav items."
+    },
+    {
+      "id": "selected",
+      "description": "--select fill on the row or card, no border.",
+      "useWhen": "Selected list items, cards, table rows."
+    },
+    {
+      "id": "pressed",
+      "description": "One more step than hover.",
+      "useWhen": "Mouse down or touch on buttons and rows."
+    },
+    {
+      "id": "disabled",
+      "description": "Opacity 0.45, default cursor.",
+      "useWhen": "Unavailable controls."
+    },
+    {
+      "id": "active-nav",
+      "description": "--s3 background, --text label, aria-current.",
+      "useWhen": "The current page or section in navigation."
+    }
+  ],
+  "behavior": [
+    "Use :focus-visible so the ring shows for keyboard users and not for mouse clicks.",
+    "Focus ring contrast: --focus (rgba 236,236,235 at 0.5) resolves to about 4.7:1 on --s0, 4.6:1 on --s1, 4.4:1 on --s2, 4.1:1 on --s3 and 3.8:1 on --s4 (measured), all above the 3:1 minimum required by P17.",
+    "Menu items and options show focus as the hover fill, because the whole list shows one active item.",
+    "Selected and focused can coexist: selected fill plus the ring.",
+    "Hover on touch devices is not required; rely on the pressed state.",
+    "Use aria-selected, aria-current, aria-pressed, aria-disabled or disabled so assistive technology receives the same state."
+  ],
+  "tokens": [
+    "--focus",
+    "--select",
+    "--select-strong",
+    "--s1",
+    "--s2",
+    "--s3",
+    "--s4",
+    "--text",
+    "--text-2",
+    "--text-3",
+    "--r",
+    "--r-sm",
+    "--dur",
+    "--ease"
+  ],
+  "accessibility": [
+    "The focus indicator must reach at least 3:1 against the surface it sits on (WCAG 1.4.11). Verify the ring on --s0 to --s4 before introducing a new surface.",
+    "Do not confuse invisible focus with tasteful minimalism: P17 asks for restrained, not absent.",
+    "State is exposed with ARIA, not only visual: aria-selected, aria-current, aria-disabled.",
+    "Hover alone never reveals essential information or controls; reveal on focus as well.",
+    "Targets are at least 28px (32px for controls) to ease pointing."
+  ],
+  "principles": [
+    "P15",
+    "P17",
+    "P07",
+    "P02",
+    "P06"
+  ],
+  "avoids": [
+    "AP-002",
+    "AP-004",
+    "AP-012",
+    "AP-001"
+  ],
+  "implementations": {
+    "html": "examples/interaction-states.html",
+    "css": "css/presets.css",
+    "react": "src/styles/base.css"
+  }
+}

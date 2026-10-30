@@ -1,0 +1,83 @@
+{
+  "id": "preset.loading-state",
+  "name": "Loading state",
+  "purpose": "Show that content is on its way without layout shift, flashing, or blocking the whole page.",
+  "whenToUse": [
+    "Skeleton rows while a list or table loads and the shape of the content is known.",
+    "An inline spinner on a button or next to a field while a short action runs (Saving, Checking availability).",
+    "A progress bar when the amount is known (upload, export, import).",
+    "A single quiet loading line (Loading) inside a small panel when the shape is unknown."
+  ],
+  "whenNotToUse": [
+    "Full-page spinners or blocking overlays. Keep the shell visible and load inside the region.",
+    "Loads that finish in under 200ms. Show nothing; a skeleton flash is worse than a short blank.",
+    "Indeterminate spinners for work whose progress you do know. Use determinate progress.",
+    "Skeletons that do not match the final layout, which cause shift when the data lands.",
+    "Decorative shimmer on content that is already present.",
+    "Announcing every refresh. Background refreshes should be silent."
+  ],
+  "anatomy": [
+    "Skeleton row: same height as the real row (40px), a muted bar at a plausible width. Varying widths read as text, identical widths read as a loader.",
+    "Spinner: 14px ring, neutral track, inherits text colour. Sits left of the label; the label stays.",
+    "Progress: 4px track (--s3), neutral fill (--text-2), optional label with a tabular percentage.",
+    "Container: carries aria-busy while loading."
+  ],
+  "variants": [
+    {
+      "id": "skeleton",
+      "description": "Rows of muted bars matching the final layout.",
+      "useWhen": "Lists, tables and cards that load from the server."
+    },
+    {
+      "id": "inline-spinner",
+      "description": "Small spinner beside or inside a control.",
+      "useWhen": "Button and field level waits of a few seconds."
+    },
+    {
+      "id": "progress",
+      "description": "Determinate bar with percentage.",
+      "useWhen": "Uploads, exports and other measurable work."
+    }
+  ],
+  "behavior": [
+    "Delay 200ms before showing any loading indicator; if the data arrives first, show nothing.",
+    "Once shown, keep the indicator for at least 400ms so it does not flicker.",
+    "Reserve the final height (min-height or matching row count) so nothing jumps when content arrives.",
+    "Buttons keep their label and width; the spinner replaces the icon and repeat clicks are ignored.",
+    "Never show a spinner inside a skeleton. One loading signal per region.",
+    "Under prefers-reduced-motion the shimmer stops and the skeleton is a flat surface; the spinner slows.",
+    "If loading fails, replace the loader with the error-loading empty state (see preset.empty-state)."
+  ],
+  "tokens": [
+    "--s2",
+    "--s3",
+    "--text-2",
+    "--r-sm",
+    "--sp-3",
+    "--ease",
+    "--dur"
+  ],
+  "accessibility": [
+    "Set aria-busy=\"true\" on the region being loaded and false when done; announce completion only when the user started the load.",
+    "Spinners are decorative (aria-hidden); the adjacent text says what is happening.",
+    "Progress uses role=progressbar with aria-valuenow, aria-valuemin and aria-valuemax and a label.",
+    "Skeleton bars are not read out; the container carries the status.",
+    "Respect prefers-reduced-motion by removing the shimmer."
+  ],
+  "principles": [
+    "P05",
+    "P09",
+    "P10",
+    "P07"
+  ],
+  "avoids": [
+    "AP-010",
+    "AP-013",
+    "AP-015"
+  ],
+  "implementations": {
+    "html": "examples/loading-state.html",
+    "css": "css/presets.css",
+    "react": "src/lab/guidance/Presets.tsx"
+  }
+}

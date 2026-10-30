@@ -1,0 +1,656 @@
+{
+  "schemaVersion": 1,
+  "report": {
+    "statuses": [
+      "pass",
+      "fail",
+      "needs-human",
+      "not-applicable"
+    ],
+    "findingFields": [
+      "checkId",
+      "status",
+      "severity",
+      "target",
+      "evidence",
+      "principles",
+      "antipattern",
+      "suggestedFix"
+    ]
+  },
+  "checks": [
+    {
+      "id": "CHK-001",
+      "title": "Bordered container inside bordered container",
+      "antipattern": "AP-001",
+      "principles": [
+        "P01",
+        "P12"
+      ],
+      "automation": "objective",
+      "kind": "dom-computed-style",
+      "severity": "error",
+      "description": "A visible border (any side width >= 1px with non-transparent color, or an outline) on an element whose nearest bordered ancestor within the same view also has one.",
+      "procedure": [
+        "Collect elements whose computed border-*-width > 0 and border-style != none and border color alpha > 0, or box-shadow with a 0-blur spread ring matching a 1px outline.",
+        "For each, walk ancestors up to the app root; if an ancestor in the collection exists, report the pair.",
+        "Ignore form controls listed in exceptions."
+      ],
+      "exceptions": [
+        "input, textarea, select, checkbox and radio controls",
+        "Floating overlays (menu, popover, dialog, toast) that carry a single outline",
+        "Table cell grids when the table itself has no outer border"
+      ],
+      "thresholds": {
+        "minBorderWidthPx": 1
+      }
+    },
+    {
+      "id": "CHK-002",
+      "title": "Thick left border on non-quote elements",
+      "antipattern": "AP-002",
+      "principles": [
+        "P03"
+      ],
+      "automation": "objective",
+      "kind": "dom-computed-style",
+      "severity": "error",
+      "description": "border-left-width is at least 2px and is greater than the border-right-width of the same element, on an element that is not a blockquote or code diff gutter.",
+      "procedure": [
+        "For each element compute border-left-width and border-right-width.",
+        "Report when left >= 2px and left > right and tag is not blockquote and the element does not carry data-semantic-gutter."
+      ],
+      "exceptions": [
+        "blockquote",
+        "Diff or code gutters",
+        "Elements with data-semantic-gutter set by the product with a documented meaning"
+      ],
+      "thresholds": {
+        "minLeftWidthPx": 2
+      }
+    },
+    {
+      "id": "CHK-003",
+      "title": "Translucent tinted destructive button",
+      "antipattern": "AP-003",
+      "principles": [
+        "P19",
+        "P10"
+      ],
+      "automation": "objective",
+      "kind": "dom-computed-style",
+      "severity": "error",
+      "description": "A button or button-like control that looks destructive (danger-colored text, or label matching a destructive verb) has a translucent background (alpha < 0.9) and danger-hued text.",
+      "procedure": [
+        "Select button, [role=button], a.btn.",
+        "Mark destructive when text color hue is red (hue 0-20 or 340-360, saturation > 0.35) or the accessible name matches the destructive verb pattern.",
+        "Fail when destructive and background-color alpha is between 0.01 and 0.9, or background is transparent with a tinted translucent sibling wrapper.",
+        "Also fail when contrast of text against the composited background is below 4.5:1."
+      ],
+      "exceptions": [
+        "Menu items (role=menuitem) styled as danger text with icon",
+        "Non-interactive error banners (not buttons)"
+      ],
+      "thresholds": {
+        "maxBackgroundAlpha": 0.9,
+        "minContrast": 4.5
+      },
+      "patterns": [
+        "^(delete|remove|discard|destroy|erase|reset|revoke|cancel subscription|resign|close position)\\b"
+      ],
+      "patternFlags": "i"
+    },
+    {
+      "id": "CHK-004",
+      "title": "Accent color used for focus, selection or input outline",
+      "antipattern": "AP-004",
+      "principles": [
+        "P15",
+        "P17"
+      ],
+      "automation": "objective",
+      "kind": "source-css",
+      "severity": "error",
+      "description": "Focus, :focus-visible, :focus-within, [aria-selected], .selected, .active and input outline rules must not reference the brand accent color or its tints.",
+      "procedure": [
+        "Parse CSS rules whose selector contains :focus, :focus-visible, :focus-within, [aria-selected, [aria-current, .selected, .active.",
+        "Fail if the declarations for outline, box-shadow, border-color or background reference --accent, --accent-hover, --accent-soft, --accent-text or an emerald literal (#10b981 and tints).",
+        "Allow semantic danger or warn tokens."
+      ],
+      "exceptions": [
+        "Primary action hover or pressed state (.btn-primary:hover)",
+        "Brand-colored focus ring for a product that explicitly defines a brand ring in its own tokens (documented exception)"
+      ],
+      "patterns": [
+        "--accent",
+        "#10b981",
+        "rgba\\(16,\\s*185,\\s*129"
+      ]
+    },
+    {
+      "id": "CHK-005",
+      "title": "Decorative pill tags and status pills",
+      "antipattern": "AP-005",
+      "principles": [
+        "P04"
+      ],
+      "automation": "heuristic",
+      "kind": "dom-structure",
+      "severity": "warning",
+      "description": "Small fully rounded labels (height < 28px, border-radius >= half height) that are not interactive and that repeat on rows, or that carry words such as Saved, New, Active, Live, Beta without a filtering function.",
+      "procedure": [
+        "Find non-interactive elements with border-radius >= height/2, height <= 28px, text length <= 20.",
+        "Count per view; raise warning when more than 3 appear or any text matches the decorative pattern.",
+        "Mark needs-human when the tag appears in a filterable list (it may be functional)."
+      ],
+      "exceptions": [
+        "Tags used to filter, group or navigate by category",
+        "Count badges on navigation entries"
+      ],
+      "thresholds": {
+        "maxPerView": 3
+      },
+      "patterns": [
+        "^(saved|auto[- ]?saved|new|active|live|beta|pro|premium|verified|featured)$"
+      ],
+      "patternFlags": "i"
+    },
+    {
+      "id": "CHK-006",
+      "title": "Placeholder initials avatar",
+      "antipattern": "AP-006",
+      "principles": [
+        "P20"
+      ],
+      "automation": "objective",
+      "kind": "dom-structure",
+      "severity": "error",
+      "description": "A round element (border-radius >= 50%) whose only content is 1 to 2 letters, or an img whose src is a generated initials or identicon placeholder, with no real image.",
+      "procedure": [
+        "Find elements with border-radius >= 50% and width/height <= 64px.",
+        "Fail when textContent trimmed matches ^[A-Za-z]{1,2}$ and there is no child img or svg with non-text content.",
+        "Fail when an img src matches ui-avatars, dicebear, identicon, gravatar default or data URIs generated from initials."
+      ],
+      "exceptions": [
+        "Real user profile images",
+        "Count badges and currency symbols (not identity)"
+      ],
+      "patterns": [
+        "^[A-Za-z]{1,2}$",
+        "ui-avatars|dicebear|identicon|robohash"
+      ]
+    },
+    {
+      "id": "CHK-007",
+      "title": "Excessive mobile vertical density",
+      "antipattern": "AP-007",
+      "principles": [
+        "P18"
+      ],
+      "automation": "heuristic",
+      "kind": "viewport-layout",
+      "severity": "warning",
+      "description": "At a 390px viewport, the stack above the primary content region is too tall or too tight.",
+      "procedure": [
+        "Render at 390x844.",
+        "Measure the distance from the top of the viewport to the first primary content element (main list, feed, form).",
+        "Warn when more than 3 distinct control rows precede it, when that distance exceeds 45 percent of viewport height, or when vertical gaps between adjacent control rows are below 8px.",
+        "Report needs-human for borderline cases."
+      ],
+      "exceptions": [
+        "Task screens where the controls are the content (checkout steps, forms)"
+      ],
+      "thresholds": {
+        "viewportWidth": 390,
+        "maxControlRows": 3,
+        "maxTopFraction": 0.45,
+        "minRowGapPx": 8
+      }
+    },
+    {
+      "id": "CHK-008",
+      "title": "Send and Stop visible together",
+      "antipattern": "AP-008",
+      "principles": [
+        "P10"
+      ],
+      "automation": "objective",
+      "kind": "dom-structure",
+      "severity": "error",
+      "description": "Two controls with opposing functions for the same operation are visible at the same time.",
+      "procedure": [
+        "Within one container find buttons whose accessible names match Send/Submit and Stop/Cancel generation pairs.",
+        "Fail when both are visible and enabled."
+      ],
+      "exceptions": [
+        "Both actions can genuinely be used at the same time (for example Save and Discard in an editor)"
+      ],
+      "patterns": [
+        "^(send|submit|generate)\\b",
+        "^(stop|cancel|abort)\\b"
+      ],
+      "patternFlags": "i"
+    },
+    {
+      "id": "CHK-009",
+      "title": "Create button adjacent to a selection dropdown",
+      "antipattern": "AP-009",
+      "principles": [
+        "P10",
+        "P08"
+      ],
+      "automation": "heuristic",
+      "kind": "dom-structure",
+      "severity": "warning",
+      "description": "A button whose label starts with Create, New or Add is a direct sibling of a select, combobox or dropdown trigger for the same entity type.",
+      "procedure": [
+        "Find select, [role=combobox], [aria-haspopup=listbox] triggers.",
+        "Inspect siblings within the same row container; flag buttons matching ^(create|new|add)\\b with an entity noun in common with the dropdown label or placeholder.",
+        "Report needs-human when the nouns do not match."
+      ],
+      "exceptions": [
+        "A primary page-level Create action that is not tied to the dropdown"
+      ],
+      "patterns": [
+        "^(create|new|add)\\b"
+      ],
+      "patternFlags": "i"
+    },
+    {
+      "id": "CHK-010",
+      "title": "Unnecessary explanatory copy",
+      "antipattern": "AP-010",
+      "principles": [
+        "P05"
+      ],
+      "automation": "heuristic",
+      "kind": "dom-structure",
+      "severity": "warning",
+      "description": "Persistent helper paragraphs that explain familiar controls.",
+      "procedure": [
+        "Find p, small and .help elements of 25 or more characters directly adjacent to form controls, buttons or section headings.",
+        "Warn when the count per view exceeds 2 or any starts with phrases such as 'Use this', 'Here you can', 'This is where'.",
+        "Always mark needs-human: the check only surfaces candidates."
+      ],
+      "exceptions": [
+        "Legal, safety and error messages",
+        "Dismissible first-run hints"
+      ],
+      "thresholds": {
+        "minChars": 25,
+        "maxPerView": 2
+      },
+      "patterns": [
+        "^(use this|here you can|this is where|click (the )?button|welcome to)"
+      ],
+      "patternFlags": "i"
+    },
+    {
+      "id": "CHK-011",
+      "title": "More than one navigation sidebar",
+      "antipattern": "AP-011",
+      "principles": [
+        "P14",
+        "P16"
+      ],
+      "automation": "objective",
+      "kind": "dom-structure",
+      "severity": "error",
+      "description": "Two or more elements with navigation role are laid out as side-by-side vertical columns at the left edge.",
+      "procedure": [
+        "Find nav, aside[aria-label*=nav], [role=navigation] elements with height >= 60 percent of the viewport and width <= 360px.",
+        "Fail when two or more are siblings in the same flex or grid row and the second starts where the first ends.",
+        "Content panes (filters, inspectors, watchlists) without navigation role do not count."
+      ],
+      "exceptions": [
+        "Content panes with navigation-free roles",
+        "Mobile drawer open on top of content"
+      ]
+    },
+    {
+      "id": "CHK-012",
+      "title": "Accent color overuse",
+      "antipattern": "AP-012",
+      "principles": [
+        "P06",
+        "P15"
+      ],
+      "automation": "heuristic",
+      "kind": "dom-computed-style",
+      "severity": "warning",
+      "description": "Brand accent pixels dominate the view.",
+      "procedure": [
+        "Collect visible elements whose computed color, background-color or border-color is the accent or within a perceptual distance of 12 delta E.",
+        "Warn when accent covers more than 2 percent of the viewport area, or when more than 3 distinct elements are accent-filled in one view.",
+        "Mark needs-human when data visualisation is present."
+      ],
+      "exceptions": [
+        "Data visualisation series",
+        "Brand marks, the single primary action, meaningful state indicators"
+      ],
+      "thresholds": {
+        "maxAreaFraction": 0.02,
+        "maxFilledElements": 3
+      }
+    },
+    {
+      "id": "CHK-013",
+      "title": "Decorative gradients and glow",
+      "antipattern": "AP-013",
+      "principles": [
+        "P06",
+        "P07"
+      ],
+      "automation": "objective",
+      "kind": "source-css",
+      "severity": "error",
+      "description": "Gradients or glows on UI chrome.",
+      "procedure": [
+        "Search CSS for linear-gradient, radial-gradient, conic-gradient on UI chrome selectors, and box-shadow or filter drop-shadow with blur >= 12px and a non-black color.",
+        "Ignore gradients on image, canvas, svg, chart, [data-media] and skeleton shimmer selectors."
+      ],
+      "exceptions": [
+        "Scrims over imagery for text legibility",
+        "Media content, charts and skeleton loaders",
+        "Overlay elevation shadows (black, low alpha)"
+      ],
+      "thresholds": {
+        "minGlowBlurPx": 12
+      },
+      "patterns": [
+        "(linear|radial|conic)-gradient\\(",
+        "box-shadow:[^;]*0 0 \\d{2,}px"
+      ]
+    },
+    {
+      "id": "CHK-014",
+      "title": "Indentation used for hierarchy",
+      "antipattern": "AP-014",
+      "principles": [
+        "P11"
+      ],
+      "automation": "heuristic",
+      "kind": "dom-computed-style",
+      "severity": "warning",
+      "description": "Content blocks are progressively shifted right by padding or margin to express depth.",
+      "procedure": [
+        "For lists and tree-like structures compute the left edge of each item content box.",
+        "Warn when three or more consecutive items show increasing left edge offsets of at least 12px, or role=tree/treeitem is used for navigation."
+      ],
+      "exceptions": [
+        "Marker gutters of bullet or numbered lists",
+        "Nested replies when the product requires threaded indentation (document the exception)"
+      ],
+      "thresholds": {
+        "minStepPx": 12,
+        "minSteps": 3
+      }
+    },
+    {
+      "id": "CHK-015",
+      "title": "Redundant card containers",
+      "antipattern": "AP-015",
+      "principles": [
+        "P09",
+        "P01"
+      ],
+      "automation": "heuristic",
+      "kind": "dom-structure",
+      "severity": "warning",
+      "description": "Card surfaces wrap a single child that is itself a card or wrap content that needs no container.",
+      "procedure": [
+        "Find elements with a surface background different from their parent (card).",
+        "Warn when a card has exactly one element child that is also a card, or when card nesting depth is 3 or more."
+      ],
+      "exceptions": [
+        "Dialogs containing a single card-like preview"
+      ],
+      "thresholds": {
+        "maxNestingDepth": 2
+      }
+    },
+    {
+      "id": "CHK-016",
+      "title": "Excessive visible controls",
+      "antipattern": "AP-016",
+      "principles": [
+        "P10",
+        "P05",
+        "P18"
+      ],
+      "automation": "heuristic",
+      "kind": "dom-structure",
+      "severity": "warning",
+      "description": "Too many always-visible controls in one toolbar or view.",
+      "procedure": [
+        "Count visible interactive elements inside each header or toolbar container.",
+        "Warn when a toolbar has more than 7 icon-only buttons, or a view shows more than 20 simultaneously visible controls outside lists and grids."
+      ],
+      "exceptions": [
+        "Editors that pair a keyboard-reachable palette with their toolbar",
+        "Dense data tables where each row action is revealed on hover"
+      ],
+      "thresholds": {
+        "maxToolbarControls": 7,
+        "maxViewControls": 20
+      }
+    },
+    {
+      "id": "CHK-017",
+      "title": "Em dash in user-facing copy",
+      "principles": [
+        "P13"
+      ],
+      "automation": "objective",
+      "kind": "source-text",
+      "severity": "error",
+      "description": "The em dash character (U+2014) appears in UI strings, markup text, aria-labels, placeholders or demo data.",
+      "procedure": [
+        "Search source text and rendered textContent, title, alt, aria-label and placeholder values for U+2014.",
+        "Fail on every occurrence (also report ' -- ' and ' - ' used as prose dashes as warnings)."
+      ],
+      "exceptions": [
+        "Code comments and documentation outside the shipped UI may be exempt if the project says so"
+      ],
+      "patterns": [
+        "\\u2014"
+      ]
+    },
+    {
+      "id": "CHK-018",
+      "title": "Keyboard focus indicator contrast",
+      "principles": [
+        "P17",
+        "P15"
+      ],
+      "automation": "objective",
+      "kind": "contrast",
+      "severity": "error",
+      "description": "Every focusable element shows a focus indicator with at least 3:1 contrast against the adjacent surface when focused with the keyboard.",
+      "procedure": [
+        "Tab through all focusable elements.",
+        "For each focused element compute the indicator color (outline-color, or box-shadow ring) composited over the surface behind it.",
+        "Fail when contrast is below 3:1 or when outline-style is none and no ring replaces it.",
+        "Warn when ring thickness exceeds 2px (principle 17 weight)."
+      ],
+      "exceptions": [
+        "Native controls using browser default focus rings"
+      ],
+      "thresholds": {
+        "minContrast": 3,
+        "warnAboveThicknessPx": 2
+      }
+    },
+    {
+      "id": "CHK-019",
+      "title": "Destructive button text contrast",
+      "principles": [
+        "P19"
+      ],
+      "automation": "objective",
+      "kind": "contrast",
+      "severity": "error",
+      "description": "Text on destructive buttons reaches at least 4.5:1.",
+      "procedure": [
+        "Find destructive controls using the CHK-003 heuristic.",
+        "Composite the background over its backdrop and compute contrast with the text color."
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "CHK-020",
+      "title": "Touch target effective hit area on mobile",
+      "principles": [
+        "P18"
+      ],
+      "automation": "objective",
+      "kind": "viewport-layout",
+      "severity": "error",
+      "description": "At 390px, every interactive element has an effective hit area of at least 40 by 40 CSS pixels that the browser actually assigns to it, with no overlap with neighbouring controls.",
+      "procedure": [
+        "Render at 390x844 with touch enabled; repeat with a tall viewport (full page) and with any mobile drawer open.",
+        "For each visible interactive element (button, link, input, select, summary, role button/tab/checkbox/switch/menuitem/option/link, focusable label) take a square centred on it of size max(width, 40) by max(height, 40).",
+        "Sample the square on a 4px grid with elementFromPoint. The effective hit area is the bounding box of the sample points that resolve to the element (or its descendant, or its label).",
+        "Fail when the effective width or height is below 38px (2px sampling tolerance). Report the element that owns the missing area when another control overlaps it.",
+        "Optionally confirm with real touch taps at the centre and inset corners of the effective area, intercepting clicks in the capture phase so application state is unchanged."
+      ],
+      "exceptions": [
+        "Inline text links inside running text",
+        "Elements covered by an overlay at their own centre",
+        "Visually hidden inputs whose label is tested instead"
+      ],
+      "thresholds": {
+        "viewportWidth": 390,
+        "minPx": 40,
+        "sampleStepPx": 4,
+        "tolerancePx": 2
+      }
+    },
+    {
+      "id": "CHK-021",
+      "title": "Horizontal overflow",
+      "principles": [
+        "P18"
+      ],
+      "automation": "objective",
+      "kind": "viewport-layout",
+      "severity": "error",
+      "description": "The page scrolls horizontally at 375px, 390px or 1440px.",
+      "procedure": [
+        "For each viewport compare document.documentElement.scrollWidth to window.innerWidth.",
+        "Fail when scrollWidth exceeds innerWidth."
+      ],
+      "exceptions": [
+        "Intentionally scrollable regions inside a container (tables, carousels) that do not widen the page"
+      ],
+      "thresholds": {
+        "viewports": [
+          375,
+          390,
+          1440
+        ]
+      }
+    },
+    {
+      "id": "CHK-022",
+      "title": "Focus outline removed without replacement",
+      "principles": [
+        "P17",
+        "P15"
+      ],
+      "automation": "objective",
+      "kind": "source-css",
+      "severity": "error",
+      "description": "Rules that remove the outline (outline: none or outline: 0) on focusable elements must provide a replacement ring in the same rule or via :focus-visible.",
+      "procedure": [
+        "Parse rules with outline: none or outline: 0 whose selector targets button, a, input, textarea, select, [tabindex], [role].",
+        "Pass only when the same selector family declares box-shadow, border-color or background change under :focus-visible."
+      ],
+      "exceptions": [
+        "Containers focused programmatically (tabindex=-1) that never receive keyboard focus"
+      ],
+      "patterns": [
+        "outline:\\s*(none|0)"
+      ]
+    }
+  ],
+  "humanJudgment": [
+    {
+      "id": "HJ-001",
+      "question": "Does the screen feel calm? Is anything competing for attention that should not?",
+      "principles": [
+        "P06",
+        "P21"
+      ]
+    },
+    {
+      "id": "HJ-002",
+      "question": "Is hierarchy readable without borders, using elevation, spacing and type?",
+      "principles": [
+        "P01",
+        "P02",
+        "P12"
+      ]
+    },
+    {
+      "id": "HJ-003",
+      "question": "Do selection and focus read clearly but quietly (not dominant, not invisible)?",
+      "principles": [
+        "P15",
+        "P17"
+      ]
+    },
+    {
+      "id": "HJ-004",
+      "question": "On mobile, does the layout breathe, or does it feel compressed? Would more scrolling help?",
+      "principles": [
+        "P18"
+      ]
+    },
+    {
+      "id": "HJ-005",
+      "question": "Does the layout suit the task and match user expectations for this kind of product?",
+      "principles": [
+        "P16",
+        "P08"
+      ]
+    },
+    {
+      "id": "HJ-006",
+      "question": "Are copy and labels natural, concise and free of needless explanation?",
+      "principles": [
+        "P05",
+        "P13"
+      ]
+    },
+    {
+      "id": "HJ-007",
+      "question": "Do destructive actions look serious and readable, and differ from neutral ones without relying on color alone?",
+      "principles": [
+        "P19"
+      ]
+    },
+    {
+      "id": "HJ-008",
+      "question": "Does every identity element (avatar, initials, picture) represent real content?",
+      "principles": [
+        "P20"
+      ]
+    },
+    {
+      "id": "HJ-009",
+      "question": "Do all screens feel like one product family (spacing, controls, corners, motion)?",
+      "principles": [
+        "P07"
+      ]
+    },
+    {
+      "id": "HJ-010",
+      "question": "Are semantic colors (movement, error, success) used where meaning requires them and nowhere else?",
+      "principles": [
+        "P06",
+        "P15"
+      ]
+    }
+  ]
+}

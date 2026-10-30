@@ -34,10 +34,11 @@ node --version; git --version; claude --version      # Node must be 22 or newer
 # get the code (a new PowerShell window after the installs)
 git clone https://github.com/FarmaanFJM/Mini-Summa.git
 cd Mini-Summa
-git switch research/claude-integration-poc
-cd poc\claude-integration
+# switch to the branch that contains this guide (it lives in packages\claude-integration), then:
+npm install                                           # at the repository root: the bundle test and the typecheck use esbuild and TypeScript from there
+cd packages\claude-integration
 
-npm test                                              # expect: 131 pass, 0 fail. Any failure is a result: copy it.
+npm test                                              # expect: all pass, 0 fail (the 131 proof-of-concept tests plus this package's own). Any failure is a result: copy it.
 node scripts\qualify.mjs run                          # non-interactive tests Q01 to Q04, Q06, Q07, Q15 to Q17
 ```
 Interactive run (free). The script prints a command; paste it into a **second** PowerShell window. Accept the folder-trust
@@ -68,7 +69,10 @@ node --version; claude --version
 cmd.exe /c "echo %LOCALAPPDATA%"            # must work: WSL interop is how the Windows side is found
 
 git clone https://github.com/FarmaanFJM/Mini-Summa.git ~/Mini-Summa        # keep the clone on the Linux file system
-cd ~/Mini-Summa && git switch research/claude-integration-poc && cd poc/claude-integration
+cd ~/Mini-Summa
+# switch to the branch that contains this guide (it lives in packages/claude-integration), then:
+npm install                                 # at the repository root, as on Windows
+cd packages/claude-integration
 npm test
 node scripts/qualify.mjs run --only Q01,Q02,Q03,Q04,Q05,Q06,Q07,Q15,Q16,Q17
 node scripts/qualify.mjs run --live --only Q08,Q09,Q10,Q12,Q13          # add --with-model for Q11

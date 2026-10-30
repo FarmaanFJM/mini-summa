@@ -1,0 +1,1970 @@
+{
+  "source": {
+    "name": "lucide-static",
+    "version": "1.62.0",
+    "license": "ISC",
+    "url": "https://lucide.dev"
+  },
+  "grid": 24,
+  "stroke": {
+    "width": 1.75,
+    "linecap": "round",
+    "linejoin": "round"
+  },
+  "usage": [
+    "Use only these icons. Never mix in another icon family or hand-drawn paths.",
+    "One stroke weight everywhere: 1.75 on the 24px grid. Do not restyle per icon.",
+    "Render at 14, 16, 18 or 20px. 16 is the default; use 20 for prominent controls.",
+    "Pair the icon with a text label when the action is ambiguous or destructive.",
+    "Icon-only controls need aria-label (and a title tooltip). Decorative icons need aria-hidden=\"true\".",
+    "Icons inherit currentColor. Do not tint icons for decoration; colour only for meaning (state, trading movement, destructive).",
+    "Filled variants are for state only: play, pause, stop, active like or favourite. Never fill an icon for emphasis.",
+    "Do not use an icon beside every label. If removing it loses no meaning, remove it.",
+    "Need a new icon? Add it to the catalog from Lucide, with a stable Summa name; never rename an existing name."
+  ],
+  "categories": [
+    "actions",
+    "navigation",
+    "status-feedback",
+    "editor",
+    "files-folders",
+    "media",
+    "communication",
+    "commerce",
+    "finance-markets",
+    "people-objects",
+    "data-charts",
+    "layout",
+    "time-travel",
+    "system"
+  ],
+  "icons": [
+    {
+      "name": "plus",
+      "lucide": "plus",
+      "category": "actions",
+      "tags": [
+        "add",
+        "create",
+        "new"
+      ],
+      "use": "Add or create an item in the current context.",
+      "avoid": "Do not place beside a dropdown that can hold the create action itself.",
+      "file": "icons/svg/plus.svg"
+    },
+    {
+      "name": "minus",
+      "lucide": "minus",
+      "category": "actions",
+      "tags": [
+        "remove",
+        "subtract",
+        "collapse"
+      ],
+      "use": "Decrease a quantity or collapse an item.",
+      "file": "icons/svg/minus.svg"
+    },
+    {
+      "name": "x",
+      "lucide": "x",
+      "category": "actions",
+      "tags": [
+        "close",
+        "dismiss",
+        "clear",
+        "cancel"
+      ],
+      "use": "Close a surface, dismiss a message or clear a field.",
+      "file": "icons/svg/x.svg"
+    },
+    {
+      "name": "check",
+      "lucide": "check",
+      "category": "actions",
+      "tags": [
+        "confirm",
+        "done",
+        "selected",
+        "tick"
+      ],
+      "use": "Show a selected option or a completed step.",
+      "file": "icons/svg/check.svg"
+    },
+    {
+      "name": "search",
+      "lucide": "search",
+      "category": "actions",
+      "tags": [
+        "find",
+        "query",
+        "lookup"
+      ],
+      "use": "Open or label a search field.",
+      "file": "icons/svg/search.svg"
+    },
+    {
+      "name": "copy",
+      "lucide": "copy",
+      "category": "actions",
+      "tags": [
+        "duplicate",
+        "clipboard"
+      ],
+      "use": "Copy content or duplicate an item.",
+      "file": "icons/svg/copy.svg"
+    },
+    {
+      "name": "clipboard",
+      "lucide": "clipboard",
+      "category": "actions",
+      "tags": [
+        "paste",
+        "board"
+      ],
+      "use": "Paste from, or hold content on, the clipboard.",
+      "file": "icons/svg/clipboard.svg"
+    },
+    {
+      "name": "pencil",
+      "lucide": "pencil",
+      "category": "actions",
+      "tags": [
+        "edit",
+        "rename",
+        "write"
+      ],
+      "use": "Edit or rename an existing item.",
+      "file": "icons/svg/pencil.svg"
+    },
+    {
+      "name": "trash",
+      "lucide": "trash-2",
+      "category": "actions",
+      "tags": [
+        "delete",
+        "remove",
+        "destroy"
+      ],
+      "use": "Delete an item. Pair with a verb label in destructive buttons.",
+      "avoid": "Do not use alone for irreversible actions without confirmation.",
+      "file": "icons/svg/trash.svg"
+    },
+    {
+      "name": "refresh",
+      "lucide": "refresh-cw",
+      "category": "actions",
+      "tags": [
+        "reload",
+        "sync",
+        "retry"
+      ],
+      "use": "Reload data or retry a failed action.",
+      "file": "icons/svg/refresh.svg"
+    },
+    {
+      "name": "undo",
+      "lucide": "undo-2",
+      "category": "actions",
+      "tags": [
+        "back",
+        "revert"
+      ],
+      "use": "Undo the last change.",
+      "file": "icons/svg/undo.svg"
+    },
+    {
+      "name": "redo",
+      "lucide": "redo-2",
+      "category": "actions",
+      "tags": [
+        "forward",
+        "repeat"
+      ],
+      "use": "Redo an undone change.",
+      "file": "icons/svg/redo.svg"
+    },
+    {
+      "name": "download",
+      "lucide": "download",
+      "category": "actions",
+      "tags": [
+        "save",
+        "export",
+        "get"
+      ],
+      "use": "Download or export to the device.",
+      "file": "icons/svg/download.svg"
+    },
+    {
+      "name": "upload",
+      "lucide": "upload",
+      "category": "actions",
+      "tags": [
+        "import",
+        "send",
+        "file"
+      ],
+      "use": "Upload or import from the device.",
+      "file": "icons/svg/upload.svg"
+    },
+    {
+      "name": "share",
+      "lucide": "share",
+      "category": "actions",
+      "tags": [
+        "send",
+        "export",
+        "link"
+      ],
+      "use": "Share an item outside the current view.",
+      "file": "icons/svg/share.svg"
+    },
+    {
+      "name": "external",
+      "lucide": "external-link",
+      "category": "actions",
+      "tags": [
+        "open",
+        "new-tab",
+        "link",
+        "out"
+      ],
+      "use": "Open something in a new tab or another app.",
+      "file": "icons/svg/external.svg"
+    },
+    {
+      "name": "more-h",
+      "lucide": "ellipsis",
+      "category": "actions",
+      "tags": [
+        "menu",
+        "overflow",
+        "dots"
+      ],
+      "use": "Overflow menu for secondary actions in a row or toolbar.",
+      "file": "icons/svg/more-h.svg"
+    },
+    {
+      "name": "more-v",
+      "lucide": "ellipsis-vertical",
+      "category": "actions",
+      "tags": [
+        "menu",
+        "overflow",
+        "dots"
+      ],
+      "use": "Overflow menu for secondary actions in a column or card.",
+      "file": "icons/svg/more-v.svg"
+    },
+    {
+      "name": "filter",
+      "lucide": "funnel",
+      "category": "actions",
+      "tags": [
+        "narrow",
+        "refine"
+      ],
+      "use": "Open filter controls for a list or table.",
+      "file": "icons/svg/filter.svg"
+    },
+    {
+      "name": "sort",
+      "lucide": "arrow-up-down",
+      "category": "actions",
+      "tags": [
+        "order",
+        "rank"
+      ],
+      "use": "Change the sort order of a list.",
+      "file": "icons/svg/sort.svg"
+    },
+    {
+      "name": "sliders",
+      "lucide": "sliders-vertical",
+      "category": "actions",
+      "tags": [
+        "adjust",
+        "settings",
+        "tune"
+      ],
+      "use": "Adjust parameters or open a compact set of options.",
+      "file": "icons/svg/sliders.svg"
+    },
+    {
+      "name": "move",
+      "lucide": "move",
+      "category": "actions",
+      "tags": [
+        "drag",
+        "reposition"
+      ],
+      "use": "Move or reposition an item.",
+      "file": "icons/svg/move.svg"
+    },
+    {
+      "name": "scissors",
+      "lucide": "scissors",
+      "category": "actions",
+      "tags": [
+        "cut",
+        "trim"
+      ],
+      "use": "Cut or trim content.",
+      "file": "icons/svg/scissors.svg"
+    },
+    {
+      "name": "archive",
+      "lucide": "archive",
+      "category": "actions",
+      "tags": [
+        "store",
+        "put-away"
+      ],
+      "use": "Archive an item without deleting it.",
+      "file": "icons/svg/archive.svg"
+    },
+    {
+      "name": "save",
+      "lucide": "save",
+      "category": "actions",
+      "tags": [
+        "store",
+        "persist",
+        "disk"
+      ],
+      "use": "Save changes explicitly.",
+      "avoid": "Do not use when saving is automatic.",
+      "file": "icons/svg/save.svg"
+    },
+    {
+      "name": "send",
+      "lucide": "send",
+      "category": "actions",
+      "tags": [
+        "submit",
+        "post",
+        "message"
+      ],
+      "use": "Send a message or submit a post.",
+      "file": "icons/svg/send.svg"
+    },
+    {
+      "name": "zap",
+      "lucide": "zap",
+      "category": "actions",
+      "tags": [
+        "fast",
+        "power",
+        "flash"
+      ],
+      "use": "Quick action or power state.",
+      "avoid": "Avoid as decoration.",
+      "file": "icons/svg/zap.svg"
+    },
+    {
+      "name": "sparkle",
+      "lucide": "sparkles",
+      "category": "actions",
+      "tags": [
+        "ai",
+        "magic",
+        "generate"
+      ],
+      "use": "Mark generated or AI-assisted content and actions.",
+      "avoid": "Do not scatter it as decoration.",
+      "file": "icons/svg/sparkle.svg"
+    },
+    {
+      "name": "maximize",
+      "lucide": "maximize",
+      "category": "actions",
+      "tags": [
+        "fullscreen",
+        "expand"
+      ],
+      "use": "Enter full screen or expand to fill the space.",
+      "file": "icons/svg/maximize.svg"
+    },
+    {
+      "name": "minimize",
+      "lucide": "minimize-2",
+      "category": "actions",
+      "tags": [
+        "shrink",
+        "exit",
+        "fullscreen"
+      ],
+      "use": "Leave full screen or shrink a view.",
+      "file": "icons/svg/minimize.svg"
+    },
+    {
+      "name": "expand",
+      "lucide": "chevrons-up-down",
+      "category": "actions",
+      "tags": [
+        "toggle",
+        "collapse",
+        "open"
+      ],
+      "use": "Show that a control opens a list of choices.",
+      "file": "icons/svg/expand.svg"
+    },
+    {
+      "name": "chevron-down",
+      "lucide": "chevron-down",
+      "category": "navigation",
+      "tags": [
+        "disclose",
+        "dropdown",
+        "open"
+      ],
+      "use": "Expand a dropdown, disclosure or section.",
+      "file": "icons/svg/chevron-down.svg"
+    },
+    {
+      "name": "chevron-up",
+      "lucide": "chevron-up",
+      "category": "navigation",
+      "tags": [
+        "collapse",
+        "close"
+      ],
+      "use": "Collapse a disclosure or step up.",
+      "file": "icons/svg/chevron-up.svg"
+    },
+    {
+      "name": "chevron-left",
+      "lucide": "chevron-left",
+      "category": "navigation",
+      "tags": [
+        "back",
+        "previous"
+      ],
+      "use": "Go back or to the previous page.",
+      "file": "icons/svg/chevron-left.svg"
+    },
+    {
+      "name": "chevron-right",
+      "lucide": "chevron-right",
+      "category": "navigation",
+      "tags": [
+        "next",
+        "forward",
+        "submenu"
+      ],
+      "use": "Go forward, open a submenu or drill into a row.",
+      "file": "icons/svg/chevron-right.svg"
+    },
+    {
+      "name": "chevrons-left",
+      "lucide": "chevrons-left",
+      "category": "navigation",
+      "tags": [
+        "first",
+        "collapse",
+        "sidebar"
+      ],
+      "use": "Jump to the first page or collapse a pane.",
+      "file": "icons/svg/chevrons-left.svg"
+    },
+    {
+      "name": "chevrons-right",
+      "lucide": "chevrons-right",
+      "category": "navigation",
+      "tags": [
+        "last",
+        "expand"
+      ],
+      "use": "Jump to the last page or expand a pane.",
+      "file": "icons/svg/chevrons-right.svg"
+    },
+    {
+      "name": "arrow-up",
+      "lucide": "arrow-up",
+      "category": "navigation",
+      "tags": [
+        "up",
+        "increase",
+        "send"
+      ],
+      "use": "Direction up, or a send action in a prompt field.",
+      "file": "icons/svg/arrow-up.svg"
+    },
+    {
+      "name": "arrow-down",
+      "lucide": "arrow-down",
+      "category": "navigation",
+      "tags": [
+        "down",
+        "decrease"
+      ],
+      "use": "Direction down or scroll to the end.",
+      "file": "icons/svg/arrow-down.svg"
+    },
+    {
+      "name": "arrow-left",
+      "lucide": "arrow-left",
+      "category": "navigation",
+      "tags": [
+        "back",
+        "previous"
+      ],
+      "use": "Back to the previous view.",
+      "file": "icons/svg/arrow-left.svg"
+    },
+    {
+      "name": "arrow-right",
+      "lucide": "arrow-right",
+      "category": "navigation",
+      "tags": [
+        "next",
+        "forward",
+        "continue"
+      ],
+      "use": "Continue to the next step.",
+      "file": "icons/svg/arrow-right.svg"
+    },
+    {
+      "name": "arrow-up-right",
+      "lucide": "arrow-up-right",
+      "category": "navigation",
+      "tags": [
+        "increase",
+        "external"
+      ],
+      "use": "Upward movement or a link that leaves the view.",
+      "file": "icons/svg/arrow-up-right.svg"
+    },
+    {
+      "name": "arrow-down-right",
+      "lucide": "arrow-down-right",
+      "category": "navigation",
+      "tags": [
+        "decrease"
+      ],
+      "use": "Downward movement.",
+      "file": "icons/svg/arrow-down-right.svg"
+    },
+    {
+      "name": "corner-down-left",
+      "lucide": "corner-down-left",
+      "category": "navigation",
+      "tags": [
+        "enter",
+        "return"
+      ],
+      "use": "Enter or return key hint.",
+      "file": "icons/svg/corner-down-left.svg"
+    },
+    {
+      "name": "menu",
+      "lucide": "menu",
+      "category": "navigation",
+      "tags": [
+        "hamburger",
+        "nav",
+        "drawer"
+      ],
+      "use": "Open the main navigation on small screens.",
+      "file": "icons/svg/menu.svg"
+    },
+    {
+      "name": "home",
+      "lucide": "house",
+      "category": "navigation",
+      "tags": [
+        "start",
+        "main"
+      ],
+      "use": "Go to the start page.",
+      "file": "icons/svg/home.svg"
+    },
+    {
+      "name": "panel",
+      "lucide": "panel-left",
+      "category": "navigation",
+      "tags": [
+        "sidebar",
+        "toggle"
+      ],
+      "use": "Toggle a side panel.",
+      "file": "icons/svg/panel.svg"
+    },
+    {
+      "name": "compass",
+      "lucide": "compass",
+      "category": "navigation",
+      "tags": [
+        "explore",
+        "discover"
+      ],
+      "use": "Explore or discover content.",
+      "file": "icons/svg/compass.svg"
+    },
+    {
+      "name": "log-in",
+      "lucide": "log-in",
+      "category": "navigation",
+      "tags": [
+        "sign",
+        "in",
+        "enter"
+      ],
+      "use": "Sign in.",
+      "file": "icons/svg/log-in.svg"
+    },
+    {
+      "name": "log-out",
+      "lucide": "log-out",
+      "category": "navigation",
+      "tags": [
+        "sign",
+        "out",
+        "exit"
+      ],
+      "use": "Sign out. Use a text label too.",
+      "file": "icons/svg/log-out.svg"
+    },
+    {
+      "name": "link",
+      "lucide": "link",
+      "category": "navigation",
+      "tags": [
+        "url",
+        "anchor"
+      ],
+      "use": "Insert or copy a link.",
+      "file": "icons/svg/link.svg"
+    },
+    {
+      "name": "hash",
+      "lucide": "hash",
+      "category": "navigation",
+      "tags": [
+        "channel",
+        "number",
+        "tag"
+      ],
+      "use": "Channel, topic or number sign.",
+      "file": "icons/svg/hash.svg"
+    },
+    {
+      "name": "at",
+      "lucide": "at-sign",
+      "category": "navigation",
+      "tags": [
+        "mention",
+        "email",
+        "handle"
+      ],
+      "use": "Mention a person or show an email address.",
+      "file": "icons/svg/at.svg"
+    },
+    {
+      "name": "info",
+      "lucide": "info",
+      "category": "status-feedback",
+      "tags": [
+        "help",
+        "notice",
+        "about"
+      ],
+      "use": "Neutral information about the current item.",
+      "file": "icons/svg/info.svg"
+    },
+    {
+      "name": "circle-check",
+      "lucide": "circle-check",
+      "category": "status-feedback",
+      "tags": [
+        "success",
+        "done",
+        "complete"
+      ],
+      "use": "Success or completed state.",
+      "file": "icons/svg/circle-check.svg"
+    },
+    {
+      "name": "circle-x",
+      "lucide": "circle-x",
+      "category": "status-feedback",
+      "tags": [
+        "error",
+        "failed",
+        "invalid"
+      ],
+      "use": "Error or failed state.",
+      "file": "icons/svg/circle-x.svg"
+    },
+    {
+      "name": "circle-alert",
+      "lucide": "circle-alert",
+      "category": "status-feedback",
+      "tags": [
+        "warning",
+        "attention",
+        "error"
+      ],
+      "use": "Needs attention or an error message.",
+      "file": "icons/svg/circle-alert.svg"
+    },
+    {
+      "name": "warning",
+      "lucide": "triangle-alert",
+      "category": "status-feedback",
+      "tags": [
+        "caution",
+        "risk"
+      ],
+      "use": "Warn about a risky or destructive consequence.",
+      "file": "icons/svg/warning.svg"
+    },
+    {
+      "name": "help",
+      "lucide": "circle-question-mark",
+      "category": "status-feedback",
+      "tags": [
+        "question",
+        "support"
+      ],
+      "use": "Contextual help.",
+      "avoid": "Do not use to replace clear naming.",
+      "file": "icons/svg/help.svg"
+    },
+    {
+      "name": "circle",
+      "lucide": "circle",
+      "category": "status-feedback",
+      "tags": [
+        "empty",
+        "todo",
+        "radio"
+      ],
+      "use": "Empty or pending state.",
+      "file": "icons/svg/circle.svg"
+    },
+    {
+      "name": "circle-dot",
+      "lucide": "circle-dot",
+      "category": "status-feedback",
+      "tags": [
+        "radio",
+        "in-progress"
+      ],
+      "use": "Selected radio or in-progress state.",
+      "file": "icons/svg/circle-dot.svg"
+    },
+    {
+      "name": "circle-half",
+      "lucide": "contrast",
+      "category": "status-feedback",
+      "tags": [
+        "partial",
+        "progress",
+        "half"
+      ],
+      "use": "Partially complete state.",
+      "file": "icons/svg/circle-half.svg"
+    },
+    {
+      "name": "circle-dashed",
+      "lucide": "circle-dashed",
+      "category": "status-feedback",
+      "tags": [
+        "backlog",
+        "planned",
+        "empty"
+      ],
+      "use": "Planned or not started state.",
+      "file": "icons/svg/circle-dashed.svg"
+    },
+    {
+      "name": "loader",
+      "lucide": "loader-circle",
+      "category": "status-feedback",
+      "tags": [
+        "spinner",
+        "loading",
+        "busy"
+      ],
+      "use": "Animated loading indicator.",
+      "avoid": "Use a skeleton for page-level loading.",
+      "file": "icons/svg/loader.svg"
+    },
+    {
+      "name": "bell",
+      "lucide": "bell",
+      "category": "status-feedback",
+      "tags": [
+        "notification",
+        "alert"
+      ],
+      "use": "Notifications.",
+      "file": "icons/svg/bell.svg"
+    },
+    {
+      "name": "bell-off",
+      "lucide": "bell-off",
+      "category": "status-feedback",
+      "tags": [
+        "mute",
+        "silent"
+      ],
+      "use": "Notifications muted.",
+      "file": "icons/svg/bell-off.svg"
+    },
+    {
+      "name": "flag",
+      "lucide": "flag",
+      "category": "status-feedback",
+      "tags": [
+        "report",
+        "mark",
+        "milestone"
+      ],
+      "use": "Flag or mark an item.",
+      "file": "icons/svg/flag.svg"
+    },
+    {
+      "name": "ban",
+      "lucide": "ban",
+      "category": "status-feedback",
+      "tags": [
+        "block",
+        "forbidden",
+        "prohibited"
+      ],
+      "use": "Block a user or mark an action as unavailable.",
+      "file": "icons/svg/ban.svg"
+    },
+    {
+      "name": "shield",
+      "lucide": "shield",
+      "category": "status-feedback",
+      "tags": [
+        "security",
+        "protect",
+        "safe"
+      ],
+      "use": "Security or protection.",
+      "file": "icons/svg/shield.svg"
+    },
+    {
+      "name": "eye",
+      "lucide": "eye",
+      "category": "status-feedback",
+      "tags": [
+        "view",
+        "show",
+        "visible"
+      ],
+      "use": "Show hidden content or indicate visibility.",
+      "file": "icons/svg/eye.svg"
+    },
+    {
+      "name": "eye-off",
+      "lucide": "eye-off",
+      "category": "status-feedback",
+      "tags": [
+        "hide",
+        "hidden",
+        "password"
+      ],
+      "use": "Hide content or a password.",
+      "file": "icons/svg/eye-off.svg"
+    },
+    {
+      "name": "lock",
+      "lucide": "lock",
+      "category": "status-feedback",
+      "tags": [
+        "private",
+        "secure",
+        "locked"
+      ],
+      "use": "Locked or private content.",
+      "file": "icons/svg/lock.svg"
+    },
+    {
+      "name": "unlock",
+      "lucide": "lock-open",
+      "category": "status-feedback",
+      "tags": [
+        "open",
+        "public",
+        "unlocked"
+      ],
+      "use": "Unlocked or public content.",
+      "file": "icons/svg/unlock.svg"
+    },
+    {
+      "name": "heart",
+      "lucide": "heart",
+      "category": "status-feedback",
+      "tags": [
+        "like",
+        "favourite",
+        "love"
+      ],
+      "use": "Like. Use fill for the active state.",
+      "file": "icons/svg/heart.svg"
+    },
+    {
+      "name": "star",
+      "lucide": "star",
+      "category": "status-feedback",
+      "tags": [
+        "favourite",
+        "rating",
+        "bookmark"
+      ],
+      "use": "Favourite or rating. Use fill for the active state.",
+      "file": "icons/svg/star.svg"
+    },
+    {
+      "name": "thumbs-up",
+      "lucide": "thumbs-up",
+      "category": "status-feedback",
+      "tags": [
+        "like",
+        "approve",
+        "good"
+      ],
+      "use": "Approve or rate positively.",
+      "file": "icons/svg/thumbs-up.svg"
+    },
+    {
+      "name": "bold",
+      "lucide": "bold",
+      "category": "editor",
+      "tags": [
+        "format",
+        "text",
+        "strong"
+      ],
+      "use": "Bold text formatting.",
+      "file": "icons/svg/bold.svg"
+    },
+    {
+      "name": "italic",
+      "lucide": "italic",
+      "category": "editor",
+      "tags": [
+        "format",
+        "text",
+        "emphasis"
+      ],
+      "use": "Italic text formatting.",
+      "file": "icons/svg/italic.svg"
+    },
+    {
+      "name": "underline",
+      "lucide": "underline",
+      "category": "editor",
+      "tags": [
+        "format",
+        "text"
+      ],
+      "use": "Underline text formatting.",
+      "file": "icons/svg/underline.svg"
+    },
+    {
+      "name": "strike",
+      "lucide": "strikethrough",
+      "category": "editor",
+      "tags": [
+        "format",
+        "text",
+        "delete"
+      ],
+      "use": "Strikethrough text formatting.",
+      "file": "icons/svg/strike.svg"
+    },
+    {
+      "name": "code",
+      "lucide": "code",
+      "category": "editor",
+      "tags": [
+        "inline",
+        "source",
+        "developer"
+      ],
+      "use": "Inline code or source view.",
+      "file": "icons/svg/code.svg"
+    },
+    {
+      "name": "heading",
+      "lucide": "heading",
+      "category": "editor",
+      "tags": [
+        "title",
+        "text"
+      ],
+      "use": "Heading style.",
+      "file": "icons/svg/heading.svg"
+    },
+    {
+      "name": "quote",
+      "lucide": "quote",
+      "category": "editor",
+      "tags": [
+        "blockquote",
+        "citation"
+      ],
+      "use": "Block quote.",
+      "file": "icons/svg/quote.svg"
+    },
+    {
+      "name": "list",
+      "lucide": "list",
+      "category": "editor",
+      "tags": [
+        "bullets",
+        "items"
+      ],
+      "use": "Bulleted list.",
+      "file": "icons/svg/list.svg"
+    },
+    {
+      "name": "list-ordered",
+      "lucide": "list-ordered",
+      "category": "editor",
+      "tags": [
+        "numbered",
+        "steps"
+      ],
+      "use": "Numbered list.",
+      "file": "icons/svg/list-ordered.svg"
+    },
+    {
+      "name": "list-check",
+      "lucide": "list-checks",
+      "category": "editor",
+      "tags": [
+        "todo",
+        "tasks",
+        "checklist"
+      ],
+      "use": "Task list or checklist.",
+      "file": "icons/svg/list-check.svg"
+    },
+    {
+      "name": "table",
+      "lucide": "table",
+      "category": "editor",
+      "tags": [
+        "grid",
+        "rows",
+        "cells"
+      ],
+      "use": "Insert or show a table.",
+      "file": "icons/svg/table.svg"
+    },
+    {
+      "name": "align-left",
+      "lucide": "text-align-start",
+      "category": "editor",
+      "tags": [
+        "text",
+        "left"
+      ],
+      "use": "Align text left.",
+      "file": "icons/svg/align-left.svg"
+    },
+    {
+      "name": "align-center",
+      "lucide": "text-align-center",
+      "category": "editor",
+      "tags": [
+        "text",
+        "center"
+      ],
+      "use": "Align text to the centre.",
+      "file": "icons/svg/align-center.svg"
+    },
+    {
+      "name": "align-right",
+      "lucide": "text-align-end",
+      "category": "editor",
+      "tags": [
+        "text",
+        "right"
+      ],
+      "use": "Align text right.",
+      "file": "icons/svg/align-right.svg"
+    },
+    {
+      "name": "type",
+      "lucide": "type",
+      "category": "editor",
+      "tags": [
+        "font",
+        "text",
+        "typography"
+      ],
+      "use": "Text style or font.",
+      "file": "icons/svg/type.svg"
+    },
+    {
+      "name": "paperclip",
+      "lucide": "paperclip",
+      "category": "editor",
+      "tags": [
+        "attach",
+        "attachment",
+        "file"
+      ],
+      "use": "Attach a file.",
+      "file": "icons/svg/paperclip.svg"
+    },
+    {
+      "name": "mic",
+      "lucide": "mic",
+      "category": "editor",
+      "tags": [
+        "voice",
+        "dictate",
+        "record"
+      ],
+      "use": "Voice input or recording.",
+      "file": "icons/svg/mic.svg"
+    },
+    {
+      "name": "folder",
+      "lucide": "folder",
+      "category": "files-folders",
+      "tags": [
+        "directory",
+        "container"
+      ],
+      "use": "Folder or container of items.",
+      "file": "icons/svg/folder.svg"
+    },
+    {
+      "name": "folder-open",
+      "lucide": "folder-open",
+      "category": "files-folders",
+      "tags": [
+        "directory",
+        "open"
+      ],
+      "use": "An opened folder.",
+      "file": "icons/svg/folder-open.svg"
+    },
+    {
+      "name": "file",
+      "lucide": "file",
+      "category": "files-folders",
+      "tags": [
+        "document",
+        "generic"
+      ],
+      "use": "Generic file.",
+      "file": "icons/svg/file.svg"
+    },
+    {
+      "name": "file-text",
+      "lucide": "file-text",
+      "category": "files-folders",
+      "tags": [
+        "document",
+        "text",
+        "note"
+      ],
+      "use": "Text document.",
+      "file": "icons/svg/file-text.svg"
+    },
+    {
+      "name": "file-image",
+      "lucide": "file-image",
+      "category": "files-folders",
+      "tags": [
+        "picture",
+        "photo"
+      ],
+      "use": "Image file.",
+      "file": "icons/svg/file-image.svg"
+    },
+    {
+      "name": "image",
+      "lucide": "image",
+      "category": "files-folders",
+      "tags": [
+        "picture",
+        "photo"
+      ],
+      "use": "Image content or an image picker.",
+      "file": "icons/svg/image.svg"
+    },
+    {
+      "name": "drive",
+      "lucide": "hard-drive",
+      "category": "files-folders",
+      "tags": [
+        "disk",
+        "storage"
+      ],
+      "use": "Local storage or disk.",
+      "file": "icons/svg/drive.svg"
+    },
+    {
+      "name": "cloud",
+      "lucide": "cloud",
+      "category": "files-folders",
+      "tags": [
+        "storage",
+        "remote",
+        "online"
+      ],
+      "use": "Cloud storage or sync.",
+      "file": "icons/svg/cloud.svg"
+    },
+    {
+      "name": "inbox",
+      "lucide": "inbox",
+      "category": "files-folders",
+      "tags": [
+        "mail",
+        "incoming",
+        "tray"
+      ],
+      "use": "Inbox or incoming items.",
+      "file": "icons/svg/inbox.svg"
+    },
+    {
+      "name": "play",
+      "lucide": "play",
+      "category": "media",
+      "tags": [
+        "start",
+        "resume"
+      ],
+      "use": "Play. Filled by design, as it is a state control.",
+      "file": "icons/svg/play.svg"
+    },
+    {
+      "name": "pause",
+      "lucide": "pause",
+      "category": "media",
+      "tags": [
+        "stop",
+        "hold"
+      ],
+      "use": "Pause. Filled by design, as it is a state control.",
+      "file": "icons/svg/pause.svg"
+    },
+    {
+      "name": "stop",
+      "lucide": "square",
+      "category": "media",
+      "tags": [
+        "halt",
+        "cancel",
+        "generation"
+      ],
+      "use": "Stop playback or generation. Filled by design.",
+      "file": "icons/svg/stop.svg"
+    },
+    {
+      "name": "skip-back",
+      "lucide": "skip-back",
+      "category": "media",
+      "tags": [
+        "previous",
+        "track"
+      ],
+      "use": "Previous track.",
+      "file": "icons/svg/skip-back.svg"
+    },
+    {
+      "name": "skip-forward",
+      "lucide": "skip-forward",
+      "category": "media",
+      "tags": [
+        "next",
+        "track"
+      ],
+      "use": "Next track.",
+      "file": "icons/svg/skip-forward.svg"
+    },
+    {
+      "name": "shuffle",
+      "lucide": "shuffle",
+      "category": "media",
+      "tags": [
+        "random",
+        "order"
+      ],
+      "use": "Shuffle order.",
+      "file": "icons/svg/shuffle.svg"
+    },
+    {
+      "name": "repeat",
+      "lucide": "repeat",
+      "category": "media",
+      "tags": [
+        "loop",
+        "again"
+      ],
+      "use": "Repeat or loop.",
+      "file": "icons/svg/repeat.svg"
+    },
+    {
+      "name": "volume",
+      "lucide": "volume-2",
+      "category": "media",
+      "tags": [
+        "sound",
+        "audio",
+        "speaker"
+      ],
+      "use": "Sound on or volume control.",
+      "file": "icons/svg/volume.svg"
+    },
+    {
+      "name": "volume-off",
+      "lucide": "volume-x",
+      "category": "media",
+      "tags": [
+        "mute",
+        "silent"
+      ],
+      "use": "Sound muted.",
+      "file": "icons/svg/volume-off.svg"
+    },
+    {
+      "name": "music",
+      "lucide": "music",
+      "category": "media",
+      "tags": [
+        "audio",
+        "song",
+        "note"
+      ],
+      "use": "Music or audio content.",
+      "file": "icons/svg/music.svg"
+    },
+    {
+      "name": "film",
+      "lucide": "film",
+      "category": "media",
+      "tags": [
+        "video",
+        "movie",
+        "clapper"
+      ],
+      "use": "Video or film content.",
+      "file": "icons/svg/film.svg"
+    },
+    {
+      "name": "message",
+      "lucide": "message-square",
+      "category": "communication",
+      "tags": [
+        "chat",
+        "comment"
+      ],
+      "use": "Comment or chat.",
+      "file": "icons/svg/message.svg"
+    },
+    {
+      "name": "message-plus",
+      "lucide": "message-square-plus",
+      "category": "communication",
+      "tags": [
+        "new",
+        "chat",
+        "compose"
+      ],
+      "use": "Start a new conversation.",
+      "file": "icons/svg/message-plus.svg"
+    },
+    {
+      "name": "mail",
+      "lucide": "mail",
+      "category": "communication",
+      "tags": [
+        "email",
+        "letter"
+      ],
+      "use": "Email.",
+      "file": "icons/svg/mail.svg"
+    },
+    {
+      "name": "phone",
+      "lucide": "phone",
+      "category": "communication",
+      "tags": [
+        "call",
+        "telephone"
+      ],
+      "use": "Phone call.",
+      "file": "icons/svg/phone.svg"
+    },
+    {
+      "name": "bookmark",
+      "lucide": "bookmark",
+      "category": "communication",
+      "tags": [
+        "save",
+        "later"
+      ],
+      "use": "Save for later.",
+      "file": "icons/svg/bookmark.svg"
+    },
+    {
+      "name": "repost",
+      "lucide": "repeat-2",
+      "category": "communication",
+      "tags": [
+        "retweet",
+        "share",
+        "boost"
+      ],
+      "use": "Repost or boost.",
+      "file": "icons/svg/repost.svg"
+    },
+    {
+      "name": "bag",
+      "lucide": "shopping-bag",
+      "category": "commerce",
+      "tags": [
+        "cart",
+        "basket",
+        "store"
+      ],
+      "use": "Shopping bag or basket.",
+      "file": "icons/svg/bag.svg"
+    },
+    {
+      "name": "cart",
+      "lucide": "shopping-cart",
+      "category": "commerce",
+      "tags": [
+        "basket",
+        "checkout"
+      ],
+      "use": "Shopping cart.",
+      "file": "icons/svg/cart.svg"
+    },
+    {
+      "name": "credit-card",
+      "lucide": "credit-card",
+      "category": "commerce",
+      "tags": [
+        "payment",
+        "pay",
+        "card"
+      ],
+      "use": "Payment method.",
+      "file": "icons/svg/credit-card.svg"
+    },
+    {
+      "name": "truck",
+      "lucide": "truck",
+      "category": "commerce",
+      "tags": [
+        "delivery",
+        "shipping"
+      ],
+      "use": "Delivery or shipping.",
+      "file": "icons/svg/truck.svg"
+    },
+    {
+      "name": "package",
+      "lucide": "package",
+      "category": "commerce",
+      "tags": [
+        "parcel",
+        "order",
+        "box"
+      ],
+      "use": "Order or parcel.",
+      "file": "icons/svg/package.svg"
+    },
+    {
+      "name": "store",
+      "lucide": "store",
+      "category": "commerce",
+      "tags": [
+        "shop",
+        "retail"
+      ],
+      "use": "Shop or storefront.",
+      "file": "icons/svg/store.svg"
+    },
+    {
+      "name": "tag",
+      "lucide": "tag",
+      "category": "commerce",
+      "tags": [
+        "label",
+        "price",
+        "category"
+      ],
+      "use": "Label, category or price tag.",
+      "file": "icons/svg/tag.svg"
+    },
+    {
+      "name": "trending-up",
+      "lucide": "trending-up",
+      "category": "finance-markets",
+      "tags": [
+        "rise",
+        "gain",
+        "increase"
+      ],
+      "use": "Upward trend.",
+      "avoid": "Do not rely on it alone; show the number too.",
+      "file": "icons/svg/trending-up.svg"
+    },
+    {
+      "name": "trending-down",
+      "lucide": "trending-down",
+      "category": "finance-markets",
+      "tags": [
+        "fall",
+        "loss",
+        "decrease"
+      ],
+      "use": "Downward trend.",
+      "avoid": "Do not rely on it alone; show the number too.",
+      "file": "icons/svg/trending-down.svg"
+    },
+    {
+      "name": "dollar",
+      "lucide": "dollar-sign",
+      "category": "finance-markets",
+      "tags": [
+        "money",
+        "currency",
+        "price"
+      ],
+      "use": "Money amount or price.",
+      "file": "icons/svg/dollar.svg"
+    },
+    {
+      "name": "wallet",
+      "lucide": "wallet",
+      "category": "finance-markets",
+      "tags": [
+        "balance",
+        "funds"
+      ],
+      "use": "Wallet or balance.",
+      "file": "icons/svg/wallet.svg"
+    },
+    {
+      "name": "candles",
+      "lucide": "chart-candlestick",
+      "category": "finance-markets",
+      "tags": [
+        "candlestick",
+        "ohlc",
+        "trading"
+      ],
+      "use": "Candlestick price chart.",
+      "file": "icons/svg/candles.svg"
+    },
+    {
+      "name": "user",
+      "lucide": "user",
+      "category": "people-objects",
+      "tags": [
+        "person",
+        "account",
+        "profile"
+      ],
+      "use": "A person or account.",
+      "avoid": "Do not use as a placeholder avatar (P20).",
+      "file": "icons/svg/user.svg"
+    },
+    {
+      "name": "users",
+      "lucide": "users",
+      "category": "people-objects",
+      "tags": [
+        "people",
+        "group",
+        "team"
+      ],
+      "use": "A group or team.",
+      "file": "icons/svg/users.svg"
+    },
+    {
+      "name": "user-plus",
+      "lucide": "user-plus",
+      "category": "people-objects",
+      "tags": [
+        "invite",
+        "follow",
+        "add"
+      ],
+      "use": "Invite or follow a person.",
+      "file": "icons/svg/user-plus.svg"
+    },
+    {
+      "name": "settings",
+      "lucide": "settings",
+      "category": "people-objects",
+      "tags": [
+        "gear",
+        "preferences",
+        "options"
+      ],
+      "use": "Settings and preferences.",
+      "file": "icons/svg/settings.svg"
+    },
+    {
+      "name": "key",
+      "lucide": "key",
+      "category": "people-objects",
+      "tags": [
+        "password",
+        "access"
+      ],
+      "use": "Access key or credential.",
+      "file": "icons/svg/key.svg"
+    },
+    {
+      "name": "globe",
+      "lucide": "globe",
+      "category": "people-objects",
+      "tags": [
+        "web",
+        "world",
+        "language"
+      ],
+      "use": "Web, language or region.",
+      "file": "icons/svg/globe.svg"
+    },
+    {
+      "name": "map-pin",
+      "lucide": "map-pin",
+      "category": "people-objects",
+      "tags": [
+        "location",
+        "place"
+      ],
+      "use": "Location.",
+      "file": "icons/svg/map-pin.svg"
+    },
+    {
+      "name": "sun",
+      "lucide": "sun",
+      "category": "people-objects",
+      "tags": [
+        "light",
+        "theme",
+        "day"
+      ],
+      "use": "Light theme.",
+      "file": "icons/svg/sun.svg"
+    },
+    {
+      "name": "moon",
+      "lucide": "moon",
+      "category": "people-objects",
+      "tags": [
+        "dark",
+        "theme",
+        "night"
+      ],
+      "use": "Dark theme.",
+      "file": "icons/svg/moon.svg"
+    },
+    {
+      "name": "command",
+      "lucide": "command",
+      "category": "people-objects",
+      "tags": [
+        "keyboard",
+        "shortcut",
+        "cmd"
+      ],
+      "use": "Keyboard command key hint.",
+      "file": "icons/svg/command.svg"
+    },
+    {
+      "name": "trophy",
+      "lucide": "trophy",
+      "category": "people-objects",
+      "tags": [
+        "award",
+        "winner"
+      ],
+      "use": "Award or winner.",
+      "file": "icons/svg/trophy.svg"
+    },
+    {
+      "name": "bar-chart",
+      "lucide": "chart-no-axes-column",
+      "category": "data-charts",
+      "tags": [
+        "analytics",
+        "statistics"
+      ],
+      "use": "Compact bar chart for analytics.",
+      "file": "icons/svg/bar-chart.svg"
+    },
+    {
+      "name": "line-chart",
+      "lucide": "chart-line",
+      "category": "data-charts",
+      "tags": [
+        "analytics",
+        "trend"
+      ],
+      "use": "Line chart.",
+      "file": "icons/svg/line-chart.svg"
+    },
+    {
+      "name": "pie-chart",
+      "lucide": "chart-pie",
+      "category": "data-charts",
+      "tags": [
+        "analytics",
+        "share"
+      ],
+      "use": "Pie chart.",
+      "file": "icons/svg/pie-chart.svg"
+    },
+    {
+      "name": "activity",
+      "lucide": "activity",
+      "category": "data-charts",
+      "tags": [
+        "pulse",
+        "heartbeat",
+        "usage"
+      ],
+      "use": "Activity or live signal.",
+      "file": "icons/svg/activity.svg"
+    },
+    {
+      "name": "grid",
+      "lucide": "layout-grid",
+      "category": "layout",
+      "tags": [
+        "tiles",
+        "cards",
+        "view"
+      ],
+      "use": "Grid view.",
+      "file": "icons/svg/grid.svg"
+    },
+    {
+      "name": "rows",
+      "lucide": "rows-2",
+      "category": "layout",
+      "tags": [
+        "list",
+        "stack",
+        "view"
+      ],
+      "use": "Rows view.",
+      "file": "icons/svg/rows.svg"
+    },
+    {
+      "name": "columns",
+      "lucide": "columns-2",
+      "category": "layout",
+      "tags": [
+        "split",
+        "side-by-side"
+      ],
+      "use": "Columns or split view.",
+      "file": "icons/svg/columns.svg"
+    },
+    {
+      "name": "layers",
+      "lucide": "layers",
+      "category": "layout",
+      "tags": [
+        "stack",
+        "depth",
+        "z-index"
+      ],
+      "use": "Layers or stacking.",
+      "file": "icons/svg/layers.svg"
+    },
+    {
+      "name": "layout",
+      "lucide": "layout-dashboard",
+      "category": "layout",
+      "tags": [
+        "dashboard",
+        "page"
+      ],
+      "use": "Dashboard layout.",
+      "file": "icons/svg/layout.svg"
+    },
+    {
+      "name": "sidebar-right",
+      "lucide": "panel-right",
+      "category": "layout",
+      "tags": [
+        "inspector",
+        "detail"
+      ],
+      "use": "Toggle a right-hand panel.",
+      "file": "icons/svg/sidebar-right.svg"
+    },
+    {
+      "name": "clock",
+      "lucide": "clock",
+      "category": "time-travel",
+      "tags": [
+        "time",
+        "hour",
+        "duration"
+      ],
+      "use": "Time or duration.",
+      "file": "icons/svg/clock.svg"
+    },
+    {
+      "name": "calendar",
+      "lucide": "calendar",
+      "category": "time-travel",
+      "tags": [
+        "date",
+        "schedule",
+        "day"
+      ],
+      "use": "Date picker or schedule.",
+      "file": "icons/svg/calendar.svg"
+    },
+    {
+      "name": "history",
+      "lucide": "history",
+      "category": "time-travel",
+      "tags": [
+        "recent",
+        "past",
+        "versions"
+      ],
+      "use": "History or recent items.",
+      "file": "icons/svg/history.svg"
+    },
+    {
+      "name": "timer",
+      "lucide": "timer",
+      "category": "time-travel",
+      "tags": [
+        "countdown",
+        "stopwatch"
+      ],
+      "use": "Timer or countdown.",
+      "file": "icons/svg/timer.svg"
+    },
+    {
+      "name": "plane",
+      "lucide": "plane",
+      "category": "time-travel",
+      "tags": [
+        "flight",
+        "travel",
+        "airline"
+      ],
+      "use": "Flights.",
+      "file": "icons/svg/plane.svg"
+    },
+    {
+      "name": "bed",
+      "lucide": "bed-double",
+      "category": "time-travel",
+      "tags": [
+        "hotel",
+        "stay",
+        "lodging"
+      ],
+      "use": "Stays and lodging.",
+      "file": "icons/svg/bed.svg"
+    },
+    {
+      "name": "terminal",
+      "lucide": "terminal",
+      "category": "system",
+      "tags": [
+        "shell",
+        "cli",
+        "console"
+      ],
+      "use": "Terminal or command line.",
+      "file": "icons/svg/terminal.svg"
+    },
+    {
+      "name": "wifi",
+      "lucide": "wifi",
+      "category": "system",
+      "tags": [
+        "network",
+        "online",
+        "connection"
+      ],
+      "use": "Network connection.",
+      "file": "icons/svg/wifi.svg"
+    },
+    {
+      "name": "monitor",
+      "lucide": "monitor",
+      "category": "system",
+      "tags": [
+        "desktop",
+        "display",
+        "screen"
+      ],
+      "use": "Desktop display.",
+      "file": "icons/svg/monitor.svg"
+    },
+    {
+      "name": "smartphone",
+      "lucide": "smartphone",
+      "category": "system",
+      "tags": [
+        "mobile",
+        "phone",
+        "device"
+      ],
+      "use": "Mobile device.",
+      "file": "icons/svg/smartphone.svg"
+    },
+    {
+      "name": "bug",
+      "lucide": "bug",
+      "category": "system",
+      "tags": [
+        "error",
+        "debug",
+        "issue"
+      ],
+      "use": "Bug or debug action.",
+      "file": "icons/svg/bug.svg"
+    },
+    {
+      "name": "power",
+      "lucide": "power",
+      "category": "system",
+      "tags": [
+        "on",
+        "off",
+        "shutdown"
+      ],
+      "use": "Power on or off.",
+      "file": "icons/svg/power.svg"
+    },
+    {
+      "name": "triangle-alert",
+      "lucide": "triangle-alert",
+      "category": "status-feedback",
+      "tags": [
+        "warning",
+        "caution",
+        "alert"
+      ],
+      "use": "Warning state or notification that needs attention but is not an error.",
+      "avoid": "Do not use for errors that blocked an action (use circle-x or circle-alert).",
+      "file": "icons/svg/triangle-alert.svg"
+    }
+  ]
+}

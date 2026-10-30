@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dropdown preset</title>
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/presets.css">
+<style>
+  /* Page chrome only. Components use sm- classes from presets.css. */
+  body { margin: 0; background: var(--s0); color: var(--text); font: 400 var(--fs)/1.5 var(--font); }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 96px; display: flex; flex-direction: column; gap: 28px; }
+  h1 { margin: 0; font-size: var(--fs-xl); font-weight: 650; letter-spacing: -0.01em; }
+  main > section > h2 { margin: 0 0 8px; font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+  p { margin: 0; color: var(--text-2); }
+  .group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .panel { background: var(--s1); border-radius: var(--r-lg); padding: 8px; }
+  #panel { overflow: visible; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Dropdown</h1>
+    <p>A select with search above 7 options, creation inside the list, and multi-select. Familiar keyboard behaviour.</p>
+  </div>
+
+  <section>
+    <h2>Single select (7 options or fewer: no search)</h2>
+    <button class="sm-select" id="dd-status" aria-haspopup="listbox" aria-expanded="false" aria-label="Status"><span class="sm-select__value"></span><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></button>
+  </section>
+  <section>
+    <h2>Searchable, create inside the list (more than 7 options)</h2>
+    <button class="sm-select" id="dd-label" aria-haspopup="listbox" aria-expanded="false" aria-label="Label" style="width:220px"><span class="sm-select__value"></span><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></button>
+    <p style="margin-top:8px">Type a new name that does not exist: "Create label" appears at the bottom of the list. There is no separate Create button.</p>
+  </section>
+  <section>
+    <h2>Multi-select</h2>
+    <button class="sm-select" id="dd-multi" aria-haspopup="listbox" aria-expanded="false" aria-label="Assignees" style="width:220px"><span class="sm-select__value"></span><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 9 6 6 6-6"/></svg></button>
+  </section>
+
+  <div class="sm-menu sm-menu--floating" id="panel" hidden></div>
+</main>
+<script>
+(function () {
+  var panel = document.getElementById('panel');
+  var CHECK = '<svg class="sm-icon sm-menu__check" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg>';
+  var PLUS = '<svg class="sm-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12h14M12 5v14"/></svg>';
+  var CHECKBOX = '<span class="sm-check"><svg class="sm-icon sm-icon--sm" viewBox="0 0 24 24" aria-hidden="true" focusable="false" style="stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg></span>';
+  var SEARCH_THRESHOLD = 7;   // more than 7 options: show search
+  var active = null;          // the open dropdown state
+
+  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  function dropdown(trigger, cfg) {
+    var d = { trigger: trigger, options: cfg.options.slice(), multiple: !!cfg.multiple, selected: cfg.selected.slice(), query: '', buffer: '', bufTimer: 0 };
+    var searchable = cfg.searchable != null ? cfg.searchable : d.options.length > SEARCH_THRESHOLD;
+    var valueEl = trigger.querySelector('.sm-select__value');
+
+    function renderValue() {
+      var sel = d.options.filter(function (o) { return d.selected.indexOf(o) >= 0; });
+      valueEl.textContent = !sel.length ? cfg.placeholder : (sel.length === 1 ? sel[0] : sel.length + ' ' + cfg.noun + 's');
+      valueEl.classList.toggle('sm-faint', !sel.length);
+    }
+    function shown() { var q = d.query.trim().toLowerCase(); return q ? d.options.filter(function (o) { return o.toLowerCase().indexOf(q) >= 0; }) : d.options; }
+    function canCreate() { var q = d.query.trim(); return cfg.creatable && q && !d.options.some(function (o) { return o.toLowerCase() === q.toLowerCase(); }); }
+
+    function renderList(keepFocus) {
+      var list = panel.querySelector('.sm-menu__list');
+      var rows = shown().map(function (o) {
+        var on = d.selected.indexOf(o) >= 0;
+        return '<button type="button" class="sm-menu__item" role="option" tabindex="-1" aria-selected="' + on + '" data-v="' + esc(o) + '">' +
+          (d.multiple ? CHECKBOX : '') + '<span class="sm-menu__label">' + esc(o) + '</span>' + (!d.multiple && on ? CHECK : '') + '</button>';
+      }).join('');
+      if (!rows && !canCreate()) rows = '<div class="sm-menu__empty">No matches</div>';
+      list.innerHTML = rows;
+      var cr = panel.querySelector('.sm-create-slot');
+      cr.innerHTML = canCreate()
+        ? '<hr class="sm-menu__sep"><button type="button" class="sm-menu__item sm-menu__item--create" role="option" tabindex="-1" data-create="1">' + PLUS + '<span class="sm-menu__label">Create ' + cfg.noun + ' "' + esc(d.query.trim()) + '"</span></button>' : '';
+    }
+    function pick(v) {
+      if (d.multiple) { var i = d.selected.indexOf(v); if (i >= 0) d.selected.splice(i, 1); else d.selected.push(v); renderValue(); var f = document.activeElement && document.activeElement.dataset.v; renderList(); focusValue(f); }
+      else { d.selected = [v]; renderValue(); close(true); }
+    }
+    function create() {
+      var name = d.query.trim(); d.options.push(name); d.selected = d.multiple ? d.selected.concat(name) : [name]; d.query = '';
+      renderValue(); if (d.multiple) { var s = panel.querySelector('input'); if (s) s.value = ''; renderList(); } else close(true);
+    }
+    function items() { return Array.prototype.slice.call(panel.querySelectorAll('[role=option]')); }
+    function focusValue(v) { var t = items().filter(function (i) { return i.dataset.v === v; })[0] || items()[0]; if (t) t.focus(); }
+
+    function open() {
+      if (active) close(false);
+      active = d; d.query = '';
+      panel.setAttribute('role', 'listbox'); panel.setAttribute('aria-label', cfg.label);
+      if (d.multiple) panel.setAttribute('aria-multiselectable', 'true'); else panel.removeAttribute('aria-multiselectable');
+      panel.innerHTML = (searchable ? '<div class="sm-menu__search"><input class="sm-input" type="text" autocomplete="off" aria-label="Search ' + cfg.label + '" placeholder="' + (cfg.creatable ? 'Search or create ' + cfg.noun : 'Search') + '"></div>' : '') +
+        '<div class="sm-menu__list"></div><div class="sm-create-slot"></div>';
+      renderList();
+      var r = trigger.getBoundingClientRect();
+      panel.hidden = false;
+      panel.style.minWidth = Math.max(r.width, 200) + 'px';
+      var h = panel.offsetHeight, top = r.bottom + 4;
+      if (top + h > innerHeight - 8 && r.top - h - 4 > 8) top = r.top - h - 4;   // flip up
+      panel.style.left = Math.max(8, Math.min(r.left, innerWidth - panel.offsetWidth - 8)) + 'px';
+      panel.style.top = top + 'px';
+      trigger.setAttribute('aria-expanded', 'true');
+      var s = panel.querySelector('input');
+      if (s) s.focus(); else { var sel = items().filter(function (i) { return d.selected.indexOf(i.dataset.v) >= 0; })[0]; (sel || items()[0]).focus(); }
+    }
+    function close(restore) {
+      if (active !== d) return;
+      panel.hidden = true; panel.innerHTML = ''; trigger.setAttribute('aria-expanded', 'false'); active = null;
+      if (restore) trigger.focus();
+    }
+    d.close = close;
+
+    trigger.addEventListener('click', function () { if (active === d) close(true); else open(); });
+    trigger.addEventListener('keydown', function (e) { if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && active !== d) { e.preventDefault(); open(); } });
+
+    panel.addEventListener('click', function (e) {
+      if (active !== d) return;
+      var b = e.target.closest('[role=option]'); if (!b) return;
+      if (b.dataset.create) create(); else pick(b.dataset.v);
+    });
+    panel.addEventListener('input', function (e) {
+      if (active !== d || e.target.tagName !== 'INPUT') return;
+      d.query = e.target.value; renderList();
+    });
+    panel.addEventListener('keydown', function (e) {
+      if (active !== d) return;
+      var list = items(), i = list.indexOf(document.activeElement), inInput = e.target.tagName === 'INPUT';
+      if (e.key === 'Escape') { e.preventDefault(); close(true); }
+      else if (e.key === 'Tab') { close(false); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); if (list.length) list[inInput ? 0 : (i + 1) % list.length].focus(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (list.length) list[inInput || i <= 0 ? list.length - 1 : i - 1].focus(); }
+      else if (e.key === 'Home' && !inInput) { e.preventDefault(); list[0].focus(); }
+      else if (e.key === 'End' && !inInput) { e.preventDefault(); list[list.length - 1].focus(); }
+      else if (e.key === 'Enter' && inInput) { e.preventDefault(); if (canCreate() && !shown().length) create(); else if (shown().length) pick(shown()[0]); }
+      else if (!inInput && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && e.key !== ' ') {   // type-ahead (no search field)
+        d.buffer += e.key.toLowerCase(); clearTimeout(d.bufTimer); d.bufTimer = setTimeout(function () { d.buffer = ''; }, 600);
+        var hit = list.filter(function (it) { return it.textContent.trim().toLowerCase().indexOf(d.buffer) === 0; })[0]; if (hit) hit.focus();
+      }
+    });
+    renderValue();
+    return d;
+  }
+
+  document.addEventListener('mousedown', function (e) { if (active && !panel.contains(e.target) && !active.trigger.contains(e.target)) active.close(false); });
+  window.addEventListener('resize', function () { if (active) active.close(false); });
+
+  dropdown(document.getElementById('dd-status'), { label: 'Status', noun: 'status', placeholder: 'Select status', options: ['Backlog', 'Todo', 'In progress', 'In review', 'Done'], selected: ['Todo'] });
+  dropdown(document.getElementById('dd-label'), { label: 'Label', noun: 'label', placeholder: 'Select label', creatable: true,
+    options: ['Bug', 'Feature', 'Design', 'Docs', 'Research', 'Infra', 'Security', 'Performance', 'Accessibility'], selected: ['Design'] });
+  dropdown(document.getElementById('dd-multi'), { label: 'Assignees', noun: 'assignee', placeholder: 'Select assignees', multiple: true, searchable: false,
+    options: ['Amira Nasser', 'Ben Okafor', 'Chen Wei', 'Dara Lindqvist'], selected: ['Ben Okafor', 'Chen Wei'] });
+})();
+</script>
+</body>
+</html>

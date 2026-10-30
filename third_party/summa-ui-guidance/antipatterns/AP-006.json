@@ -1,0 +1,39 @@
+{
+  "id": "AP-006",
+  "name": "Fake placeholder avatars",
+  "summary": "Do not draw circular initials or generated profile pictures when no real avatar exists; plain names and useful metadata are enough.",
+  "problem": "Coloured initials circles pretend there is identity imagery when there is none. They add colour and width to every row, and make real avatars indistinguishable from fakes.",
+  "severity": "low",
+  "applicability": "default",
+  "principles": [
+    "P20",
+    "P05"
+  ],
+  "bad": {
+    "description": "A list of members, each with a randomly coloured initials circle next to a plain name.",
+    "demo": "bad-initials-avatars"
+  },
+  "good": [
+    {
+      "id": "plain-names",
+      "title": "Names and relevant metadata",
+      "description": "The name aligned on the left edge, and the data users compare (rating, role) on the right.",
+      "demo": "good-plain-names"
+    }
+  ],
+  "why": "Names and metadata are what users scan. Removing the circles aligns the content edge and removes a meaningless colour.",
+  "exceptions": [
+    "Real uploaded photos or logos that users recognise are allowed.",
+    "An avatar is allowed when imagery genuinely helps tell many similar entities apart (a social feed, a shared inbox with many senders) and it represents actual available content.",
+    "A deliberately chosen avatar (user picked a colour or icon) is user content, not a placeholder."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-006"
+    ],
+    "humanReview": [
+      "Is there actual image content, or only generated initials?",
+      "Does the avatar help users tell entities apart?"
+    ]
+  }
+}

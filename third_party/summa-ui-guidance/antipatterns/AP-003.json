@@ -1,0 +1,48 @@
+{
+  "id": "AP-003",
+  "name": "Washed-out destructive buttons",
+  "summary": "Give destructive actions a solid, readable treatment with a clear verb, not pale red text on a translucent red tint.",
+  "problem": "Low-contrast tinted ghost buttons fail contrast, look disabled and make the most consequential action the least legible one. They also lean on colour alone to signal danger.",
+  "severity": "high",
+  "applicability": "default",
+  "principles": [
+    "P19",
+    "P10"
+  ],
+  "bad": {
+    "description": "A pale red label on a translucent dark red background with a vague \"Delete\" label.",
+    "demo": "bad-washed-destructive"
+  },
+  "good": [
+    {
+      "id": "solid-destructive",
+      "title": "Solid destructive button",
+      "description": "Use .btn-danger: solid danger fill, white text, a trash icon and a specific verb (\"Delete project\").",
+      "demo": "good-solid-destructive",
+      "preset": "preset.destructive-button"
+    },
+    {
+      "id": "neutral-destructive",
+      "title": "Neutral, confirm next",
+      "description": "When the action is not the focus of the view, use a neutral secondary button with the same verb and icon, and put the danger treatment on the confirmation step.",
+      "demo": "good-neutral-destructive"
+    }
+  ],
+  "why": "A solid fill is readable at a glance and keeps danger distinguishable without relying on hue. A specific verb and icon add non-colour cues.",
+  "exceptions": [
+    "A low-emphasis inline text action (for example \"Remove\" in a row, or a danger item in a menu) may use the danger text colour on an opaque surface if it meets 4.5:1 contrast and has a clear verb. The prohibited part is the translucent tinted fill with pale text."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-003"
+    ],
+    "humanReview": [
+      "Is the destructive label readable at a glance and does it name the object being destroyed?",
+      "Does a confirmation or undo protect the action?"
+    ]
+  },
+  "relatedPresets": [
+    "preset.destructive-button",
+    "preset.confirm-dialog"
+  ]
+}

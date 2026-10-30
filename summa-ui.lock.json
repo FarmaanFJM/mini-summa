@@ -1,0 +1,10 @@
+{
+  "bundle": "summa-ui-guidance",
+  "version": "0.1.0",
+  "channel": "approved",
+  "repo": "FarmaanFJM/summa-ui",
+  "commit": "4989a0cf0f3f74e4511cd175b4b59e2adc3767e7",
+  "bundleDigest": "5ef73215334c313089cb3cd87f6f78f65eef48f67dfdc5d53bd84fedad408cc7",
+  "approvedBy": "FarmaanFJM",
+  "vendoredPath": "third_party/summa-ui-guidance"
+}

@@ -1,0 +1,97 @@
+{
+  "id": "preset.context-menu",
+  "name": "Context menu",
+  "purpose": "Offer the actions for the item under the pointer, using the familiar right-click, long-press and menu key conventions.",
+  "whenToUse": [
+    "Rows, cards, files, tabs or canvas objects that have several actions (rename, duplicate, share, delete).",
+    "Power users who expect right click, as an accelerator for actions that are also reachable elsewhere.",
+    "Touch: the same menu on long press (550ms).",
+    "An overflow (more) button menu that lists the same actions."
+  ],
+  "whenNotToUse": [
+    "As the only way to reach an action. Every action must also be reachable without right click (toolbar, overflow button, keyboard).",
+    "Menus with more than about 10 items. Group them, or move rarely used items elsewhere.",
+    "Replacing the browser menu on text, links or inputs where the native menu is what users expect.",
+    "Nested submenus more than one level deep.",
+    "A single action. Show the button directly."
+  ],
+  "anatomy": [
+    "Surface: neutral glass (--s4 at 88%), --r-lg, 4px padding, shadow.",
+    "Item: 30px minimum height (40px on touch), optional 15px leading icon, label, optional right aligned shortcut.",
+    "Heading (optional): small muted caps label above a group, same left edge as items.",
+    "Separator: 1px --line divider between groups.",
+    "Check mark: neutral (--text) on the right for toggled items.",
+    "Danger item: --danger text and icon, last, after a separator. No tinted fill."
+  ],
+  "variants": [
+    {
+      "id": "pointer",
+      "description": "Opens at the pointer position and flips to stay inside the viewport.",
+      "useWhen": "Right click and long press."
+    },
+    {
+      "id": "anchored",
+      "description": "Opens below an overflow (more) button, aligned to its end.",
+      "useWhen": "The visible alternative to right click."
+    },
+    {
+      "id": "checkable",
+      "description": "Items with a trailing check mark (menuitemcheckbox).",
+      "useWhen": "Toggling a view option or a favourite."
+    }
+  ],
+  "behavior": [
+    "Open: contextmenu event (right click, Shift+F10, Menu key) and a 550ms long press on touch.",
+    "Focus moves to the first enabled item on open and returns to the opener on close.",
+    "Keys: Up and Down move and wrap, Home and End jump, Enter or Space activates, Esc closes, Tab closes.",
+    "Type-ahead: typing letters moves to the next item whose label starts with them (600ms buffer).",
+    "Group related items with separators; order: common actions first, danger last after a separator.",
+    "Shortcuts are right aligned and muted; they are hints, the menu does not bind them.",
+    "Closes on selection, outside click, scroll or resize.",
+    "Disabled items stay visible but muted when their state is informative; otherwise leave them out."
+  ],
+  "tokens": [
+    "--s3",
+    "--s4",
+    "--line",
+    "--line-strong",
+    "--shadow-pop",
+    "--glass",
+    "--r-lg",
+    "--r-sm",
+    "--text",
+    "--text-2",
+    "--danger",
+    "--sp-1",
+    "--fs-sm",
+    "--fs-xs"
+  ],
+  "accessibility": [
+    "role=menu with role=menuitem (or menuitemcheckbox with aria-checked) items; label the menu with aria-label.",
+    "Roving tabindex: only the active item is tabbable; arrow keys move focus.",
+    "Opening and closing restore focus to the opener.",
+    "Shift+F10 and the Menu key open the menu for the focused item so keyboard users are not excluded.",
+    "Danger meaning is carried by the label and icon, not by colour alone.",
+    "Item text is --text on the glass surface (9.9:1 on --s4). Shortcut hints use --text-2 (4.8:1 on --s4), so they stay readable, and are hidden on touch devices where keyboard shortcuts do not apply. If a hint is not worth reading, do not show it. Danger items use --danger (4.55:1 on --s4) together with an icon and a clear verb, and sit last after a separator."
+  ],
+  "principles": [
+    "P07",
+    "P08",
+    "P10",
+    "P11",
+    "P12",
+    "P15",
+    "P19"
+  ],
+  "avoids": [
+    "AP-001",
+    "AP-003",
+    "AP-016",
+    "AP-014"
+  ],
+  "implementations": {
+    "html": "examples/context-menu.html",
+    "css": "css/presets.css",
+    "react": "src/ui/index.tsx"
+  }
+}

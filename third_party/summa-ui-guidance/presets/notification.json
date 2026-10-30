@@ -1,0 +1,133 @@
+{
+  "id": "preset.notification",
+  "name": "Notification (toast)",
+  "purpose": "Tell the user that something happened outside their current focus, without interrupting them. A toast confirms a reversible or background event, or reports a failure that needs a recovery path.",
+  "whenToUse": [
+    "A reversible action finished and a one-tap Undo is useful (Conversation archived, Undo).",
+    "A background task completed or failed while the user is elsewhere (export ready, upload failed with Retry).",
+    "A system event the user did not trigger just now (connection lost, sync conflict, new version available).",
+    "A confirmation the user cannot otherwise see, such as Link copied or Moved to another project."
+  ],
+  "whenNotToUse": [
+    "The result is already visible in the UI: a created item appears in the list, a toggle flips, a tab changes. Do not also announce it.",
+    "Autosave. Never toast every save; at most show quiet saved state in context if users need it.",
+    "Validation errors. Show them inline next to the field, not in a toast.",
+    "Hover, navigation or selection changes. Nothing happened that needs reporting.",
+    "Errors the user must act on in context (a payment failed, a form cannot submit). Use an inline banner or a dialog, which stay put and can hold the fix.",
+    "Repeated progress ticks (3 of 40 imported). Use a progress indicator, and toast once at the end.",
+    "Success after a destructive confirmation where the UI already changed (the row is gone). The dialog and the disappearing row are the feedback.",
+    "Anything the user must read to proceed safely. Toasts disappear and can be missed; use a dialog or inline message.",
+    "Marketing, tips, upsells or unrelated news. Notifications are never mandatory and never promotional."
+  ],
+  "anatomy": [
+    "Region: one fixed container, bottom centre on desktop and mobile, above a bottom tab bar via the --sm-toast-offset variable, safe-area aware.",
+    "Surface: neutral glass (--s4, same as menus). Never tinted by type.",
+    "Leading icon (16px): circle-check, circle-x, triangle-alert, info. Neutral has no icon. Only the icon takes the semantic hue.",
+    "Message (compact) or title plus one or two lines of description (expanded).",
+    "Actions: compact allows one text action (Undo); expanded allows up to two (Retry, View details). Text buttons, never filled.",
+    "Dismiss button (14px x icon): always on expanded and on persistent toasts; optional on short compact ones."
+  ],
+  "variants": [
+    {
+      "id": "compact",
+      "description": "One line: icon, message, optional single text action, dismiss when persistent.",
+      "useWhen": "Confirming a reversible or background event that needs no explanation."
+    },
+    {
+      "id": "expanded",
+      "description": "Title, one or two lines of description, up to two actions, dismiss.",
+      "useWhen": "An event needing explanation or a recovery path, such as a failed upload with Retry."
+    },
+    {
+      "id": "success",
+      "description": "Emerald leading icon (circle-check). Auto-dismiss after 4s.",
+      "useWhen": "A completed action the user cannot otherwise see."
+    },
+    {
+      "id": "error",
+      "description": "--danger leading icon (circle-x). Persists until dismissed.",
+      "useWhen": "A failure the user should not miss and can retry or inspect."
+    },
+    {
+      "id": "warning",
+      "description": "--warn leading icon (triangle-alert). 8s, or manual when it carries an action.",
+      "useWhen": "Something may need attention soon but nothing failed."
+    },
+    {
+      "id": "info",
+      "description": "text-2 leading icon (info). Auto-dismiss after 4s.",
+      "useWhen": "Neutral facts such as a feature change."
+    },
+    {
+      "id": "neutral",
+      "description": "No icon. Auto-dismiss after 4s.",
+      "useWhen": "Plain confirmations like Moved to Archive."
+    }
+  ],
+  "behavior": [
+    "Timing: success, info and neutral dismiss after 4s; warning after 8s or manually; errors persist until dismissed. A toast with an action stays at least 6s so it can be used.",
+    "Pause the timer while the toast is hovered or holds keyboard focus; resume with the remaining time.",
+    "Esc dismisses the focused toast and returns focus to where it was.",
+    "Never steal focus. Toasts are announced by assistive technology and reached by Tab (the region is last in the DOM).",
+    "Maximum 3 visible, newest nearest the bottom anchor. Older toasts recede (slightly smaller, never translucent) and return to full size on hover or focus. Extra toasts queue and appear as others leave.",
+    "De-duplicate: an identical type, title and message restarts the existing toast timer instead of stacking another.",
+    "Motion is a short fade and 8px rise; prefers-reduced-motion removes the movement.",
+    "Colour discipline (P03, P06): the surface is always neutral; only the leading icon takes the semantic hue. No tinted backgrounds, no coloured left borders, no coloured outlines.",
+    "Status: provisional. Compare with the owner's toast reference before treating the visual design as approved."
+  ],
+  "tokens": [
+    "--s4",
+    "--line-strong",
+    "--shadow-pop",
+    "--glass",
+    "--text",
+    "--text-2",
+    "--text-3",
+    "--accent-text",
+    "--danger",
+    "--warn",
+    "--r-lg",
+    "--r-sm",
+    "--sp-1",
+    "--sp-2",
+    "--sp-3",
+    "--sp-4",
+    "--fs",
+    "--fs-sm",
+    "--ease",
+    "--focus"
+  ],
+  "accessibility": [
+    "success, info and neutral use role=status with aria-live=polite; error and warning use role=alert (assertive).",
+    "Focus is never moved to a toast. Actions and the dismiss button are real buttons reachable by Tab; the dismiss button has aria-label=\"Dismiss notification\".",
+    "Timers pause on hover and focus, so keyboard and screen magnifier users can finish reading and acting.",
+    "Meaning is never colour only: each type has an icon (except neutral) and words. Message text is --text on --s4 (well above 4.5:1); the --text-2 description is about 4.8:1 on --s4; the success and warning icon hues are above 5.8:1; the --danger icon is about 4.0:1 (a graphic with a text label beside it, above the 3:1 non-text minimum).",
+    "Keyboard focus ring on toast buttons is the shared 1.5px --focus ring, at least 3:1 against --s4.",
+    "Error toasts persist, so they cannot be missed by slow readers (WCAG 2.2.1)."
+  ],
+  "principles": [
+    "P03",
+    "P06",
+    "P07",
+    "P05",
+    "P10",
+    "P15",
+    "P17",
+    "P13"
+  ],
+  "avoids": [
+    "AP-002",
+    "AP-004",
+    "AP-010",
+    "AP-012",
+    "AP-013",
+    "AP-016"
+  ],
+  "implementations": {
+    "html": "examples/notification.html",
+    "css": "css/presets.css",
+    "react": "src/presets/Toast.tsx"
+  },
+  "status": "provisional",
+  "statusNote": "Provisional. The owner supplied a toast reference in a separate conversation that this implementation could not access. Typography, spacing, icon treatment, placement and motion are built from the principles only and must be compared with that reference before the preset is marked reviewed."
+}

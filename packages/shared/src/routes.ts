@@ -67,6 +67,8 @@ export const projectUpdateSchema = z.object({
   githubRepo: z.string().trim().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Use the form owner/repo').nullable().optional(),
   defaultEnv: envId.optional(),
   notificationPrefs: notificationPrefsSchema.partial().optional(),
+  /** true hides the project (history is kept), false restores it. */
+  archived: z.boolean().optional(),
 });
 
 export const sessionStartSchema = z.object({
@@ -82,7 +84,7 @@ export const sessionStartSchema = z.object({
 });
 
 const settingsPatchSchema = z.object({
-  chatgpt: z.object({ mode: z.enum(['embedded', 'external']), externalBrowser: z.enum(['default', 'extension']), pasteAssist: z.boolean() }).partial(),
+  chatgpt: z.object({ mode: z.enum(['embedded', 'external']), externalBrowser: z.enum(['default', 'extension']) }).partial(),
   layout: z.object({
     orientation: z.enum(['auto', 'landscape', 'portrait']), landscapeRatio: z.number().min(0.15).max(0.85),
     portraitRatio: z.number().min(0.15).max(0.85), maximized: z.enum(['chatgpt', 'claude']).nullable(),
@@ -118,6 +120,8 @@ export interface HandoffResult { delivery: Delivery; part: number; partCount: nu
 export interface PartText { index: number; total: number; text: string; sha256: string }
 export interface PruneResult { dryRun: boolean; removed: { rawEvents: number; activity: number; notifications: number; reports: number; deliveries: number } }
 export interface ListPage<T> { items: T[]; nextBefore: string | null }
+export interface PushConfigured { ok: true; configured: true; firebaseProject: string }
+export interface PushTestResult { sent: number; failed: number; skipped: string | null }
 export interface SaveFileResult { delivery: Delivery; path: string | null }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -211,7 +215,8 @@ export const routes = {
   'hooks.apply': route<HookStatus>()({ method: 'POST', path: '/hooks/apply', scope: 'desktop', body: z.object({ env: envId, action: z.enum(['install', 'uninstall']), planHash: z.string().min(16).max(128) }) }),
 
   // devices and pairing
-  'pairing.createOffer': route<PairingOffer>()({ method: 'POST', path: '/pairing/offers', scope: 'desktop', body: z.object({ scopes: z.array(grantableScope).max(4).optional() }) }),
+  'pairing.createOffer': route<PairingOffer>()({ method: 'POST', path: '/pairing/offers', scope: 'desktop',
+    body: z.object({ scopes: z.array(grantableScope).max(4).optional(), kind: z.enum(['phone', 'extension']).optional() }) }),
   'pairing.redeem': route<PairingRedeemResult>()({ method: 'POST', path: '/pairing/redeem', scope: 'public',
     body: z.object({ offerId: id, code: z.string().min(8).max(200), deviceName: z.string().trim().min(1).max(80), platform: z.enum(['android', 'ios', 'extension', 'other']) }) }),
   'devices.list': route<Device[]>()({ method: 'GET', path: '/devices', scope: 'desktop' }),
@@ -220,6 +225,11 @@ export const routes = {
     body: z.object({ name: z.string().trim().min(1).max(80).optional(), trusted: z.boolean().optional(), scopes: z.array(grantableScope).max(4).optional() }) }),
   'devices.revoke': route<Ok>()({ method: 'DELETE', path: '/devices/:id', scope: 'desktop' }),
   'devices.registerPush': route<Ok>()({ method: 'POST', path: '/devices/self/push-token', scope: 'notify', body: z.object({ provider: z.literal('fcm'), token: z.string().min(10).max(4096) }) }),
+
+  // push notifications (Firebase Cloud Messaging, configured by the user with their own service account)
+  'push.configure': route<PushConfigured>()({ method: 'POST', path: '/push/configure', scope: 'desktop', body: z.object({ serviceAccountJson: z.string().min(50).max(20_000) }) }),
+  'push.clear': route<Ok>()({ method: 'DELETE', path: '/push/configure', scope: 'desktop' }),
+  'push.test': route<PushTestResult>()({ method: 'POST', path: '/push/test', scope: 'desktop' }),
 
   // remote access
   'tailscale.status': route<TailscaleStatus>()({ method: 'GET', path: '/tailscale', scope: 'desktop', query: z.object({ refresh: qBool.optional() }) }),

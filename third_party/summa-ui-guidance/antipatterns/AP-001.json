@@ -1,0 +1,44 @@
+{
+  "id": "AP-001",
+  "name": "Nested decorative borders",
+  "summary": "Separate nested elements with background steps, spacing and type instead of drawing a border around each level.",
+  "problem": "Every extra outline asks for attention. When a bordered container holds bordered cards, inputs and buttons, nothing is the boundary that matters and the interface turns into a grid of boxes.",
+  "severity": "high",
+  "applicability": "default",
+  "principles": [
+    "P01",
+    "P02",
+    "P12"
+  ],
+  "bad": {
+    "description": "A bordered panel contains a bordered card, which contains a bordered input and bordered buttons.",
+    "demo": "bad-nested-borders"
+  },
+  "good": [
+    {
+      "id": "flat-surfaces",
+      "title": "Elevation, not outlines",
+      "description": "One panel on a lighter surface. Inputs and buttons are filled one step lighter than their parent. No border anywhere.",
+      "demo": "good-flat-surfaces"
+    }
+  ],
+  "why": "Hierarchy is carried by the dark to light surface ramp, spacing and type weight. A border is kept for the rare boundary that is meaningful, so it still means something when it appears.",
+  "exceptions": [
+    "A single outline around an overlay (menu, dialog, popover) is allowed: it separates floating content from whatever sits behind it. The content inside stays borderless.",
+    "Checkboxes, radios and similar controls whose shape must be perceivable may keep their own outline even inside a container (WCAG 1.4.11 asks for 3:1 non-text contrast). Prefer a fill step first and add the outline only when the fill cannot reach the contrast.",
+    "Data grids may draw cell dividers; use hairline dividers, not boxes, and not on every cell edge."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-001"
+    ],
+    "humanReview": [
+      "Does a bordered element sit inside another bordered element?",
+      "Is the remaining border marking a boundary a user needs, or only proving the element exists?"
+    ]
+  },
+  "relatedAntiPatterns": [
+    "AP-015",
+    "AP-002"
+  ]
+}

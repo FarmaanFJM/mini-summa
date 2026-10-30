@@ -1,0 +1,38 @@
+{
+  "id": "AP-013",
+  "name": "Decorative gradients and glow",
+  "summary": "Use matte flat surfaces; drop gradients, glows and gradient text unless they encode data or a brand asset.",
+  "problem": "Multi-colour gradients, outer glows and gradient text are a generic signal of generated UI. They conflict with the matte, restrained language and age quickly.",
+  "severity": "medium",
+  "applicability": "default",
+  "principles": [
+    "P06",
+    "P07"
+  ],
+  "bad": {
+    "description": "A hero with a violet to green gradient, a glow around the card, gradient text and a glowing button.",
+    "demo": "bad-glow-hero"
+  },
+  "good": [
+    {
+      "id": "matte-hero",
+      "title": "Matte surface",
+      "description": "A flat elevated surface, a clear title and one primary button.",
+      "demo": "good-matte-hero"
+    }
+  ],
+  "why": "Flat surfaces keep the product consistent and keep attention on content and the primary action.",
+  "exceptions": [
+    "Gradients that encode data (heatmaps, scales) are allowed.",
+    "Skeleton shimmer and subtle scrims for text legibility on imagery are allowed.",
+    "A brand illustration or marketing asset that the brand explicitly specifies is allowed."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-013"
+    ],
+    "humanReview": [
+      "Does the gradient or glow encode anything?"
+    ]
+  }
+}

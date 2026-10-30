@@ -1,0 +1,339 @@
+/*
+  Summa-UI presets: framework-neutral CSS.
+
+  - Every class is prefixed `sm-`. No React, no build step, no reset beyond the `sm-` elements.
+  - Built ONLY on the custom properties from tokens.css (link ../css/tokens.css first).
+  - Behaviour (timers, focus, keyboard) lives in the HTML examples and the React reference;
+    this file only owns appearance. State is expressed with ARIA / data attributes so the
+    same markup works in any framework.
+
+  Sections
+    1. Base (box model, icon, focus)
+    2. Buttons (incl. destructive and loading)
+    3. Inputs
+    4. Notifications (toasts)
+    5. Confirm dialog
+    6. Loading: skeleton, spinner, progress
+    7. Empty state
+    8. Interaction states (rows, nav items, specimen helpers)
+    9. Menus, context menu, dropdown
+*/
+
+/* ---------------------------------------------------------------- 1. Base */
+[class^="sm-"], [class*=" sm-"] { box-sizing: border-box; }
+[class^="sm-"]::before, [class^="sm-"]::after,
+[class*=" sm-"]::before, [class*=" sm-"]::after { box-sizing: border-box; }
+
+/* Icons are 16px stroke icons that inherit the text colour. */
+.sm-icon { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.sm-icon--sm { width: 14px; height: 14px; }
+
+/* Keyboard focus (P15, P17): a 1.5px neutral ring, never emerald, never thick.
+   --focus is rgba(236,236,235,.5): at least 3:1 against --s0 to --s4. */
+.sm-btn:focus-visible, .sm-icon-btn:focus-visible, .sm-toast__action:focus-visible, .sm-toast__dismiss:focus-visible,
+.sm-menu__item:focus-visible, .sm-select:focus-visible, .sm-row:focus-visible, .sm-nav-item:focus-visible,
+.sm-link:focus-visible {
+  outline: 1.5px solid var(--focus); outline-offset: 1px;
+}
+/* Menu items are navigated like a list: the focused item gets the hover fill instead of a ring. */
+.sm-menu__item:focus-visible { outline: none; background: rgba(255, 255, 255, 0.08); }
+/* Text inputs use a 1px ring (box-shadow) so the control does not change size. */
+.sm-input:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--focus); }
+
+.sm-muted { color: var(--text-2); }
+.sm-faint { color: var(--text-3); }
+.sm-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sm-link { color: var(--text); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--text-3); border-radius: var(--r-sm); }
+.sm-link:hover { text-decoration-color: var(--text); }
+
+/* ---------------------------------------------------------------- 2. Buttons */
+.sm-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--control-h); padding: 0 12px; border: 0; border-radius: var(--r);
+  font: 500 var(--fs)/1 var(--font); white-space: nowrap; user-select: none; cursor: pointer;
+  background: var(--s3); color: var(--text);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease), opacity var(--dur);
+}
+.sm-btn--lg { height: var(--control-h-lg); padding: 0 16px; }
+.sm-btn:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--s4); }
+.sm-btn:active:not(:disabled) { background: #444545; }
+
+.sm-btn--primary { background: var(--accent); color: var(--accent-ink); }
+.sm-btn--primary:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--accent-hover); }
+.sm-btn--primary:active:not(:disabled) { background: var(--accent); }
+
+.sm-btn--ghost { background: none; color: var(--text-2); }
+.sm-btn--ghost:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--s2); color: var(--text); }
+.sm-btn--ghost:active:not(:disabled) { background: var(--s3); }
+
+/* Destructive, solid (P19): readable white text on a solid red. Never a pale tinted ghost. */
+.sm-btn--danger { background: var(--danger-solid); color: var(--danger-ink); }
+.sm-btn--danger:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--danger-solid-hover); }
+.sm-btn--danger:active:not(:disabled) { background: var(--danger-solid); }
+
+/* Quiet destructive: neutral surface, danger colour on text and icon only. For low-risk
+   deletes, toolbars and menus. Still has a verb, still no tinted background. */
+.sm-btn--danger-quiet { background: var(--s3); color: var(--danger); }
+.sm-btn--danger-quiet:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--s4); }
+
+.sm-btn:disabled, .sm-btn[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+
+/* Loading: the label stays (so the width does not change), a spinner replaces the icon. */
+.sm-btn[aria-busy="true"] { cursor: progress; }
+
+.sm-icon-btn {
+  display: inline-grid; place-items: center; width: var(--control-h); height: var(--control-h); flex: none; padding: 0;
+  border: 0; border-radius: var(--r); background: none; color: var(--text-2); cursor: pointer;
+  transition: background var(--dur), color var(--dur);
+}
+.sm-icon-btn:hover:not(:disabled) { background: var(--s3); color: var(--text); }
+.sm-icon-btn--sm { width: 28px; height: 28px; border-radius: var(--r-sm); }
+
+/* ---------------------------------------------------------------- 3. Inputs */
+.sm-input {
+  width: 100%; height: var(--control-h); padding: 0 10px; border: 0; border-radius: var(--r);
+  background: var(--s2); color: var(--text); font: 400 var(--fs)/1.5 var(--font);
+  transition: box-shadow var(--dur);
+}
+.sm-input::placeholder { color: var(--text-3); }
+.sm-input:disabled { opacity: 0.45; }
+/* Inputs inside raised surfaces step one level lighter so they stay visible (P02). */
+.sm-dialog .sm-input, .sm-menu .sm-input { background: var(--s4); }
+.sm-menu .sm-input { background: var(--s3); }
+
+/* ---------------------------------------------------------------- 4. Notifications */
+/*
+  Region: one fixed container, bottom centre, above any bottom tab bar.
+  Set --sm-toast-offset on :root (or the region) to the tab bar height, e.g. 56px.
+  DOM order = oldest first, newest last, so the newest sits nearest the anchor (bottom edge).
+*/
+.sm-toast-region {
+  position: fixed; z-index: 120; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--sm-toast-offset, 0px) + var(--sp-4) + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-2);
+  width: min(440px, calc(100vw - 2 * var(--sp-4) - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)));
+  margin: 0; padding: 0; list-style: none; pointer-events: none;
+}
+@media (max-width: 640px) {
+  .sm-toast-region { width: calc(100vw - 2 * var(--sp-2) - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)); }
+}
+
+/* The surface is always the neutral glass of menus (--s4). Colour never tints it (P03, P06). */
+.sm-toast {
+  pointer-events: auto; width: 100%; display: flex; align-items: flex-start; gap: var(--sp-3);
+  padding: var(--sp-3); border-radius: var(--r-lg); color: var(--text);
+  background: color-mix(in srgb, var(--s4) 88%, transparent);
+  -webkit-backdrop-filter: var(--glass); backdrop-filter: var(--glass);
+  box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-pop);
+  font: 400 var(--fs)/1.45 var(--font);
+  transform-origin: 50% 100%;
+  animation: sm-toast-in 180ms var(--ease);
+  transition: opacity 160ms var(--ease), transform 160ms var(--ease);
+}
+@keyframes sm-toast-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+.sm-toast[data-state="leaving"] { opacity: 0; transform: translateY(6px) scale(0.98); }
+
+/* Only the leading icon carries the semantic hue. */
+.sm-toast__icon { margin-top: 2px; color: var(--text-2); }
+.sm-toast[data-type="success"] .sm-toast__icon { color: var(--accent-text); }
+.sm-toast[data-type="error"]   .sm-toast__icon { color: var(--danger); }
+.sm-toast[data-type="warning"] .sm-toast__icon { color: var(--warn); }
+.sm-toast[data-type="info"]    .sm-toast__icon,
+.sm-toast[data-type="neutral"] .sm-toast__icon { color: var(--text-2); }
+/* Neutral has no icon: the text simply starts at the left padding. */
+
+.sm-toast__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sm-toast__title { font-weight: 600; }
+.sm-toast__message { color: var(--text); overflow-wrap: anywhere; }
+.sm-toast__desc { color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sm-toast__actions { display: flex; gap: var(--sp-1); margin-top: var(--sp-2); margin-left: calc(-1 * var(--sp-2)); }
+
+/* Actions are text buttons, never filled: a toast is not the place for a primary action. */
+.sm-toast__action {
+  height: 28px; padding: 0 var(--sp-2); border: 0; border-radius: var(--r-sm); background: none;
+  color: var(--text); font: 600 var(--fs-sm)/1 var(--font); cursor: pointer; white-space: nowrap;
+  transition: background var(--dur);
+}
+.sm-toast__action:hover { background: rgba(255, 255, 255, 0.08); }
+.sm-toast__action:active { background: rgba(255, 255, 255, 0.12); }
+
+.sm-toast__dismiss {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none; padding: 0;
+  margin: -4px -4px -4px 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--text-3); cursor: pointer;
+  transition: background var(--dur), color var(--dur);
+}
+.sm-toast__dismiss:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+
+/* COMPACT: one line. Icon, message, optional single text action, dismiss (only when persistent). */
+.sm-toast--compact { align-items: center; min-height: 44px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); gap: var(--sp-2); }
+.sm-toast--compact .sm-toast__icon { margin-top: 0; margin-right: var(--sp-1); }
+.sm-toast--compact .sm-toast__body { display: block; }
+.sm-toast--compact .sm-toast__message { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-toast--compact .sm-toast__dismiss { margin: 0; }
+.sm-toast--compact .sm-toast__action { margin-left: auto; }
+
+/* Stacking: at most 3 visible. Older toasts recede (smaller); they come back to full size while the
+   region is hovered or holds keyboard focus so their actions stay reachable. */
+.sm-toast[data-depth="1"] { transform: scale(0.97); }
+.sm-toast[data-depth="2"] { transform: scale(0.94); }
+.sm-toast-region:hover .sm-toast, .sm-toast-region:focus-within .sm-toast { transform: none; }
+.sm-toast[data-depth="3"] { display: none; }
+
+/* ---------------------------------------------------------------- 5. Confirm dialog */
+.sm-backdrop {
+  position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: var(--sp-4);
+  background: rgba(8, 9, 9, 0.6); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  animation: sm-fade-in 120ms;
+}
+.sm-backdrop[hidden] { display: none; }
+@keyframes sm-fade-in { from { opacity: 0; } }
+.sm-dialog {
+  width: min(440px, 100%); max-height: calc(100dvh - 32px); display: flex; flex-direction: column;
+  background: var(--s3); color: var(--text); border-radius: var(--r-xl);
+  box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-pop);
+  font: 400 var(--fs)/1.5 var(--font); animation: sm-pop-in 160ms var(--ease);
+}
+@keyframes sm-pop-in { from { opacity: 0; transform: translateY(-3px) scale(0.985); } }
+.sm-dialog__title { margin: 0; padding: 20px 20px 4px; font-size: var(--fs-lg); font-weight: 600; line-height: 1.35; }
+.sm-dialog__body { padding: 4px 20px; overflow: auto; color: var(--text-2); }
+.sm-dialog__field { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-3); }
+.sm-dialog__label { font-size: var(--fs-sm); color: var(--text-2); }
+.sm-dialog__label strong { color: var(--text); font-weight: 600; font-family: var(--mono); font-size: var(--fs-sm); }
+.sm-dialog__foot { display: flex; justify-content: flex-end; gap: var(--sp-2); padding: 16px 20px 20px; }
+/* Secondary buttons need one step lighter than the dialog surface (--s3) to stay visible. */
+.sm-dialog .sm-btn { background: var(--s4); }
+.sm-dialog .sm-btn:hover:not(:disabled) { background: #444545; }
+.sm-dialog .sm-btn--danger { background: var(--danger-solid); }
+.sm-dialog .sm-btn--danger:hover:not(:disabled) { background: var(--danger-solid-hover); }
+.sm-dialog .sm-btn--primary { background: var(--accent); }
+.sm-dialog .sm-btn--primary:hover:not(:disabled) { background: var(--accent-hover); }
+@media (max-width: 480px) {
+  .sm-dialog__foot { flex-direction: column-reverse; }
+  .sm-dialog__foot .sm-btn { width: 100%; height: var(--control-h-lg); }
+}
+
+/* ---------------------------------------------------------------- 6. Loading */
+.sm-spinner { display: inline-block; width: 14px; height: 14px; flex: none; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.22); border-top-color: currentColor; animation: sm-spin 700ms linear infinite; }
+@keyframes sm-spin { to { transform: rotate(360deg); } }
+
+/* Skeleton rows mirror the final row height, so nothing shifts when data arrives. */
+.sm-skeleton { display: block; border-radius: var(--r-sm);
+  background: linear-gradient(90deg, var(--s3), var(--s4), var(--s3)); background-size: 200% 100%; animation: sm-shimmer 1.4s linear infinite; }
+@keyframes sm-shimmer { to { background-position: -200% 0; } }
+.sm-skel-list { display: flex; flex-direction: column; }
+.sm-skel-row { display: flex; align-items: center; gap: var(--sp-3); min-height: 40px; padding: 0 var(--sp-3); }
+.sm-skel-row .sm-skeleton { height: 12px; }
+
+/* Determinate progress: a 4px track, neutral fill. Emerald is not needed for plain progress. */
+.sm-progress { display: block; width: 100%; height: 4px; border-radius: 2px; background: var(--s3); overflow: hidden; }
+.sm-progress > span { display: block; height: 100%; width: var(--sm-progress, 0%); border-radius: 2px; background: var(--text-2); transition: width 200ms var(--ease); }
+.sm-progress-label { display: flex; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-sm); color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- 7. Empty state */
+/* One statement, at most one action, no illustration. Same left edge as surrounding content (P11). */
+.sm-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-6) var(--sp-4); color: var(--text-2); }
+.sm-empty__text { margin: 0; color: var(--text-2); max-width: 46ch; }
+.sm-empty--center { align-items: center; text-align: center; }
+
+/* ---------------------------------------------------------------- 8. Interaction states */
+.sm-row {
+  display: flex; align-items: center; gap: var(--sp-3); min-height: 40px; padding: 0 var(--sp-3); border-radius: var(--r);
+  color: var(--text); transition: background var(--dur);
+}
+.sm-row:hover, .sm-row.is-hover { background: var(--s2); }
+.sm-row[aria-selected="true"], .sm-row.is-selected { background: var(--select); }   /* a quiet fill, not a frame (P17) */
+.sm-row:active, .sm-row.is-pressed { background: var(--s3); }
+.sm-row[aria-disabled="true"] { opacity: 0.45; }
+.sm-row.is-focus { outline: 1.5px solid var(--focus); outline-offset: 1px; }
+
+.sm-nav-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 10px; border: 0; border-radius: var(--r);
+  background: none; color: var(--text-2); font: 500 var(--fs)/1 var(--font); cursor: pointer; transition: background var(--dur), color var(--dur);
+}
+.sm-nav-item:hover, .sm-nav-item.is-hover { background: var(--s2); color: var(--text); }
+.sm-nav-item[aria-current="true"] { background: var(--s3); color: var(--text); }
+.sm-nav-item.is-focus { outline: 1.5px solid var(--focus); outline-offset: 1px; }
+
+/* Forced-state helpers so specimens can show a state without user input. */
+.sm-btn.is-hover:not(.sm-btn--primary):not(.sm-btn--danger) { background: var(--s4); }
+.sm-btn--primary.is-hover { background: var(--accent-hover); }
+.sm-btn--danger.is-hover { background: var(--danger-solid-hover); }
+.sm-btn.is-pressed:not(.sm-btn--primary):not(.sm-btn--danger) { background: #444545; }
+.sm-btn.is-focus { outline: 1.5px solid var(--focus); outline-offset: 1px; }
+.sm-input.is-focus { box-shadow: 0 0 0 1px var(--focus); }
+
+/* Specimen layout used by the examples (not part of a product UI). */
+.sm-specimen { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--sp-3); }
+.sm-specimen__cell { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border-radius: var(--r); background: var(--s1); }
+.sm-specimen__label { font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+
+/* ---------------------------------------------------------------- 9. Menus, context menu, dropdown */
+.sm-menu {
+  min-width: 180px; max-width: min(360px, calc(100vw - 16px)); padding: 4px; margin: 0; list-style: none;
+  background: color-mix(in srgb, var(--s4) 88%, transparent);
+  -webkit-backdrop-filter: var(--glass); backdrop-filter: var(--glass);
+  border-radius: var(--r-lg); box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-pop);
+  color: var(--text); font: 400 var(--fs)/1.5 var(--font);
+}
+/* Floating menus are positioned by script (left/top). Static menus (specimens) omit this. */
+.sm-menu--floating { position: fixed; z-index: 100; animation: sm-pop-in 120ms var(--ease); }
+.sm-menu[hidden] { display: none; }
+
+.sm-menu__item {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 30px; padding: 4px 8px; border: 0; border-radius: var(--r-sm);
+  background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.sm-menu__item > .sm-icon { color: var(--text-2); }
+.sm-menu__item:hover:not(:disabled):not([aria-disabled="true"]), .sm-menu__item.is-active { background: rgba(255, 255, 255, 0.08); }
+.sm-menu__item:disabled, .sm-menu__item[aria-disabled="true"] { color: var(--text-3); cursor: default; }
+.sm-menu__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-menu__shortcut { margin-left: auto; padding-left: 16px; color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; } /* 4.8:1 on --s4 */
+@media (hover: none) { .sm-menu__shortcut { display: none; } } /* keyboard hints mean nothing on touch */
+/* Selected option: a neutral check mark on the right, never a coloured row. */
+.sm-menu__check { margin-left: auto; color: var(--text); }
+.sm-menu__item[aria-selected="true"], .sm-menu__item[aria-checked="true"] { color: var(--text); }
+
+/* Danger items: text colour plus icon, no tinted fill (P19), always last after a separator. */
+.sm-menu__item--danger, .sm-menu__item--danger > .sm-icon { color: var(--danger); }
+
+.sm-menu__sep { height: 1px; margin: 4px -4px; border: 0; background: var(--line); }
+.sm-menu__heading { padding: 6px 8px 2px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+.sm-menu__search { padding: 2px 2px 4px; }
+.sm-menu__list { max-height: 260px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--s3) transparent; }
+.sm-menu__empty { padding: 10px 8px; color: var(--text-3); }
+.sm-menu__item--create > .sm-icon { color: var(--text); }
+
+/* Multi-select box inside an option (neutral, same as the shared checkbox). */
+.sm-check { display: inline-grid; place-items: center; width: 16px; height: 16px; flex: none; border-radius: 4px; color: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-3); transition: background var(--dur), box-shadow var(--dur); }
+.sm-menu__item[aria-selected="true"] .sm-check { background: var(--text); color: var(--s0); box-shadow: none; }
+
+/* Dropdown trigger. */
+.sm-select {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: var(--control-h); padding: 0 8px 0 10px; border: 0; border-radius: var(--r);
+  background: var(--s2); color: var(--text); font: inherit; cursor: pointer; transition: background var(--dur);
+}
+.sm-select:hover, .sm-select[aria-expanded="true"] { background: var(--s3); }
+.sm-select > .sm-icon:last-child { color: var(--text-3); margin-left: auto; }
+.sm-select__value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-select--quiet { background: none; color: var(--text-2); }
+.sm-select--quiet:hover, .sm-select--quiet[aria-expanded="true"] { background: var(--s2); color: var(--text); }
+
+/* Right-click target area used by the context menu example. */
+.sm-context-area { display: grid; place-items: center; min-height: 120px; padding: var(--sp-4); border-radius: var(--r); background: var(--s1); color: var(--text-3); text-align: center; user-select: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sm-toast, .sm-menu--floating, .sm-dialog, .sm-backdrop { animation: none; }
+  .sm-toast, .sm-toast[data-state="leaving"], .sm-toast[data-depth] { transition: opacity 1ms; transform: none; }
+  .sm-skeleton { animation: none; background: var(--s3); }
+  .sm-spinner { animation-duration: 1800ms; }
+}
+
+/* Touch hit areas (CHK-020): 40px effective targets without changing how controls look. */
+@media (pointer: coarse), (max-width: 820px) {
+  .sm-menu__item { min-height: 40px; }
+  .sm-btn { position: relative; }
+  .sm-btn::after { content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, 40px); height: max(100%, 40px); transform: translate(-50%, -50%); }
+}

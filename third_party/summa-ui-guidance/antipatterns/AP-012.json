@@ -1,0 +1,41 @@
+{
+  "id": "AP-012",
+  "name": "Excessive accent-color usage",
+  "summary": "Limit the accent to brand identity, the primary action of a view and meaningful state; use neutrals for everything else.",
+  "problem": "Emerald headings, links, nav, charts, tags and three primary buttons at once leave nothing that stands out. Colour no longer communicates.",
+  "severity": "high",
+  "applicability": "default",
+  "principles": [
+    "P06",
+    "P15"
+  ],
+  "bad": {
+    "description": "A panel where the title, nav, chart, three buttons and a tag are all emerald.",
+    "demo": "bad-all-emerald"
+  },
+  "good": [
+    {
+      "id": "restrained-accent",
+      "title": "Neutral by default, accent by meaning",
+      "description": "Neutral tabs and chart, one primary button, secondary and ghost buttons, and emerald only on the positive delta.",
+      "demo": "good-restrained-accent"
+    }
+  ],
+  "why": "If removing a colour does not reduce comprehension, it was decoration. Scarcity makes the accent useful.",
+  "exceptions": [
+    "A brand-led marketing page may use the accent more freely when the brand requires it.",
+    "Data visualisation may use hue to encode categories when neutrals cannot tell series apart."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-012"
+    ],
+    "humanReview": [
+      "Is exactly one action per view emphasised?",
+      "Would the view lose meaning if the accent were removed?"
+    ]
+  },
+  "relatedAntiPatterns": [
+    "AP-004"
+  ]
+}

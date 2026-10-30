@@ -1,0 +1,39 @@
+{
+  "id": "AP-002",
+  "name": "Thick arbitrary left borders",
+  "summary": "Do not use a thick left border to make cards, alerts or active items stand out; use a surface step, type weight or an icon.",
+  "problem": "A 3 to 4px accent strip on one side is the most overused way to say \"important\" in generated UI. It carries no meaning of its own, clashes with rounded corners and is applied to everything.",
+  "severity": "medium",
+  "applicability": "default",
+  "principles": [
+    "P03"
+  ],
+  "bad": {
+    "description": "Three cards, each with a 4px coloured left border chosen only for emphasis.",
+    "demo": "bad-left-border"
+  },
+  "good": [
+    {
+      "id": "fill-emphasis",
+      "title": "Surface and weight",
+      "description": "Emphasis comes from a lighter surface, a bolder title or a small muted heading. No strip.",
+      "demo": "good-fill-emphasis"
+    }
+  ],
+  "why": "Fill, weight and spacing communicate emphasis without a decorative device, and they stay consistent with every other component.",
+  "exceptions": [
+    "The product or the user explicitly requires it.",
+    "The stripe has an established semantic meaning in that interface, such as a blockquote rule, a diff gutter, a threaded reply line or a changed-line marker in an editor."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-002"
+    ],
+    "humanReview": [
+      "If the left border is present, does it carry a documented meaning, or is it only decoration?"
+    ]
+  },
+  "relatedAntiPatterns": [
+    "AP-001"
+  ]
+}

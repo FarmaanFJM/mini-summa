@@ -1,0 +1,44 @@
+{
+  "id": "AP-009",
+  "name": "Redundant Create buttons beside selection dropdowns",
+  "summary": "Put the Create action inside the dropdown (type a new name, then Create) instead of adding a button beside it.",
+  "problem": "A permanent \"Create label\" button next to the label select exposes an action that is relevant only when the right label is missing. It also grows every form that has a select.",
+  "severity": "medium",
+  "applicability": "default",
+  "principles": [
+    "P10",
+    "P08"
+  ],
+  "bad": {
+    "description": "A select with a separate \"Create label\" button always visible next to it.",
+    "demo": "bad-select-plus-create"
+  },
+  "good": [
+    {
+      "id": "dropdown-create",
+      "title": "Create inside the dropdown",
+      "description": "A searchable Dropdown with onCreate. Type a name with no match and a Create row appears exactly where it becomes relevant. Try it.",
+      "demo": "good-dropdown-create",
+      "preset": "preset.dropdown"
+    }
+  ],
+  "why": "The action appears only when needed, in the place users are already looking, and uses the familiar select-or-create pattern.",
+  "exceptions": [
+    "Creating the item needs a full form with several required fields, so a dialog launched from a menu entry is required.",
+    "A page whose purpose is managing the list itself (a labels settings page) needs its own Create button."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-009"
+    ],
+    "humanReview": [
+      "Could the create action live in the dropdown without losing needed fields?"
+    ]
+  },
+  "relatedPresets": [
+    "preset.dropdown"
+  ],
+  "relatedAntiPatterns": [
+    "AP-008"
+  ]
+}

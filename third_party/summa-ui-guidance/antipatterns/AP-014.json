@@ -1,0 +1,36 @@
+{
+  "id": "AP-014",
+  "name": "Indentation where flat rectangular organization works better",
+  "summary": "Show hierarchy with breadcrumbs, headings and typography in a flat list instead of indenting each level.",
+  "problem": "Every level of indentation pushes the content edge further right and wastes width, and deep trees on small screens become unreadable.",
+  "severity": "medium",
+  "applicability": "contextual",
+  "principles": [
+    "P11"
+  ],
+  "bad": {
+    "description": "A four level indented folder tree with every level shifted right.",
+    "demo": "bad-indented-tree"
+  },
+  "good": [
+    {
+      "id": "flat-breadcrumbs",
+      "title": "Breadcrumb and a flat list",
+      "description": "The path is shown as a breadcrumb; the current level is a single aligned list. Drill in by opening a row.",
+      "demo": "good-flat-breadcrumbs"
+    }
+  ],
+  "why": "Aligned rectangular regions are easier to scan, fit narrow screens and keep one clean content edge.",
+  "exceptions": [
+    "Content that is truly a deep tree users expect to browse and rearrange in place (a code editor file explorer, a document outline, threaded comments) may use indentation, because depth is the information.",
+    "Nested lists inside prose are allowed."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-014"
+    ],
+    "humanReview": [
+      "Is the depth information users need, or can a breadcrumb carry it?"
+    ]
+  }
+}

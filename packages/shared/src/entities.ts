@@ -212,6 +212,8 @@ export interface Report extends ReportSummary {
   /** Always false: the marker is a declaration by the model, not evidence the work succeeded. */
   verified: false;
   note: string;
+  /** Credential-like strings replaced by [REDACTED] when the message was captured. Shown to the reader, never hidden. */
+  redactions?: number;
   deliveries: DeliverySummary[];
 }
 
@@ -233,6 +235,7 @@ export interface ReportCandidate {
   capturedAt: Iso;
   late: boolean;
   promoted: boolean;
+  redactions?: number;
 }
 
 export type DeliveryResolution = 'session_binding' | 'project_preferred' | 'only_conversation' | 'user_selected';
@@ -561,8 +564,6 @@ export interface Settings {
     mode: 'embedded' | 'external';
     /** How external mode finds the browser: the default browser, or the optional extension that can focus a tab. */
     externalBrowser: 'default' | 'extension';
-    /** After copying, paste into ChatGPT's composer on the user's click. Off by default. Never presses Send. */
-    pasteAssist: boolean;
   };
   layout: LayoutPrefs;
   notifications: {

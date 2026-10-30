@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://summa-ui/schema/preset.schema.json",
+  "title": "Summa-UI preset",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "purpose",
+    "whenToUse",
+    "whenNotToUse",
+    "anatomy",
+    "variants",
+    "tokens",
+    "accessibility",
+    "avoids",
+    "implementations"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^preset\\.[a-z-]+$"
+    },
+    "name": {
+      "type": "string"
+    },
+    "purpose": {
+      "type": "string"
+    },
+    "whenToUse": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "whenNotToUse": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "anatomy": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "variants": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "description"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "useWhen": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "behavior": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tokens": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Token names from tokens.json the preset relies on."
+    },
+    "accessibility": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "principles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^P\\d{2}$"
+      }
+    },
+    "avoids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^AP-\\d{3}$"
+      },
+      "description": "Anti-patterns this preset prevents."
+    },
+    "implementations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "html": {
+          "type": "string",
+          "description": "Path to a framework-neutral example under examples/."
+        },
+        "css": {
+          "type": "string",
+          "description": "Path to the framework-neutral CSS class implementation."
+        },
+        "react": {
+          "type": "string",
+          "description": "Optional React reference implementation path in this repository (not part of the bundle contract)."
+        }
+      }
+    },
+    "status": {
+      "enum": [
+        "provisional",
+        "reviewed"
+      ],
+      "description": "provisional: built from the principles, not yet reviewed visually by the owner. reviewed: the owner confirmed it."
+    },
+    "statusNote": {
+      "type": "string"
+    }
+  }
+}

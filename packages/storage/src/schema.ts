@@ -151,7 +151,9 @@ CREATE TABLE reports (
   captured_seq     INTEGER,
   note             TEXT NOT NULL,
   captured_at      TEXT NOT NULL,
-  read_at          TEXT
+  read_at          TEXT,
+  redactions       INTEGER NOT NULL DEFAULT 0,
+  truncations      INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX reports_project_time ON reports(project_id, captured_at DESC);
 CREATE INDEX reports_time ON reports(captured_at DESC);
@@ -173,7 +175,9 @@ CREATE TABLE report_candidates (
   late            INTEGER NOT NULL DEFAULT 0,
   captured_at     TEXT NOT NULL,
   promoted_report_id TEXT,
-  promoted_at     TEXT
+  promoted_at     TEXT,
+  redactions      INTEGER NOT NULL DEFAULT 0,
+  truncations     INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX report_candidates_project ON report_candidates(project_id, captured_at DESC);
 

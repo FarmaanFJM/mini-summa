@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loading state preset</title>
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/presets.css">
+<style>
+  /* Page chrome only. Components use sm- classes from presets.css. */
+  body { margin: 0; background: var(--s0); color: var(--text); font: 400 var(--fs)/1.5 var(--font); }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 96px; display: flex; flex-direction: column; gap: 28px; }
+  h1 { margin: 0; font-size: var(--fs-xl); font-weight: 650; letter-spacing: -0.01em; }
+  main > section > h2 { margin: 0 0 8px; font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+  p { margin: 0; color: var(--text-2); }
+  .group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .panel { background: var(--s1); border-radius: var(--r-lg); padding: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Loading state</h1>
+    <p>Skeleton rows for lists, an inline spinner for buttons, a progress bar when the amount is known. No full-page spinners.</p>
+  </div>
+
+  <section>
+    <h2>List: skeleton rows (shown only after 200ms, kept for at least 400ms)</h2>
+    <div class="group"><button class="sm-btn" id="load">Load list</button><button class="sm-btn" id="fast">Load fast (under 200ms, no skeleton)</button></div>
+    <div class="panel" style="margin-top:12px;min-height:256px" id="list" aria-live="polite" aria-busy="false"></div>
+  </section>
+
+  <section>
+    <h2>Inline: button spinner (label stays, width does not change)</h2>
+    <div class="group">
+      <button class="sm-btn sm-btn--primary" id="save">Save changes</button>
+      <span class="sm-muted" style="display:inline-flex;align-items:center;gap:8px"><span class="sm-spinner" aria-hidden="true"></span> Checking availability</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Determinate: progress</h2>
+    <div style="display:flex;flex-direction:column;gap:8px;max-width:420px">
+      <div class="sm-progress-label"><span>Uploading quarterly-report.pdf</span><span id="pct">0%</span></div>
+      <div class="sm-progress" role="progressbar" aria-label="Upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="bar"><span></span></div>
+      <div><button class="sm-btn" id="up">Start upload</button></div>
+    </div>
+  </section>
+</main>
+<script>
+(function () {
+  var DELAY = 200, MIN = 400;               // ms: show-after delay and minimum visible time
+  var list = document.getElementById('list');
+  var ROWS = ['Quarterly report', 'Design review notes', 'Launch checklist', 'Customer interviews', 'Budget 2027', 'Roadmap'];
+
+  function skeleton() {
+    var w = [62, 48, 70, 55, 66, 44];
+    list.innerHTML = '<div class="sm-skel-list">' + w.map(function (n) {
+      return '<div class="sm-skel-row"><span class="sm-skeleton" style="width:' + n + '%"></span></div>';
+    }).join('') + '</div>';
+  }
+  function content() {
+    list.innerHTML = ROWS.map(function (r) { return '<div class="sm-row"><span>' + r + '</span></div>'; }).join('');
+  }
+  function load(duration) {
+    list.setAttribute('aria-busy', 'true');
+    var shownAt = 0, skel = null;
+    list.innerHTML = '';                                   // reserve nothing yet: min-height keeps the panel stable
+    skel = setTimeout(function () { shownAt = Date.now(); skeleton(); }, DELAY);   // avoid flashing for fast loads
+    setTimeout(function () {
+      clearTimeout(skel);
+      var wait = shownAt ? Math.max(0, MIN - (Date.now() - shownAt)) : 0;           // once shown, keep it a moment
+      setTimeout(function () { content(); list.setAttribute('aria-busy', 'false'); }, wait);
+    }, duration);
+  }
+  document.getElementById('load').addEventListener('click', function () { load(1400); });
+  document.getElementById('fast').addEventListener('click', function () { load(120); });
+
+  var save = document.getElementById('save');
+  save.addEventListener('click', function () {
+    if (save.getAttribute('aria-busy') === 'true') return;
+    save.setAttribute('aria-busy', 'true');
+    save.innerHTML = '<span class="sm-spinner" aria-hidden="true"></span> Saving';
+    setTimeout(function () { save.removeAttribute('aria-busy'); save.textContent = 'Save changes'; }, 1400);
+  });
+
+  var bar = document.getElementById('bar'), pct = document.getElementById('pct'), up = document.getElementById('up');
+  up.addEventListener('click', function () {
+    var v = 0; up.disabled = true;
+    var t = setInterval(function () {
+      v = Math.min(100, v + 8 + Math.random() * 10);
+      bar.style.setProperty('--sm-progress', v + '%');
+      bar.setAttribute('aria-valuenow', Math.round(v)); pct.textContent = Math.round(v) + '%';
+      if (v >= 100) { clearInterval(t); up.disabled = false; }
+    }, 220);
+  });
+})();
+</script>
+</body>
+</html>

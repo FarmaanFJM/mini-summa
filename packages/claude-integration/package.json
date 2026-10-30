@@ -9,6 +9,7 @@
   "exports": { ".": { "types": "./src/index.d.ts", "default": "./src/index.js" } },
   "scripts": {
     "test": "node --test \"test/*.test.mjs\"",
+    "typecheck": "tsc -p tsconfig.json",
     "build:hook": "esbuild src/hook/capture.mjs --bundle --platform=node --format=esm --target=node22 --outfile=dist/capture.mjs"
   }
 }

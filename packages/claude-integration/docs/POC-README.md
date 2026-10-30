@@ -1,3 +1,7 @@
+> **Research record.** This is the README of the Experiment A proof of concept, kept as it was written (the original stays in
+> `poc/claude-integration/README.md` and is never edited). Its paths are relative to the package root, which has the same layout, and
+> figures such as "131 automated tests" describe the proof of concept. The README of this package is [../README.md](../README.md).
+
 # Claude integration proof of concept (Experiment A)
 
 A small, dependency-free Node.js proof that Mini-Summa can observe Claude Code sessions through documented

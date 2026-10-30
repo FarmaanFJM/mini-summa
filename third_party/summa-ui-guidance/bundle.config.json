@@ -1,0 +1,21 @@
+{
+  "name": "summa-ui-guidance",
+  "version": "0.1.0",
+  "channel": "approved",
+  "description": "Framework-agnostic Summa-UI design guidance for AI agents: principles, anti-patterns, token guidance, presets, a curated icon catalog and objective check rules.",
+  "reviewedBy": "FarmaanFJM",
+  "approvedAt": "2026-10-28T10:30:50Z",
+  "approvalRef": "Owner approval of v0.1.0 as the initial baseline, given in the design session https://claude.ai/code/session_01PxTQ4DFyiXW1FyvyEPxc9a on 2026-10-28. The approved content is unchanged from the validated commit d4ab45e; only approval metadata and release notes were added.",
+  "provisional": [
+    "preset.notification"
+  ],
+  "knownLimitations": [
+    "preset.notification is provisional: the owner's toast reference could not be compared with this implementation. Typography, spacing, icon treatment, placement and motion are not visually approved.",
+    "Heuristic checks CHK-005, 007, 009, 010, 012, 014, 015 and 016 are specified in checks/rules.json but not implemented in the reference evaluator (scripts/run-checks.mjs). Objective checks implemented there: CHK-001, 002, 003, 004, 006, 008, 011, 013, 017, 018, 019, 020, 021, 022.",
+    "Input placeholder text uses --text-3, which is 3.24:1 on --s2 and below the 4.5:1 guideline. A token level decision is deferred to the owner.",
+    "Touch hit area verification uses Chromium hit testing and interior tap probes; range sliders are checked for size only, and Chromium's own touch adjustment near adjacent clickable edges is not controlled by CSS.",
+    "The Summa default design system (charcoal with a lime accent) differs from Summa-UI (charcoal with emerald). Reconciling them is an owner decision handled in the Summa integration pull request.",
+    "Icon shapes come from Lucide 1.62.0 and differ slightly from the earlier hand-drawn set.",
+    "The bundle has been evaluated on the 12 laboratory prototypes only; it has not yet been used to build a previously unseen application."
+  ]
+}

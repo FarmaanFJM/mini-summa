@@ -1,0 +1,42 @@
+{
+  "id": "AP-015",
+  "name": "Repeated redundant card containers",
+  "summary": "Use one surface per group and flat rows inside it; do not wrap each level in another card.",
+  "problem": "A card inside a card inside a card, each with its own radius and shadow, adds weight without meaning and makes the elevation order ambiguous.",
+  "severity": "medium",
+  "applicability": "default",
+  "principles": [
+    "P01",
+    "P09",
+    "P21"
+  ],
+  "bad": {
+    "description": "Three nested cards with different surfaces and shadows around two member rows.",
+    "demo": "bad-card-in-card"
+  },
+  "good": [
+    {
+      "id": "single-surface",
+      "title": "One surface, flat rows",
+      "description": "A single panel, a muted heading and rows that fill on hover.",
+      "demo": "good-single-surface"
+    }
+  ],
+  "why": "Removing wrappers is the simplest fix: hierarchy is carried by type and spacing, and the surface ramp stays readable.",
+  "exceptions": [
+    "Each card in a grid of independent objects (a kanban card, a product tile) is a legitimate card when each is its own draggable or openable object.",
+    "A dialog or popover over a page is a separate layer, not a redundant card."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-015",
+      "CHK-001"
+    ],
+    "humanReview": [
+      "Does each wrapper group something that needs grouping?"
+    ]
+  },
+  "relatedAntiPatterns": [
+    "AP-001"
+  ]
+}

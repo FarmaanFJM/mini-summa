@@ -1,0 +1,51 @@
+{
+  "id": "AP-016",
+  "name": "Excessive visible controls",
+  "summary": "Show the few frequent actions and move the rest into a menu or reveal them on hover and selection.",
+  "problem": "A toolbar of a dozen always-visible icons makes every action equal, increases scanning time and breaks on narrow widths.",
+  "severity": "medium",
+  "applicability": "default",
+  "principles": [
+    "P10",
+    "P09"
+  ],
+  "bad": {
+    "description": "A toolbar with fourteen icon buttons, all visible at once.",
+    "demo": "bad-toolbar-overload"
+  },
+  "good": [
+    {
+      "id": "toolbar-menu",
+      "title": "Frequent plus menu",
+      "description": "Three common actions and a More menu for the rest. Try the menu.",
+      "demo": "good-toolbar-menu"
+    },
+    {
+      "id": "context-menu",
+      "title": "Context menu",
+      "description": "Item actions live in a context menu opened from the row, with shortcuts shown inside it.",
+      "demo": "good-static-context-menu",
+      "preset": "preset.context-menu"
+    }
+  ],
+  "why": "Contextual and dynamic controls reduce what users must scan while keeping every action reachable.",
+  "exceptions": [
+    "Dense editors and expert tools may keep a full formatting toolbar when users need one-click access, or when users arranged it themselves.",
+    "Keep every action reachable by keyboard and a menu, even when it is hidden."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-016"
+    ],
+    "humanReview": [
+      "Is every visible control frequent enough to deserve permanent space?"
+    ]
+  },
+  "relatedPresets": [
+    "preset.context-menu"
+  ],
+  "relatedAntiPatterns": [
+    "AP-007",
+    "AP-008"
+  ]
+}
