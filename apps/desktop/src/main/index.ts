@@ -166,7 +166,9 @@ function coreOptions(): CoreOptions {
     mode: 'embedded',
     version: app.getVersion(),
     native: bridge,
-    port: 0,
+    // No `port`: the core prefers 47811 and only falls back to a free port when that one is taken. A stable address matters
+    // twice over: the window's localStorage (the selected project, per-project choices, setup dismissal) belongs to the
+    // origin, and the browser extension and `tailscale serve` rely on the address too.
     uiDir: locations.uiDir,
     // No `log`: the core writes its own <dataDir>/logs/core.log. This process logs to <userData>/logs/main.log.
     overrides: {
