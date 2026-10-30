@@ -14,6 +14,11 @@ export interface ProjectNotificationPrefs {
   input: boolean;
   error: boolean;
   report: boolean;
+  /**
+   * A session's turn ended and no report was declared ("Claude finished"). The Stop hook is the only evidence, and a turn ending is
+   * not proof that the task is complete. A turn that ends WITH a report notifies as `report` only, never as both.
+   */
+  turnEnded: boolean;
   sessionEnded: boolean;
   presenceLost: boolean;
   /** Also send a push notification to paired phones. */
@@ -599,6 +604,8 @@ export interface UiRoute {
 export interface UiProjectPrefs {
   sessionKey?: SessionKey;
   conversationId?: string;
+  /** The page of Claude Code on the web the person was on in this project (a session or the new-session page), so it opens there again. */
+  cloudUrl?: string;
 }
 
 /** The first-run checklist: whether the person hid it, and whether this installation was empty when it was first opened. */
@@ -626,7 +633,7 @@ export interface UiPrefs {
  */
 export interface UiPrefsPatch {
   route?: UiRoute | null;
-  perProject?: Record<string, { sessionKey?: SessionKey | null; conversationId?: string | null } | null>;
+  perProject?: Record<string, { sessionKey?: SessionKey | null; conversationId?: string | null; cloudUrl?: string | null } | null>;
   setup?: { dismissed?: boolean | null; seenEmpty?: boolean | null };
 }
 

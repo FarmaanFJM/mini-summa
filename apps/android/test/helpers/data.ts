@@ -9,7 +9,7 @@ export const SESSION_KEY = `win|${SESSION_ID}` as const;
 export const OTHER_KEY = 'wsl:Ubuntu|f9e8d7c6-0000-4000-8000-000000000002' as const;
 
 export const makeProject = (over: Partial<Project> = {}): Project => ({
-  id: 'prj_1', name: 'GitManager', description: null, githubRepo: null, roots: [], defaultEnv: 'win', preferredConversationId: 'cnv_1',
+  id: 'prj_1', name: 'GitManager', description: null, githubRepo: null, chatgptProject: null, roots: [], defaultEnv: 'win', preferredConversationId: 'cnv_1',
   defaultSessionKey: null, notificationPrefs: defaultNotificationPrefs(), sortOrder: 0, archivedAt: null,
   createdAt: '2026-10-30T08:00:00.000Z', updatedAt: '2026-10-30T08:00:00.000Z', ...over,
 });

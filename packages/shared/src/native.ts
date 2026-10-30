@@ -18,6 +18,23 @@ export interface ChatGptViewState {
   note: string | null;
 }
 
+export type ClaudeWebViewStatus = 'idle' | 'loading' | 'ready' | 'login_required' | 'blocked' | 'error';
+
+/**
+ * What Mini-Summa can see of the embedded Claude Code on the web page: the address, the title, whether a load is running, why a
+ * load failed and whether the page looks like a sign-in page. Never the content. A view of a page is not control of the session
+ * behind it: Mini-Summa cannot tell whether a cloud session is working, finished or waiting.
+ */
+export interface ClaudeWebViewState {
+  status: ClaudeWebViewStatus;
+  url: string | null;
+  title: string | null;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  /** Plain-language reason for login_required, blocked or error. */
+  note: string | null;
+}
+
 export interface ChatGptOpenResult {
   ok: boolean;
   /** How the page was shown: the embedded view, a tab focused through the extension, or the default browser. */
@@ -40,6 +57,20 @@ export interface NativeNotification {
   target: NavigationTarget;
   urgency: 'normal' | 'critical';
   silent: boolean;
+  /**
+   * The person may already be looking at what this is about (Claude finished in the session that is on screen). Only the host knows
+   * whether its window is in front, so it may decide not to show this one and says so with `suppressed: 'viewing'`. Unset means
+   * "always show"; a permission request, a question or an error is never marked.
+   */
+  suppressIfViewing?: boolean;
+}
+
+/** What the host answers to `notify`. `shown` is true only when the system accepted the notification. */
+export interface NativeNotifyResult {
+  shown: boolean;
+  reason?: string;
+  /** Not shown on purpose, which is different from a failure: the window was in front on the target of a `suppressIfViewing` notification. */
+  suppressed?: 'viewing';
 }
 
 /**
@@ -56,7 +87,7 @@ export interface NativeBridge {
     state(): ChatGptViewState;
   };
   clipboard: { writeText(text: string): Promise<void> };
-  notify(n: NativeNotification): Promise<{ shown: boolean; reason?: string }>;
+  notify(n: NativeNotification): Promise<NativeNotifyResult>;
   openExternal(url: string): Promise<void>;
   saveTextFile(opts: { suggestedName: string; text: string }): Promise<{ path: string | null }>;
 }
@@ -96,6 +127,21 @@ export interface NativeApi {
     focus(): Promise<void>;
     getState(): Promise<ChatGptViewState>;
     onState(listener: (state: ChatGptViewState) => void): () => void;
+  };
+  /**
+   * Claude Code on the web (claude.ai/code) in a second native view with its own browser profile, created the first time it is
+   * asked to load something. Same shape as `chatgpt`; the overlay switch of `chatgpt` covers both views. Absent when the host
+   * cannot embed it (then the renderer opens the address in the person's browser).
+   */
+  claudeWeb?: {
+    setBounds(rect: Rect | null): Promise<void>;
+    navigate(url: string): Promise<void>;
+    reload(): Promise<void>;
+    back(): Promise<void>;
+    forward(): Promise<void>;
+    focus(): Promise<void>;
+    getState(): Promise<ClaudeWebViewState>;
+    onState(listener: (state: ClaudeWebViewState) => void): () => void;
   };
   clipboard: { writeText(text: string): Promise<void> };
   dialogs: { selectDirectory(opts?: { title?: string; defaultPath?: string }): Promise<string | null> };

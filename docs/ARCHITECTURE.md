@@ -59,6 +59,12 @@ notifications that navigate) come from `window.miniSumma`, exposed by the preloa
    carry no report bodies, tool inputs or paths. Runtime data lives in the user's data directory, never in a repo.
 8. **Tailscale.** Remote access uses `tailscale serve` only. Funnel is never enabled and is reported if detected.
    When the PC is asleep or offline, the phone says so; it never shows stale data as live.
+9. **A project is a set of independent associations, and execution is chosen per session.** A project has an identity (its
+   name) and, each optional and none depending on another: a GitHub repository (`owner/repo`), local folders, a link to an
+   existing ChatGPT Project (its address only: Mini-Summa cannot list ChatGPT Projects and imports nothing from them), ChatGPT
+   conversations used as report destinations, and Claude sessions. A project with only a GitHub repository is complete. Where a
+   Claude session runs is decided when the session starts: Local needs a local folder, Cloud needs the GitHub repository. One is
+   never substituted for the other; when the chosen one is impossible the interface says why and what to add.
 
 ## Data flow: a report
 

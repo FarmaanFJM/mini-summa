@@ -1,10 +1,11 @@
 import { isSessionKey } from './env.ts';
 import type { SessionKey } from './env.ts';
 import { DEFAULT_REVIEW_REQUEST } from './report-message.ts';
+import { parseClaudeCodeUrl } from './claude-web.ts';
 import type { ProjectNotificationPrefs, Settings, SettingsPatch, UiPrefs, UiPrefsPatch, UiProjectPrefs, UiViewId } from './entities.ts';
 
 export function defaultNotificationPrefs(): ProjectNotificationPrefs {
-  return { enabled: true, permission: true, input: true, error: true, report: true, sessionEnded: false, presenceLost: true, push: true };
+  return { enabled: true, permission: true, input: true, error: true, report: true, turnEnded: true, sessionEnded: false, presenceLost: true, push: true };
 }
 
 export function defaultSettings(): Settings {
@@ -35,6 +36,8 @@ export const UI_LIMITS = {
   idChars: 100,
   /** A session key: `<env>|<session id>`. */
   keyChars: 200,
+  /** An address on claude.ai/code. */
+  urlChars: 600,
 } as const;
 
 export const UI_VIEWS: readonly UiViewId[] = ['workspace', 'activity', 'reports', 'settings'];
@@ -93,7 +96,7 @@ export function checkUiPatch(input: unknown): { patch: UiPrefsPatch; problems: U
           if (!isUiId(id)) { bad(here, `A project id in "ui.perProject" must have 1 to ${UI_LIMITS.idChars} characters. Use the project's id.`); continue; }
           if (entry === null) { out[id] = null; continue; }
           if (!isRecord(entry)) { bad(here, `The setting "${here}" must be an object like {"sessionKey":"win|..."}, or null to forget the project. Send an object.`); continue; }
-          const change: { sessionKey?: SessionKey | null; conversationId?: string | null } = {};
+          const change: { sessionKey?: SessionKey | null; conversationId?: string | null; cloudUrl?: string | null } = {};
           for (const key of Object.keys(entry)) {
             const value = entry[key];
             if (key === 'sessionKey') {
@@ -102,7 +105,12 @@ export function checkUiPatch(input: unknown): { patch: UiPrefsPatch; problems: U
             } else if (key === 'conversationId') {
               if (value === null || isUiId(value)) change.conversationId = value;
               else bad(`${here}.conversationId`, `The setting "${here}.conversationId" must be a conversation id of 1 to ${UI_LIMITS.idChars} characters, or null. Send the id.`);
-            } else bad(`${here}.${key}`, `"${here}.${key}" is not remembered. A project keeps sessionKey and conversationId. Remove "${key}".`);
+            } else if (key === 'cloudUrl') {
+              const read = typeof value === 'string' && value.length <= UI_LIMITS.urlChars ? parseClaudeCodeUrl(value) : null;
+              if (value === null) change.cloudUrl = null;
+              else if (read?.ok) change.cloudUrl = read.info.url;
+              else bad(`${here}.cloudUrl`, `The setting "${here}.cloudUrl" must be an address on claude.ai/code, or null. Send the address of the page.`);
+            } else bad(`${here}.${key}`, `"${here}.${key}" is not remembered. A project keeps sessionKey, conversationId and cloudUrl. Remove "${key}".`);
           }
           out[id] = change;
         }
@@ -131,7 +139,7 @@ export function checkUiPatch(input: unknown): { patch: UiPrefsPatch; problems: U
 
 export const isEmptyUi = (ui: UiPrefs | undefined): boolean => ui === undefined || (ui.route === undefined && ui.perProject === undefined && ui.setup === undefined);
 
-const sameProjectPrefs = (a: UiProjectPrefs, b: UiProjectPrefs): boolean => a.sessionKey === b.sessionKey && a.conversationId === b.conversationId;
+const sameProjectPrefs = (a: UiProjectPrefs, b: UiProjectPrefs): boolean => a.sessionKey === b.sessionKey && a.conversationId === b.conversationId && a.cloudUrl === b.cloudUrl;
 
 /**
  * Applies a (checked) change. Never edits its arguments. An entry that does not change keeps its place, so a patch that changes
@@ -151,9 +159,11 @@ export function mergeUi(base: UiPrefs | undefined, patch: UiPrefsPatch): UiPrefs
     const next: UiProjectPrefs = {};
     const sessionKey = change.sessionKey === undefined ? before?.sessionKey : change.sessionKey ?? undefined;
     const conversationId = change.conversationId === undefined ? before?.conversationId : change.conversationId ?? undefined;
+    const cloudUrl = change.cloudUrl === undefined ? before?.cloudUrl : change.cloudUrl ?? undefined;
     if (sessionKey !== undefined) next.sessionKey = sessionKey;
     if (conversationId !== undefined) next.conversationId = conversationId;
-    if (next.sessionKey === undefined && next.conversationId === undefined) { entries.delete(id); continue; }
+    if (cloudUrl !== undefined) next.cloudUrl = cloudUrl;
+    if (next.sessionKey === undefined && next.conversationId === undefined && next.cloudUrl === undefined) { entries.delete(id); continue; }
     if (before && sameProjectPrefs(before, next)) continue;
     entries.delete(id);
     entries.set(id, next);
