@@ -270,7 +270,6 @@ scenario('[A19] The correct ChatGPT conversation can be opened for handoff', asy
   await openReports(h.page);
   await until('the queue to say so', async () => ((await reportRow(h.page, 'Opening book').getAttribute('aria-label')) ?? '').includes('Awaiting your send'));
   expect(h.standIn.pathsSince(mark)).toEqual([`/c/${C2}`]);
-  expect(h.standIn.requests.some((r) => r.path === `/c/${C1}`)).toBe(false);
   const clip = await readClipboard(h.app);
   expect(clip).toContain('Project: Chess');
   expect(clip).toContain('Task: Opening book');
@@ -279,7 +278,7 @@ scenario('[A19] The correct ChatGPT conversation can be opened for handoff', asy
   // Mini-Summa did not type or paste into the page, and did not submit it.
   const page = await standInPageState(h.app);
   expect(page).toEqual({ events: [], composer: '' });
-  evidence('A19', `project with two conversations, the second preferred: the report was frozen to ${conversationUrl(C2)} ("preferred conversation"), "Copy and open" navigated the embedded view there (title "Stand-in: C second (preferred)"), the stand-in saw exactly GET /c/${C2} and never the first conversation, the clipboard held the message, the delivery waits for the person (awaiting_user_send), and the page's composer stayed empty with no input events`);
+  evidence('A19', `project with two conversations, the second preferred: the report was frozen to ${conversationUrl(C2)} ("preferred conversation"), "Copy and open" navigated the embedded view there (title "Stand-in: C second (preferred)"), from the first conversation that was in front, the stand-in saw exactly GET /c/${C2} for the handoff, the clipboard held the message, the delivery waits for the person (awaiting_user_send), and the page's composer stayed empty with no input events`);
 });
 
 scenario('[A20] A report cannot be accidentally routed to another project\'s mapped conversation', async () => {

@@ -21,7 +21,7 @@ behaviour that did **not** change still pass.
 | 8 | `src/lib/reducer.mjs` | Reports and candidates carry `redactions` and `truncations` |
 | 9 | `src/lib/redact.mjs` | The hook hides the ways a secret is typed (tokens of other providers, a password in a URL or after `curl -u`, `--password=...`, `DB_PASSWORD=...`, private keys), not only six token shapes |
 | 10 | `src/hook/capture.mjs`, `src/lib/spool.mjs` | The spool directory is created `0700` (files stay `0600`); a directory of the earlier version is tightened |
-| 11 | `src/lib/setup.mjs` | A Windows hook path with a typographic quote (U+2018 to U+201E) is refused |
+| 11 | `src/lib/setup.mjs` | A Windows hook path with a typographic double quote (U+201C to U+201E) is refused |
 
 ## 1. A spool record that cannot be ordered no longer wedges ingestion
 
@@ -290,31 +290,33 @@ behaviour that did **not** change still pass.
   called or never applied, the owner check dropped, `stat` for `lstat`, the name check dropped or loosened, a name pattern
   shortened, the error log's mode dropped, the ingestor's mode dropped); none survives.
 
-## 11. A typographic quote in a Windows hook path is refused
+## 11. A typographic double quote in a Windows hook path is refused
 
 - **Proof of concept.** The node, capture, spool and registry paths of a Windows hook are written inside double quotes in a
   PowerShell command, and a path was refused only if it held `"`, a backtick, `$` or a line break. PowerShell also reads the
   typographic double quotes U+201C, U+201D and U+201E as the end of a string, so a path with one of them ended the string early
   and the rest of the path was parsed as PowerShell. (Change 3 had already given the `handler`, `event` and `env` tokens the
   whole range U+2018 to U+201E; the paths were missed.)
-- **Now.** `FORBIDDEN_IN_PS` adds U+2018 to U+201E, so the same error ("path for spool contains a character that is unsafe inside a
+- **Now.** `FORBIDDEN_IN_PS` adds U+201C to U+201E, so the same error ("path for spool contains a character that is unsafe inside a
   PowerShell string") is thrown for those characters in any of the four paths of a `win` hook, by `hookCommand` and
   `buildSettings`, with or without `runAsNode`. POSIX and WSL commands are not run by PowerShell and are unchanged: a real `sh`
   starts a capture script under a folder called `O` U+2019 `Neil` in the test.
-- **A decision for the owner.** The range was added as asked, but PowerShell reads only U+201C to U+201E as *double* quotes. U+2018, U+2019,
-  U+201A and U+201B are single-quote characters and mean nothing inside a double-quoted string, so a Windows profile folder such as
-  `C:\Users\O` U+2019 `Neil` is now refused for a reason that is not a safety one. If that matters, change the class to
-  `\u201c-\u201e` and drop the four from the `QUOTES` list at the top of `test/setup-powershell-quotes.test.mjs`.
+- **Decided (lead).** The first version also refused U+2018, U+2019, U+201A and U+201B. PowerShell reads only U+201C to U+201E as
+  *double* quotes; the other four are single-quote characters and mean nothing inside a double-quoted string, so a Windows profile
+  folder such as `C:\Users\O` U+2019 `Neil` would have been refused for a reason that is not a safety one. The path rule is therefore
+  `\u201c-\u201e`. The tokens (`handler`, `event`, `env`) keep refusing the whole range U+2018 to U+201E (change 3): they are not
+  paths, so the conservative choice costs nothing.
 - **Windows: NOT TESTED.** PowerShell was not available. That these characters are PowerShell's quote characters is taken from its
   language specification (the tokenizer's single-quote and double-quote character sets), not from running it.
-- **Tests** (`test/setup-powershell-quotes.test.mjs`, 5 tests): 7 characters x 4 paths x 4 positions are refused with the message that
-  names the field; the refusal reaches `buildSettings` for every field with and without `runAsNode`; `"`, backtick, `$`, CR and LF are
-  still refused and an ordinary path gives the command it always did; U+2017, U+201F, `'` and other quote-like characters that
-  PowerShell does not read as quotes are accepted; POSIX and WSL accept all seven, and a real shell takes such a path as one
-  argument; and the paths and the tokens now refuse the same seven.
-- **Checked.** Against the `setup.mjs` without the added range, 3 of the 5 tests fail (the other two pin what did not change).
-  Four changes made one at a time (the range narrowed to the double quotes, one end of it cut off, the guard applied to the
-  spool path only) are each caught.
+- **Tests** (`test/setup-powershell-quotes.test.mjs`, 5 tests): 3 double quotes x 4 paths x 4 positions are refused with the message
+  that names the field; the refusal reaches `buildSettings` for every field with and without `runAsNode`; `"`, backtick, `$`, CR and
+  LF are still refused and an ordinary path gives the command it always did; U+2017, U+201F, `'`, the four typographic single quotes and
+  other quote-like characters that PowerShell does not read as double quotes are accepted in a path; POSIX and WSL accept all seven,
+  and a real shell takes such a path as one argument; and the tokens refuse all seven while the paths refuse the three double quotes
+  and keep a profile folder with a typographic apostrophe usable.
+- **Checked.** Against the `setup.mjs` without the added characters, 3 of the 5 tests fail (the other two pin what did not change).
+  With the first version's wider range (U+2018 to U+201E) restored, 2 of the 5 fail: they pin that a typographic apostrophe in a
+  profile folder is accepted.
 
 ## Additions that change no existing behaviour
 

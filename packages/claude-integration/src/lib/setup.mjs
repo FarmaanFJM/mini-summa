@@ -5,9 +5,10 @@ export const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PermissionRequest', 
   'Notification', 'Stop', 'StopFailure', 'SessionEnd'];
 
 // A path is written inside double quotes, so a character that ends such a string or is expanded in it must not occur: a double
-// quote, the backtick, $, a line break, and the typographic quotes U+2018 to U+201E, which PowerShell reads as quotes too
-// (docs/CHANGES-FROM-POC.md, change 11).
-const FORBIDDEN_IN_PS = /["`$\r\n\u2018-\u201e]/;
+// quote, the backtick, $, a line break, and the typographic double quotes U+201C to U+201E, which PowerShell reads as double
+// quotes too (docs/CHANGES-FROM-POC.md, change 11). The typographic SINGLE quotes U+2018 to U+201B are inert inside a
+// double-quoted string, so a profile folder such as O'Neil with a typographic apostrophe stays usable.
+const FORBIDDEN_IN_PS = /["`$\r\n\u201c-\u201e]/;
 
 // handler, event and env are not paths but they are put on the command line too, so they get the same care
 // (docs/CHANGES-FROM-POC.md, change 3). A token is refused if it holds a character that could end a quoted string or be
