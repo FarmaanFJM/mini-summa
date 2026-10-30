@@ -105,6 +105,9 @@ project's folder. Type in it as you would anywhere else.
 * Several sessions can run per project, and several projects can be active at once. Switching projects only changes what you see:
   no terminal is restarted. Quitting Mini-Summa ends the terminals it owns; the sessions stay in the list as **resumable** and
   **Resume** continues them with `claude --resume`.
+* You can type `/clear` or `/resume` in the terminal. Claude then starts another conversation inside the same terminal;
+  Mini-Summa notices that the same process now runs a new session, keeps your tab and keyboard where they are and moves them to
+  the new session. The earlier conversation stays in the session menu under "Replaced inside their terminal", as ended.
 * Closing the window with the X **quits** Mini-Summa; there is no run-in-the-tray mode. If terminals are running it asks once
   ("Quit and end terminals" or Cancel), then hides the window, ends the terminals, stops the local service and exits. The tray icon
   offers Open, Quiet mode and Quit.

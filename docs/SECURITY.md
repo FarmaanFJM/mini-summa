@@ -88,9 +88,9 @@ These are product rules the code enforces, and tests pin each of them.
   titles, tool input or paths. The project name is visible to Google (Firebase Cloud Messaging) and on a locked phone
   screen. If a project's name is itself sensitive, rename the project or switch off phone push for it in the project's
   notification settings; the phone still shows the event the next time you open the app.
-* **The window's own state** (selected project, open session tabs, divider positions, setup dismissals) is kept by the core in
-  its database so that it survives a restart and a change of port. It holds ids and layout only (project and session ids,
-  divider positions, dismissals), never tokens or report text. Like the rest of the settings it can be read with the read scope
+* **The window's own state** (the selected project and view, per project the selected session and conversation, setup
+  dismissals) is kept by the core in its database so that it survives a restart and a change of port. It holds ids only
+  (project, session and conversation ids), never tokens or report text. Like the rest of the settings it can be read with the read scope
   (a paired phone has it) and can be changed only with the desktop token.
 * **Your own Firebase project.** Mini-Summa has no cloud service. The service-account key is stored in the data directory
   with owner-only permissions and is never logged or returned by the API.

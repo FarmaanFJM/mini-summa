@@ -66,14 +66,17 @@ unsigned). See [docs/SETUP.md](docs/SETUP.md).
 
 ## Status
 
-The base application is implemented end to end. It was verified on Linux at every layer that could run there: about 3,900 unit,
-service and integration tests; the real core with real terminals; the real Claude Code CLI driven through the core (17 of 17
-steps, including approving and rejecting a real permission dialog and a phone's prompt); the real Electron app under a virtual
-display (the 25 desktop behaviours and the four-project scenario: 25 pass, and desktop notifications are partial because an
-operating-system toast cannot be observed on Linux); and the browser extension in a real Chromium.
+The base application is implemented end to end and was verified on Linux at every layer that could run there, in a fresh clone of
+the pushed branch: about 4,300 unit, service and integration tests; the real core with real terminals; the real Claude Code CLI
+driven through the core (20 of 20 steps, including approving and rejecting a real permission dialog, a phone's prompt, a
+several-line follow-up, `/clear` and `/resume` inside the terminal), and a Claude started outside Mini-Summa followed through
+installed hooks; the real Electron app under a virtual display (the 25 desktop behaviours and the four-project scenario: 25 pass,
+and desktop notifications are partial because an operating-system toast cannot be observed on Linux, plus six extra checks that
+pass); and the browser extension in a real Chromium.
 
-**Not exercised:** Windows, WSL2, an Android device or emulator, real push delivery, the real ChatGPT site, real Tailscale.
-**Not built:** the Android APK (Maven Central rate-limited the build from the sandbox it was made in; see
-[docs/ANDROID.md](docs/ANDROID.md)). The Windows installer builds but has never been installed.
-[docs/VERIFICATION.md](docs/VERIFICATION.md) lists every layer with its real result, [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
-what remains, and [docs/WINDOWS_VERIFICATION.md](docs/WINDOWS_VERIFICATION.md) what only your PC can confirm.
+**Built but never run on their target:** the Windows installer (assembled under Wine) and the Android APK (46 MB, arm64, signed with
+a throwaway key; 8 permissions). **Not exercised:** Windows, WSL2, an Android device or emulator, real push delivery, the real
+ChatGPT site, real Tailscale. A code audit of the Windows and WSL2 paths fixed 31 problems with simulated tests; it proves the
+logic, not Windows. [docs/VERIFICATION.md](docs/VERIFICATION.md) lists every layer with its real result,
+[docs/LIMITATIONS.md](docs/LIMITATIONS.md) what remains, [docs/WINDOWS_VERIFICATION.md](docs/WINDOWS_VERIFICATION.md) and
+[docs/PHONE_VERIFICATION.md](docs/PHONE_VERIFICATION.md) what only your PC and your phone can confirm.

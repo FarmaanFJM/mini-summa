@@ -18,10 +18,9 @@ the 30-minute checklist for the phone.
 | **WSL2**: launching Claude inside a distribution, `wsl.exe` interop, UNC and `/mnt` paths | Environment ids, path normalisation (both `\\wsl$\` and `\\wsl.localhost\`, any letter case of the distribution name) and command construction have unit tests with recorded and simulated `wsl.exe` output (UTF-16, helper distributions) | A real distribution may format listings differently, and Claude installed through nvm or `~/.local/bin` is started through a login shell that was never run. |
 | **Windows toast notifications** and click-to-navigate | The notification decision, dedupe, quiet mode and the navigation target are tested; the Electron call is observed with a stand-in | Toasts also depend on Windows Focus assist settings. |
 | **The real ChatGPT site** inside the embedded view: sign-in, loading a conversation, the clipboard permission | A local HTTPS stand-in for `chatgpt.com` exercises the real navigation policy and the real view | ChatGPT may change its pages or refuse embedded browsers (Google sign-in often does). The external-browser mode is the fallback. |
-| **An Android device or emulator** | 216 Jest tests, a script that pairs and connects the phone's own code to the real headless core, a bundling check, and the built APK read back with `apksigner` and `aapt2` (signature, 8 permissions, not debuggable, no backup, no cleartext) | The app has never been installed or started: no screen has been seen, the camera, notifications and Tailscale are untried. |
+| **An Android device or emulator** | 216 Jest tests, a script that pairs and connects the phone's own code to the real headless core, a bundling check, and the **built APK** (46.2 MB, arm64, release; SHA-256 in [ANDROID.md](ANDROID.md)) read back with `apksigner` and `aapt2`: signature, 8 permissions, not debuggable, no backup, no cleartext. It was built after the Maven Central rate limit was got past with longer retries and a local, checksum-verified copy of 11 files; no verification was bypassed ([ANDROID.md](ANDROID.md), "Build outcome") | The app has never been installed or started: no screen has been seen, and the camera, notifications and Tailscale are untried. The APK is signed with a throwaway key made for this build, so a later build cannot update it (uninstall first, or sign your own with `MINISUMMA_KEYSTORE`); Play Protect warns about an unknown developer. |
 | **Real push delivery** (Firebase Cloud Messaging) | Payload building, token registration, minimal payloads and failure handling against a local stand-in | Needs your own Firebase project and a device. |
 | **Real Tailscale** | The status parser and Serve management against recorded and simulated output | `tailscale serve` flags can differ by version. |
-| **The Android APK as a tested product** | The APK **was built** (46.2 MB, arm64, release, SHA-256 in [ANDROID.md](ANDROID.md)) after the Maven Central rate limit was got past with longer retries and a local, checksum-verified copy of 11 files; no verification was bypassed ([ANDROID.md](ANDROID.md), "Build outcome") | It is signed with a throwaway key made for this build, so it can be installed once but a later build cannot update it (uninstall first, or sign your own with `MINISUMMA_KEYSTORE`). Play Protect warns about an unknown developer. |
 
 ## 2. External limitations (not Mini-Summa's to fix)
 
@@ -58,6 +57,15 @@ These are things Mini-Summa gets wrong or does clumsily today. None blocks the c
 * **The strip at the bottom of the workspace shows the waiting report of the selected project only**, the one you are in the
   middle of first, then the newest, with "+N more" linking to the Reports queue. Discard, changing the destination and the
   alternatives for long messages stay in Reports.
+* **ChatGPT's sign-in cookies are not encrypted on disk on Windows** (the build's cookie-encryption switch is off; audit item
+  W-12). Another program running as you could read them from `%APPDATA%\Mini-Summa\Partitions\chatgpt`. Turning the switch on is
+  a one-line change that was left alone because it cannot be tried here (it would probably sign you out of ChatGPT once).
+* **Installing an update while Mini-Summa runs ends it abruptly.** The installer's own "is it running" check ends the program
+  without letting it quit ([audit/windows-desktop.md](audit/windows-desktop.md), "Upgrade while the app runs"), so its terminals are lost (they stay listed as resumable) and the last
+  seconds of ChatGPT cookie changes may be lost. Quit Mini-Summa before updating.
+* **The smallest window (960 by 600 points) is larger than the usable area of a 1366 by 768 laptop at 150% scaling.** The window
+  then extends past the screen edge.
+* **A Windows toast counts as shown when Windows accepted it**, even if Focus assist sent it straight to the Action Center.
 * **After a restart the previous terminal output is not shown** ("No terminal output is available for this session") until
   the session is resumed; the transcript lives in Claude Code, not in Mini-Summa.
 * **A report keeps the project name it was captured under after the project is renamed.** It stays linked by project id, so it still belongs to the right project.

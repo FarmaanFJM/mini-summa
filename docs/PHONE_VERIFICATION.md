@@ -55,8 +55,10 @@ phone only talks to the PC over HTTPS.
 ## 6. Notifications
 
 13. **Settings** in the phone app, **Send a test notification** (Android 13 and newer first asks for the notification permission).
-    *Expect:* a notification on the phone. Without a Firebase project (the APK is built without one) it is shown while the app is
-    open; with the app closed nothing arrives. That is expected: closed-app push needs your own Firebase project
+    *Expect:* a notification "Mini-Summa test" saying it was made on this phone and does not test push from your PC. That checks only the
+    phone's notification permission and channel. Settings also says "Push notifications need your own Firebase project": expected,
+    because the APK is built without one. While the app is open and connected, events from the PC (a report is ready, Claude needs
+    permission) show live; with the app closed nothing arrives from the PC, because closed-app push needs your own Firebase project
     ([ANDROID.md](ANDROID.md), "Push notifications"). If you set one up: *expect* a push with the project name, a fixed sentence
     ("A report is ready") and no report text.
 

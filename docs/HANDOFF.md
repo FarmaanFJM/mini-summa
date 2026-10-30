@@ -36,8 +36,9 @@ This page states exactly what Mini-Summa automates and what stays in your hands.
 
 The marker is an instruction Mini-Summa gives the session when it starts (through the SessionStart hook, only for folders that
 belong to a registered project), and a model can ignore an instruction. Measured with the real Claude Code CLI 2.1.314 on Linux, with
-natural prompts that did not mention the marker: the default model wrote it for 3 of 3 tasks and Haiku for 7 of 7 after the
-wording of the instruction was broadened, and none of the 4 plain questions that were not tasks got one
+natural prompts that did not mention the marker: the default model wrote it for 6 of 6 tasks and Haiku for 11 of 11 with the
+current wording of the instruction (Haiku had managed only 1 of 3 with the earlier, narrower wording, which is why it was
+broadened), and none of the 6 plain questions that were not tasks got one
 (`npm run verify:protocol` repeats this against your own Claude). That is a small sample on one machine, not a guarantee. A
 final message without the marker is **not lost and not handed off**: it is stored and shown under *Other messages* in the
 Reports view, where you can still read it and decide yourself.

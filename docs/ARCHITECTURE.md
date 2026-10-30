@@ -119,6 +119,17 @@ and the configured Tailscale DNS name), and applies `Idempotency-Key` to routes 
 traffic (`term.*`) for managed sessions needs `desktop`. Reconnect with `since=<last seq>`; if the buffer no longer
 reaches back the server answers `resync: true` and the client reloads snapshots (`system.state` carries `seq`).
 
+## What the window remembers
+
+The desktop shell starts the core on the same port every time (47811, or the next free one when it is taken) and the window keeps
+the choices that matter in the core, not in the browser profile that belongs to that port: the selected project and view, per
+project the selected session and the selected conversation, and the dismissed setup hints (`Settings.ui`, validated by the
+route's schema; ids only). The renderer sends changes after 0.6 s of quiet and, as the page closes, with a request that
+outlives it (`app/uiSync.ts`, `app/keepalive.ts`). The window's size, position and maximised state are the shell's own
+(`apps/desktop/src/main/windowState.ts`); the open tabs and the divider stay in the renderer. When a managed terminal goes on under another session id (`/clear`,
+`/resume`) the core names the successor in `SessionView.replacedBy` and the renderer moves the tab and the remembered choice to it
+(`app/followSessions.ts`).
+
 ## ChatGPT integration modes
 
 * **Embedded** (default): a sandboxed `WebContentsView` with its own persistent partition (`persist:chatgpt`),

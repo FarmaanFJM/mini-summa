@@ -1,21 +1,22 @@
 // Real Claude Code confirmation: the Mini-Summa core launches the REAL `claude` CLI as a managed session and the
 // whole chain is checked end to end: PTY launch in the project directory, per-session hook file, state from real hooks,
-// report capture from a real final message, frozen ChatGPT destination, permission approval keystrokes, /clear inside the
-// terminal (the terminal must stay the managed terminal under the new session id), resume, restart.
+// report capture from a real final message, frozen ChatGPT destination, permission approval keystrokes, a phone's prompt and a
+// several-line follow-up (read back from Claude's own UserPromptSubmit hook record), /clear inside the terminal (the terminal
+// must stay the managed terminal under the new session id), resume, restart.
 //
 //   npm run verify:claude                                   uses `claude` from PATH and your normal Claude login
 //   npm run verify:claude -- --claude-bin /path/to/claude   a specific executable (or a wrapper script)
 //   npm run verify:claude -- --keep                          keep the temporary data directory and repository
 //
 // It talks to a headless core on a temporary data directory and a temporary git repository. It never opens ChatGPT and
-// never touches your Mini-Summa data. It costs two short model replies. Claude must already be logged in; a fresh
+// never touches your Mini-Summa data. It costs a handful of short model replies. Claude must already be logged in; a fresh
 // CLAUDE_CONFIG_DIR starts logged out and the run stops with a clear message instead of guessing.
 //
 // Results are reported per check as PASS / FAIL / NOT TESTED. A check that was not executed is never shown as PASS.
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,6 +84,29 @@ async function until<T>(what: string, probe: () => Promise<T | null | undefined 
 // Core process
 
 interface CoreProcess { baseUrl: string; desktopToken: string; child: ChildProcess; log: () => string }
+
+/**
+ * The prompts Claude's own UserPromptSubmit hook has received so far, oldest first, read from the hook spool in the data directory
+ * (pending and already ingested records; their names start with a zero-padded monotonic time, so the names sort in time order).
+ */
+function userPrompts(dataDir: string): string[] {
+  const records: { name: string; prompt: string }[] = [];
+  const spoolRoot = join(dataDir, 'spool');
+  if (!existsSync(spoolRoot)) return [];
+  for (const env of readdirSync(spoolRoot)) {
+    for (const dir of [join(spoolRoot, env), join(spoolRoot, env, 'done')]) {
+      if (!existsSync(dir)) continue;
+      for (const name of readdirSync(dir)) {
+        if (!name.endsWith('.json')) continue;
+        try {
+          const record = JSON.parse(readFileSync(join(dir, name), 'utf8')) as { payload?: { hook_event_name?: string; prompt?: unknown } };
+          if (record.payload?.hook_event_name === 'UserPromptSubmit' && typeof record.payload.prompt === 'string') records.push({ name, prompt: record.payload.prompt });
+        } catch { /* a file that is still being written or was just moved: the next look sees it */ }
+      }
+    }
+  }
+  return records.sort((a, b) => a.name.localeCompare(b.name)).map((r) => r.prompt);
+}
 
 async function startCore(dataDir: string): Promise<CoreProcess> {
   const env: Record<string, string | undefined> = { ...process.env };
@@ -370,6 +394,40 @@ async function main(): Promise<void> {
         const answer = await until('Claude\'s answer to the phone prompt', async () => (await client.call('candidates.list', { query: { projectId: project.id } })).find((c) => c.body.includes('PHONEOK')));
         expect(answer.sessionKey === key, 'the answer belongs to another session');
         return `answer "${answer.body.trim().slice(0, 40)}"`;
+      });
+
+      // A follow-up is usually several lines (ChatGPT's reply, pasted). It must arrive as ONE prompt, line for line, whatever
+      // characters it holds. The proof is what Claude's own UserPromptSubmit hook received, read from the spool, not the model's answer.
+      await check('follow-up text: several lines with quotes, a backtick, $, a backslash, a bullet, a "#" line, unicode and an indented line reach the real Claude as one prompt, line for line', async () => {
+        await until('the session to be ready for a prompt', async () => {
+          const s = await client.call('sessions.get', { params: { key } });
+          return ['turn_ended', 'idle', 'report_ready', 'waiting_for_you'].includes(s.state) ? s : null;
+        });
+        const promptsBefore = userPrompts(dataDir).length;
+        const text = [
+          'Review notes (follow-up 1):',
+          '',
+          '- "double" and \'single\' quotes, a `backtick`, $HOME and a \\backslash',
+          '# a line that starts with a hash is only text here',
+          '    an indented line with unicode: café, 日本語, ✓',
+          'Reply with exactly this one word and nothing else: MULTIOK',
+        ].join('\n');
+        const offer = await client.call('pairing.createOffer', { body: { scopes: ['read', 'prompt'], kind: 'phone' } });
+        const paired = await client.call('pairing.redeem', { body: { offerId: offer.id, code: offer.code, deviceName: 'Verification phone 2', platform: 'android' } });
+        const phone = new MiniSummaClient({ baseUrl: core.baseUrl, token: paired.token, clientName: 'verify-phone-2' });
+        const queued = await phone.call('actions.create', { body: { sessionKey: key, text } });
+        expect(queued.status === 'pending', `the prompt is ${queued.status} before anyone approved it`);
+        await client.call('actions.approve', { params: { id: queued.id } });
+        const answer = await until('Claude\'s answer to the several-line prompt', async () => (await client.call('candidates.list', { query: { projectId: project.id } })).find((c) => c.body.includes('MULTIOK')));
+        expect(answer.sessionKey === key, 'the answer belongs to another session');
+        const fresh = await until('the hook record of that prompt', async () => {
+          const all = userPrompts(dataDir);
+          const mine = all.slice(promptsBefore).filter((p) => p.includes('follow-up 1'));
+          return mine.length > 0 ? { all: all.slice(promptsBefore), mine } : null;
+        });
+        expect(fresh.all.length === 1, `${fresh.all.length} prompts reached Claude for one approved text (expected 1)`);
+        expect(fresh.mine[0]!.includes(text), 'what Claude received is not the approved text line for line');
+        return `one prompt of ${text.split('\n').length} lines, identical; answer "${answer.body.trim().slice(0, 20)}"`;
       });
     }
 

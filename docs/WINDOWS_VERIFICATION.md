@@ -94,7 +94,7 @@ The installer is **not code-signed** (a certificate costs money and there is non
 13. Wait for Claude to finish.
     *Expect:* the feed shows the session working and then a report under the right project, with its destination conversation. A file
     appeared in `%APPDATA%\Mini-Summa\data\spool\win` and moved to `done` within a second. Claude Code showed no hook error. (If it
-    did: open `%APPDATA%\Mini-Summa\data\spool\win\capture-errors.log` if it exists and send it.)
+    did: open `%APPDATA%\Mini-Summa\data\spool\capture-errors.log` if it exists, and send it.)
 14. **The handoff, from the workspace.** A strip appears at the bottom of the workspace: "Report ready: <task>" with **Copy and open**.
     Press it.
     *Expect:* the whole message is on the clipboard (paste it into Notepad to check), the mapped ChatGPT conversation is in front, and
@@ -119,8 +119,9 @@ The installer is **not code-signed** (a certificate costs money and there is non
     resumable, not running; nothing was notified again. **Resume** brings the same Claude session back.
 18. In a running managed terminal type `/clear` and press Enter (Claude starts a fresh conversation).
     *Expect:* Mini-Summa keeps the terminal and its tab; the tab and the "Input goes to" line now show the new session id, and the earlier
-    conversation is listed under "Replaced inside their terminal" in the session menu, not as a dead terminal. A task you finish after the `/clear` produces a report under the same project. If the terminal tab
-    is replaced by a message that the session ended, note what the message said.
+    conversation is listed under "Replaced inside their terminal" in the session menu, not as a dead terminal. A task you finish after
+    the `/clear` produces a report under the same project. If the tab is replaced by a message that the session ended, note what the
+    message said.
 19. With two terminals running, end `Mini-Summa.exe` from Task Manager (End task on the whole tree).
     *Expect:* after a few seconds no `claude.exe`, `node.exe` or `OpenConsole.exe` of those terminals is left, and on the next start both sessions are resumable.
 20. Uninstall (Settings, Apps, Mini-Summa, Uninstall).
@@ -166,7 +167,7 @@ the upgrade installer running while Mini-Summa runs, shutdown with terminals ope
 From a checkout of the repository (`npm install` first). They were written to work on Windows but have **only been run on Linux**.
 Each starts a headless core on a temporary data directory, in a temporary git repository, with your real `claude`:
 
-* `npm run verify:claude`: launch, hooks, report, approve, reject, `/clear`, `--resume`, restart (about 3 minutes, two or three short prompts).
+* `npm run verify:claude`: launch, hooks, report, approve, reject, a phone prompt, a several-line follow-up, `/clear`, `/resume`, `--resume`, restart (about 5 minutes, a handful of short prompts).
 * `npm run verify:protocol`: how reliably your Claude version ends a finished task with the report marker, with natural prompts.
 * `npm run verify:claude-external`: a Claude you started yourself, followed through installed hooks; your own settings are restored.
 
