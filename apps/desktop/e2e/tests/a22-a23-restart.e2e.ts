@@ -105,25 +105,36 @@ scenario('[A22] Project and session records persist after restart', async () => 
   for (const s of [build, betaSession]) expect(readReceived(h2.sandbox.fakeState, s.sessionId).map((r) => r.text)).toEqual(receivedBefore[s.key]);
   expect(h2.standIn.submissions()).toEqual([]);
 
-  // In the window: the project list is back, and Alpha offers to resume its session. (Which project is selected on reopening is
-  // UI state kept in the page's localStorage; it has its own check, X02.)
+  // In the window: the project list is back, and Alpha shows the session that was open when the app closed, as ended, with an
+  // offer to resume it. (Which project and tab the window reopens on is the window's own memory; X02 covers it.)
   await projectRow(h2.page, 'Alpha').waitFor();
   await projectRow(h2.page, 'Beta').waitFor();
   await selectProject(h2.page, 'Alpha');
-  await h2.page.getByRole('region', { name: 'Claude', exact: true }).getByText('No Claude session is open for Alpha.').waitFor();
-  await h2.page.getByRole('region', { name: 'Claude', exact: true }).getByRole('button', { name: 'New or resumed session' }).click();
-  const resumeItem = h2.page.getByRole('menuitem', { name: new RegExp(`^${build.sessionId.slice(0, 8)}, Linux`) });
-  await resumeItem.waitFor();
+  const claude = h2.page.getByRole('region', { name: 'Claude', exact: true });
+  const tab = claude.getByRole('tab', { name: new RegExp(`^Session ${build.sessionId.slice(0, 8)}, managed, Linux\\. Session ended`) });
+  await tab.waitFor();
+  expect(await tab.getAttribute('aria-selected')).toBe('true');
+  expect(await claude.getByRole('tab').count(), 'only the session that was open has a tab: the never-prompted one is not offered').toBe(1);
+  const notice = claude.getByRole('status').filter({ hasText: 'This session ended' });
+  await notice.waitFor();
+  const resumeButton = notice.getByRole('button', { name: 'Resume session' });
+  await resumeButton.waitFor();
+  // The "+" menu lists what can be resumed: the prompted session, not the one that never got a prompt.
+  await claude.getByRole('button', { name: 'New or resumed session' }).click();
+  await h2.page.getByRole('menuitem', { name: new RegExp(`^${build.sessionId.slice(0, 8)}, Linux`) }).waitFor();
   expect(await h2.page.getByRole('menuitem', { name: new RegExp(`^${idle.sessionId.slice(0, 8)}`) }).count()).toBe(0);
+  await h2.page.keyboard.press('Escape');
+  await h2.page.getByRole('menu').waitFor({ state: 'hidden' });
+  expect(liveSessionsOf(h2.sandbox.fakeState), 'looking at the offer starts nothing').toEqual([]);
 
   // Resuming is the person's act: only now does a process start, with the same session identity, a new generation, and Claude's own "(resumed)".
-  await resumeItem.click();
+  await resumeButton.click();
   const resumed = await waitForSession(h2, build.key, (s) => s.availability === 'live' && s.state !== 'unknown', 'the resumed session to be live');
   expect(resumed).toMatchObject({ key: build.key, origin: 'managed', projectId: alpha.project.id, name: 'build' });
   expect(resumed.generation).toBeGreaterThan(build.generation);
   await waitForScreen(h2.page, '(resumed)');
   expect(readReceived(h2.sandbox.fakeState, build.sessionId).map((r) => r.text)).toEqual(receivedBefore[build.key]); // resuming typed nothing
-  evidence('A22', `quit asked "Quit Mini-Summa?" (3 running terminals) and exited 0, all terminal processes gone; on relaunch the same projects, roots, conversations, preferred conversation, layout (0.62/0.41), feed read state and notifications (${notificationsBefore.length}) were there; the 2 prompted sessions came back resumable/ended by "app_exit" (not live, no process), the never-prompted one was not offered; the restart attempted no notification, started no session, typed nothing, sent nothing; resuming "build" from the + menu started the same session key as generation ${resumed.generation} showing "(resumed)"`);
+  evidence('A22', `quit asked "Quit Mini-Summa?" (3 running terminals) and exited 0, all terminal processes gone; on relaunch the same projects, roots, conversations, preferred conversation, layout (0.62/0.41), feed read state and notifications (${notificationsBefore.length}) were there; the 2 prompted sessions came back resumable/ended by "app_exit" (not live, no process), the never-prompted one was not offered; the restart attempted no notification, started no session, typed nothing, sent nothing; Alpha's pane reopened on the "build" tab as "Session ended" with a "Resume session" button (and the + menu listed only that session); pressing it started the same session key as generation ${resumed.generation} showing "(resumed)"`);
 }, { timeout: 150_000 });
 
 scenario('[A23] Pending reports persist after restart', async () => {
@@ -218,4 +229,44 @@ scenario('[X02] The window reopens on the project that was selected when it was 
   const heading = await h2.page.getByRole('heading', { level: 1 }).first().innerText();
   expect(heading, `reopened on "${heading}" instead of the project that was selected ("Beta"); origin ${originBefore} -> ${originAfter}`).toBe('Beta');
   evidence('X02', `the window reopened on Beta, as it was left, on the same origin (${originAfter})`);
+});
+
+// Not one of the 25 behaviours: what the window tells a person about a session that ended. The reason is in words a person can
+// read, whichever way the session ended (the person stopped it; the app was closed around it).
+scenario('[X03] A session that ended says why in words, not as an internal code', async () => {
+  const h = await launchApp();
+  const alpha = await createProject(h, 'Alpha', { conversations: [conversationUrl(A1)] });
+  const stopped = await startSession(h, alpha.project.id, { name: 'stopped' });
+  const kept = await startSession(h, alpha.project.id, { name: 'kept' });
+  await finishTask(h, { project: alpha.project, session: stopped }, 'Stopped one');
+  await finishTask(h, { project: alpha.project, session: kept }, 'Kept one');
+  const tag = (s: SessionView): string => s.sessionId.slice(0, 8);
+  const reasonShown = async (page: AppHandle['page'], what: string): Promise<string> => {
+    const notice = page.getByRole('region', { name: 'Claude', exact: true }).getByRole('status').filter({ hasText: 'This session ended' });
+    await notice.waitFor();
+    const first = ((await notice.innerText()).split('\n')[0] ?? '').trim();
+    evidence('X03', `${what}: the window says "${first}"`);
+    return first.replace(/^This session ended: /, '');
+  };
+  const inWords = (reason: string): boolean => /^[A-Z][^_]* [^_]*\.$/.test(reason);
+
+  // 1. The person stops a session from its menu.
+  await selectProject(h.page, 'Alpha');
+  const claude = h.page.getByRole('region', { name: 'Claude', exact: true });
+  await claude.getByRole('tab', { name: new RegExp(`^Session ${tag(stopped)},`) }).click();
+  await claude.getByRole('button', { name: `Actions for session ${tag(stopped)}` }).click();
+  await h.page.getByRole('menuitem', { name: 'Stop session' }).click();
+  await h.page.getByRole('alertdialog', { name: `Stop session ${tag(stopped)}?` }).getByRole('button', { name: 'Stop session' }).click();
+  const afterStop = await reasonShown(h.page, 'after the person stopped a session');
+
+  // 2. The app is closed around the other one, and opened again.
+  await claude.getByRole('tab', { name: new RegExp(`^Session ${tag(kept)},`) }).click();
+  expect((await h.quit()).code).toBe(0);
+  const h2 = await launchApp({ sandbox: h.sandbox, standIn: h.standIn });
+  await selectProject(h2.page, 'Alpha');
+  await h2.page.getByRole('tab', { name: new RegExp(`^Session ${tag(kept)},.*Session ended`) }).waitFor();
+  const afterQuit = await reasonShown(h2.page, 'after the app was closed around a running session');
+
+  const wordless = [['stopped by the person', afterStop], ['app closed', afterQuit]].filter(([, reason]) => !inWords(reason as string));
+  expect(wordless.map(([when, reason]) => `${when}: "This session ended: ${reason}"`), 'the notice must give the reason as a sentence, not as the internal code the core records').toEqual([]);
 });

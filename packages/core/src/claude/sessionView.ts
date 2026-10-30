@@ -118,10 +118,23 @@ function attentionFor(state: SessionState, availability: SessionAvailability, fa
   return { kind, since };
 }
 
+// The PTY manager stores why a terminal ended as a short code. The window prints `reason` as a sentence, so a code is
+// translated here and never shown. Anything else a record carries is already words and is passed through.
+const EXIT_CODE_TEXT: Readonly<Record<string, string>> = {
+  killed_by_user: 'You stopped the session.',
+  app_exit: 'Mini-Summa was closed while it was running.',
+  app_restart: 'Mini-Summa was restarted while it was running, so its terminal is gone.',
+  spawn_failed: 'Claude could not be started in a terminal.',
+};
+
 function managedExit(m: ManagedSessionRecord): SessionTermination {
-  const reason = m.exitReason
-    ?? (m.exitCode !== null ? `The terminal process exited with code ${m.exitCode}.`
-      : m.exitSignal !== null ? `The terminal process was stopped by signal ${m.exitSignal}.` : 'The terminal was closed.');
+  const code = m.exitReason;
+  const known = code !== null ? EXIT_CODE_TEXT[code] : undefined;
+  // 'exited' is the code for "it ended by itself": the exit code or signal says more than the word does.
+  const plain = code === null || code === 'exited';
+  const fromProcess = m.exitCode !== null ? `The terminal process exited with code ${m.exitCode}.`
+    : m.exitSignal !== null ? `The terminal process was stopped by signal ${m.exitSignal}.` : 'The terminal was closed.';
+  const reason = known ?? (plain || /^[a-z]+(_[a-z]+)*$/.test(code ?? '') ? fromProcess : (code as string));
   return { kind: 'observed', reason, at: m.exitedAt };
 }
 

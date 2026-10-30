@@ -202,6 +202,15 @@ describe('a managed terminal', () => {
     [{ exitCode: 3 }, 'The terminal process exited with code 3.'],
     [{ exitSignal: 9 }, 'The terminal process was stopped by signal 9.'],
     [{}, 'The terminal was closed.'],
+    // The codes the PTY manager really stores: the window prints the reason as a sentence, so a code must never come through.
+    [{ exitReason: 'exited', exitCode: 0 }, 'The terminal process exited with code 0.'],
+    [{ exitReason: 'exited', exitSignal: 15 }, 'The terminal process was stopped by signal 15.'],
+    [{ exitReason: 'exited' }, 'The terminal was closed.'],
+    [{ exitReason: 'killed_by_user', exitCode: 0 }, 'You stopped the session.'],
+    [{ exitReason: 'app_exit', exitSignal: 15 }, 'Mini-Summa was closed while it was running.'],
+    [{ exitReason: 'app_restart' }, 'Mini-Summa was restarted while it was running, so its terminal is gone.'],
+    [{ exitReason: 'spawn_failed' }, 'Claude could not be started in a terminal.'],
+    [{ exitReason: 'some_future_code', exitCode: 2 }, 'The terminal process exited with code 2.'],
   ])('describes how the terminal ended: %j', (patch, reason) => {
     const v = build({ managed: managed({ status: 'exited', exitedAt: 'E', ...patch }) });
     expect(v.termination).toEqual({ kind: 'observed', reason, at: 'E' });
