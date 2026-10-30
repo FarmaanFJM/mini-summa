@@ -32,6 +32,9 @@ const FORBIDDEN_NAME = [
 
 const SYNTHETIC_UUID = /^(\d)\1{7}-\1{4}-4\1{3}-8\1{3}-\1{12}$|^00000000-0000-4000-8000-\d{12}$|^(11111111|22222222|33333333|44444444|55555555)-/;
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+// A random UUID has about 14 distinct hex digits; fewer than six (aaaaaaaa-aaaa-4aaa-..., c2c2c2c2-...) is a made-up value,
+// the chance that a real one looks like that is below one in a billion.
+const isPlaceholderUuid = (u) => SYNTHETIC_UUID.test(u) || new Set(u.replace(/-/g, '').toLowerCase()).size <= 5;
 // Obvious placeholders used by redaction tests are not secrets.
 const FAKE = /abcdefghij|ABCDEFGH|SECRETSECRET|EXAMPLE|FAKE|fake|example|placeholder|0000000000|mini-summa-test/;
 
@@ -66,7 +69,7 @@ for (const f of files) {
     for (const m of text.matchAll(re)) if (!FAKE.test(m[0])) problems.push(`${f}: ${name}: ${m[0].slice(0, 70)}`);
   }
   for (const u of text.match(UUID) ?? []) {
-    if (!SYNTHETIC_UUID.test(u) && !synthetic) problems.push(`${f}: real-looking UUID ${u}`);
+    if (!isPlaceholderUuid(u) && !synthetic) problems.push(`${f}: real-looking UUID ${u}`);
   }
 }
 

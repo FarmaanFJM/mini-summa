@@ -156,7 +156,7 @@ function evidenceSection(model) {
     if (r.why) lines.push(`*Why this check exists:* ${r.why}`, '');
     if (r.tests.length === 0) { lines.push('- No test for this behaviour appears in the results.', ''); continue; }
     for (const t of r.tests) {
-      const prefix = r.tests.length > 1 ? `*${t.text}* (${STATUS[t.status]}): ` : '';
+      const prefix = r.tests.length > 1 ? `*${t.text}*: ` : '';
       if (t.status === 'fail') {
         lines.push(`- ${prefix}**FAILED.** ${firstLine(t.failure)}`);
         const detail = String(t.failure ?? '').split('\n').slice(0, 14).join('\n');

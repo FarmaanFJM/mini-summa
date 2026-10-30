@@ -124,11 +124,13 @@ scenario('[A08] Terminal resize works', async () => {
 
   // The process was told (SIGWINCH): its own words about it are in the terminal, and the xterm has that many rows.
   await waitForScreen(h.page, `[terminal resized to ${afterWide.cols}x${afterWide.rows}]`);
-  if (afterWide.screen) {
-    expect(afterWide.screen.rows).toBe(afterWide.rows);
-    expect(Math.abs(afterWide.screen.cols - afterWide.cols)).toBeLessThanOrEqual(1);
+  // The xterm on screen is measured from the DOM (its rows, and its width over one character's width): it must have been measurable.
+  for (const [what, size] of [['tall', afterTall], ['wide', afterWide]] as const) {
+    expect(size.screen, `the terminal on screen could not be measured after making the window ${what}`).not.toBeNull();
+    expect(size.screen!.rows, `rows of the xterm on screen after making the window ${what}`).toBe(size.rows);
+    expect(Math.abs(size.screen!.cols - size.cols), `columns of the xterm on screen after making the window ${what}`).toBeLessThanOrEqual(1);
   }
-  evidence('A08', `window ${tall.contentSize.join('x')} -> terminal ${afterTall.cols}x${afterTall.rows}; window ${wide.contentSize.join('x')} -> ${afterWide.cols}x${afterWide.rows}; at each size the core's PTY record, the size the fake process reads from its terminal, and the xterm rows${afterWide.screen ? ` (${afterWide.screen.cols}x${afterWide.screen.rows} measured)` : ''} agree; the process printed "[terminal resized to ${afterWide.cols}x${afterWide.rows}]"`);
+  evidence('A08', `window ${tall.contentSize.join('x')} -> terminal ${afterTall.cols}x${afterTall.rows}; window ${wide.contentSize.join('x')} -> ${afterWide.cols}x${afterWide.rows}; at each size the core's PTY record, the size the fake process reads from its terminal, and the xterm on screen (measured ${afterTall.screen!.cols}x${afterTall.screen!.rows} and ${afterWide.screen!.cols}x${afterWide.screen!.rows}, columns within one of the PTY's) agree; the process printed "[terminal resized to ${afterWide.cols}x${afterWide.rows}]"`);
 });
 
 scenario('[A09] Switching projects does not terminate unrelated sessions', async () => {
