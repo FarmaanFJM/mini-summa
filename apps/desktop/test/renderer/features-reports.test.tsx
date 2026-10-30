@@ -3,12 +3,28 @@ import userEvent from '@testing-library/user-event';
 import { ApiError } from '@minisumma/shared';
 import { describe, expect, it, vi } from 'vitest';
 import { changeDelivery } from '../../src/renderer/src/dev/demo/features-handlers';
-import { FEATURE_IDS } from '../../src/renderer/src/dev/demo/features-seed';
+import { createFeatureSeed, FEATURE_IDS } from '../../src/renderer/src/dev/demo/features-seed';
 import { IDS } from '../../src/renderer/src/dev/demo/seed';
 import { callsTo, renderFeature, textOf } from './features-helpers';
 
 const card = () => screen.getByRole('region', { name: 'Handoff to ChatGPT' });
 const buttons = (root: HTMLElement) => within(root).queryAllByRole('button').map((b) => textOf(b));
+
+describe('the report queue with the sidebar collapsed to its rail', () => {
+  it('moves the queue into a column of the view, and opening a report works from there', async () => {
+    const user = userEvent.setup();
+    const seed = createFeatureSeed();
+    seed.settings.layout.sidebarCollapsed = true;
+    await renderFeature({ seed });
+    const column = screen.getByRole('complementary', { name: 'Reports' });
+    expect(within(screen.getByRole('complementary', { name: 'Mini-Summa navigation' })).queryByRole('list', { name: 'Reports' })).toBeNull();
+    const list = within(column).getByRole('list', { name: 'Reports' });
+    await user.click(within(list).getByRole('button', { name: /Add branch protection checks/ }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Add branch protection checks' })).toBeTruthy();
+    expect(within(await screen.findByRole('region', { name: 'Handoff to ChatGPT' })).getByRole('button', { name: 'I sent it' })).toBeTruthy();
+    await user.click(within(column).getByRole('button', { name: 'Back' }));
+  });
+});
 
 describe('the report queue', () => {
   it('lists reports across projects, newest first, each with its project, a plain claim, the time and where the handoff stands', async () => {

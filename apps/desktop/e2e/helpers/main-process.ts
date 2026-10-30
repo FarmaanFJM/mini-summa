@@ -40,6 +40,25 @@ export async function setWindowSize(app: ElectronApplication, width: number, hei
   }
 }
 
+/**
+ * Moves the window to where the real (X) pointer cannot be over it, and returns where it was.
+ *
+ * Why the drag tests need it: under Xvfb the real pointer rests at the middle of the screen, while Playwright's mouse events
+ * are injected into the page and never move it. When a drag makes the app hide the native ChatGPT view, Chromium re-evaluates
+ * the pointer and sends the page a move event at the REAL pointer's stale position, which ends the injected drag's pointer
+ * capture. A person's mouse is the real pointer, so that cannot happen to them. With the window out of the real pointer's
+ * reach the injected drag is the only pointer there is.
+ */
+export const parkWindowAwayFromPointer = (app: ElectronApplication): Promise<{ x: number; y: number }> => app.evaluate(({ BrowserWindow, screen }) => {
+  const win = BrowserWindow.getAllWindows()[0];
+  const before = win.getPosition();
+  const display = screen.getPrimaryDisplay().bounds;
+  win.setPosition(display.x + display.width + 100, display.y);
+  return { x: before[0], y: before[1] };
+});
+
+export const moveWindowTo = (app: ElectronApplication, position: { x: number; y: number }): Promise<void> => app.evaluate(({ BrowserWindow }, p) => { BrowserWindow.getAllWindows()[0].setPosition(p.x, p.y); }, position);
+
 export interface ChatGptViewInfo {
   id: number;
   url: string;

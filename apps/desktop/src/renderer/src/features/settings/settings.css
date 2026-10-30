@@ -47,6 +47,8 @@
 
 .ms-set-inline { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .ms-set-inline > .ms-mono { min-width: 0; }
+/* A small icon button beside a value must not make its row taller than the rows around it. */
+.ms-set-inline .sm-icon-btn { margin-block: -4px; }
 .ms-set-details summary { cursor: pointer; width: fit-content; color: var(--text-2); font-size: var(--fs-sm); }
 .ms-set-details summary:hover { color: var(--text); }
 .ms-set-plain { display: flex; flex-direction: column; gap: 4px; margin: var(--sp-2) 0 0; padding: 0; list-style: none; font-size: var(--fs-sm); }
@@ -73,7 +75,7 @@
 /* Notifications per project: one row per project, one switch per kind. */
 .ms-set-table-wrap { overflow-x: auto; border-radius: var(--r-lg); background: var(--s1); }
 .ms-set-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-.ms-set-table th, .ms-set-table td { padding: 8px 10px; text-align: center; white-space: nowrap; }
+.ms-set-table th, .ms-set-table td { padding: 8px 6px; text-align: center; white-space: nowrap; }
 .ms-set-table thead th { color: var(--text-3); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; padding-top: 12px; }
 .ms-set-table .ms-set-table__name { text-align: left; font-weight: 500; font-size: var(--fs-md); padding-left: 14px; position: sticky; left: 0; background: var(--s1); }
 .ms-set-table thead .ms-set-table__name { font-size: var(--fs-xs); font-weight: 600; }

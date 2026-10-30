@@ -16,7 +16,9 @@ const panel = () => screen.getByRole('region', { name: 'Set up Mini-Summa' });
 const steps = () => within(panel()).getByRole('list', { name: 'Setup steps' });
 const step = (name: RegExp) => within(steps()).getByRole('heading', { level: 3, name }).closest('li') as HTMLElement;
 const isDone = (name: RegExp) => /^Done: /.test(textOf(within(step(name)).getByRole('heading', { level: 3 })));
-const place = () => (panel().closest('.ms-onb-layer') as HTMLElement).getAttribute('data-place');
+const place = () => document.querySelector('.ms-onb-layer')?.getAttribute('data-place') ?? null;
+const pill = () => screen.getByRole('button', { name: /^Setup: \d of 6 done$/ });
+const expand = async (user: ReturnType<typeof userEvent.setup>) => { await user.click(await screen.findByRole('button', { name: /^Setup: \d of 6 done$/ })); await screen.findByRole('region', { name: 'Set up Mini-Summa' }); };
 const saved = (storage: { getItem(k: string): string | null }) => JSON.parse(storage.getItem(KEY) ?? 'null') as { seenEmpty: boolean; dismissed: boolean } | null;
 
 const URL_ONE = 'https://chatgpt.com/c/6720a0aa-1111-4222-8333-444455556666';
@@ -71,9 +73,16 @@ describe('the checklist over an empty application', () => {
     expect(saved(storage)).toEqual({ seenEmpty: true, dismissed: false });
 
     const project = await app.demo.call('projects.create', { body: { name: 'Mini-Summa', roots: [{ path: 'C:\\code\\mini-summa', env: 'win' }] } });
-    await waitFor(() => expect(isDone(/Create your first project/)).toBe(true));
-    expect(textOf(step(/Create your first project/))).toContain('Mini-Summa.');
-    expect(place()).toBe('corner'); // the application has content now: the checklist steps aside to the corner
+    // The application has content now: the checklist steps aside to one small button, so it never covers a terminal.
+    await waitFor(() => expect(place()).toBe('corner'));
+    expect(screen.queryByRole('region', { name: 'Set up Mini-Summa' })).toBeNull();
+    expect(pill().textContent).toBe('Setup: 4 of 6 done');
+    expect(pill().getAttribute('aria-expanded')).toBe('false');
+
+    await expand(user);
+    expect(isDone(/Create your first project/)).toBe(true);
+    // Finished steps are only their titles here; what is left keeps its words and its action.
+    expect(textOf(step(/Create your first project/))).toBe('Done: Create your first project');
     expect(textOf(step(/Add its ChatGPT conversation/))).toContain('Paste the address of the ChatGPT conversation');
 
     // Its own action opens that project's dialog.
@@ -87,14 +96,33 @@ describe('the checklist over an empty application', () => {
 
     await act(async () => { await app.demo.call('sessions.start', { params: { id: project.id }, body: { mode: 'new' } }); });
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Set up Mini-Summa' })).toBeNull());
+    expect(document.querySelector('.ms-onb-layer')).toBeNull();
+    expect(saved(storage)).toEqual({ seenEmpty: true, dismissed: true });
+  });
+
+  it('can be minimized again to the small button, and hidden from there', async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    const app = await emptyApp({ storage });
+    await screen.findByRole('region', { name: 'Set up Mini-Summa' });
+    await app.demo.call('projects.create', { body: { name: 'Mini-Summa', roots: [] } });
+    await expand(user);
+    await user.click(within(panel()).getByRole('button', { name: 'Minimize' }));
+    expect(screen.queryByRole('region', { name: 'Set up Mini-Summa' })).toBeNull();
+    expect(pill()).toBeTruthy();
+    await expand(user);
+    await user.click(within(panel()).getByRole('button', { name: 'Hide the checklist' }));
+    expect(document.querySelector('.ms-onb-layer')).toBeNull();
     expect(saved(storage)).toEqual({ seenEmpty: true, dismissed: true });
   });
 
   it('keeps the observed sessions of other programs from counting as a session of its own', async () => {
+    const user = userEvent.setup();
     const app = await emptyApp();
     await screen.findByRole('region', { name: 'Set up Mini-Summa' });
     const project = await app.demo.call('projects.create', { body: { name: 'Mini-Summa', roots: [{ path: 'C:\\code\\mini-summa', env: 'win' }] } });
     await app.demo.call('conversations.add', { params: { id: project.id }, body: { url: URL_ONE } });
+    await expand(user);
     await waitFor(() => expect(isDone(/Add its ChatGPT conversation/)).toBe(true));
     expect(app.runtime.store.getState().sessions.some((s) => s.origin === 'managed')).toBe(false);
     expect(isDone(/Start a Claude session/)).toBe(false);

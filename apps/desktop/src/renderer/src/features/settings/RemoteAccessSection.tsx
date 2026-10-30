@@ -93,14 +93,14 @@ export function RemoteAccessSection() {
         ) : (
           <>
             <dl className="ms-x-kv" aria-label="Tailscale status">
-              <dt>Installed</dt><dd>{facts.installed}</dd>
+              <dt>Tailscale</dt><dd>{facts.installed}</dd>
               <dt>Service</dt><dd>{facts.running}</dd>
               <dt>Account</dt><dd>{facts.signedIn}</dd>
               <dt>Mini-Summa</dt><dd>{facts.serve}</dd>
               {published && ts.serve.url ? (
                 <>
                   <dt>Address</dt>
-                  <dd className="ms-set-inline"><span className="ms-mono ms-break">{ts.serve.url}</span><CopyButton text={ts.serve.url} label="Copy the address" announce={false} /></dd>
+                  <dd className="ms-set-inline"><span className="ms-mono ms-break">{ts.serve.url}</span><CopyButton text={ts.serve.url} label="Copy the address" size="sm" announce={false} /></dd>
                   <dt>To test</dt>
                   <dd>On the phone, with Tailscale on, open <span className="ms-mono ms-break">{ts.serve.url}/api/v1/health</span> in its browser. A short answer that mentions mini-summa-core means the phone can reach this PC.</dd>
                 </>

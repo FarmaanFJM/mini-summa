@@ -20,12 +20,12 @@ describe('paired devices', () => {
     expect(within(list).getAllByRole('heading', { level: 3 }).map((h) => textOf(h))).toEqual(['Pixel 8', 'Galaxy Tab', 'Chrome extension']);
 
     const pixel = factsOf(within(list).getByLabelText('Pixel 8 details'));
-    expect(pixel).toMatchObject({ Kind: 'Android phone', May: 'Read, notify, prompt', Push: 'Not registered' });
-    expect(pixel.Seen).toMatch(/^Last seen .* on this PC$/);
+    expect(pixel).toMatchObject({ Kind: 'Android device', Allowed: 'Read, notify, prompt', Push: 'Not registered' });
+    expect(pixel.Connection).toMatch(/^Last seen .* on this PC$/);
     const tab = factsOf(within(list).getByLabelText('Galaxy Tab details'));
-    expect(tab.May).toBe('Read, notify, prompt, approve');
+    expect(tab.Allowed).toBe('Read, notify, prompt, approve');
     expect(tab.Push).toBe('Registered for push notifications');
-    expect(tab.Seen).toMatch(/over Tailscale$/);
+    expect(tab.Connection).toMatch(/over Tailscale$/);
     expect(within(card('Galaxy Tab')).getByText('Trusted')).toBeTruthy(); // trust is shown, and only where it is true
     expect(within(card('Pixel 8')).queryByText('Trusted')).toBeNull();
     expect(factsOf(within(list).getByLabelText('Chrome extension details'))).not.toHaveProperty('Push');
@@ -53,7 +53,7 @@ describe('paired devices', () => {
     await user.click(save);
     await waitFor(() => expect(callsTo(spy, 'devices.update')).toEqual([{ params: { id: 'dev_pixel' }, body: { name: 'Anna phone', scopes: ['read', 'notify', 'approve'] } }]));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: /^Edit / })).toBeNull());
-    expect(factsOf(within(card('Anna phone')).getByLabelText('Anna phone details')).May).toBe('Read, notify, approve');
+    expect(factsOf(within(card('Anna phone')).getByLabelText('Anna phone details')).Allowed).toBe('Read, notify, approve');
   });
 
   it('warns about trusting a device while the switch is still in hand, and names the consequence on the button', async () => {
@@ -174,7 +174,7 @@ describe('pairing a phone', () => {
     expect(offers).toHaveLength(1);
     expect(facts.Offer).toBe(offers[0][0]);
     expect(facts.Code).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/);
-    expect(facts.Allows).toBe('Read, Notify');
+    expect(facts.Allowed).toBe('Read, Notify');
     expect(textOf(panel)).toMatch(/It works for [45]:\d\d more, and only once/);
     expect(textOf(panel)).toMatch(/No camera\? Open the app, choose to enter the details by hand, and type the offer and the code/);
   });
@@ -244,7 +244,7 @@ describe('remote access', () => {
     const app = await open('remote');
     const spy = vi.spyOn(app.demo, 'call');
     await screen.findByLabelText('Tailscale status');
-    expect(status()).toMatchObject({ Installed: 'Installed', Service: 'Running', Account: 'Signed in as dev@example.com', 'Mini-Summa': 'Not published' });
+    expect(status()).toMatchObject({ Tailscale: 'Installed', Service: 'Running', Account: 'Signed in as dev@example.com', 'Mini-Summa': 'Not published' });
     const sw = screen.getByRole('switch', { name: SWITCH });
     expect(sw.getAttribute('aria-checked')).toBe('false');
 
@@ -279,7 +279,7 @@ describe('remote access', () => {
     await user.click(screen.getByRole('button', { name: 'Check again' }));
     expect(await screen.findByText(problem)).toBeTruthy();
     expect(callsTo(spy, 'tailscale.status').at(-1)).toEqual({ query: { refresh: true } });
-    expect(status()).toMatchObject({ Installed: 'Not installed', Service: 'Not checked', Account: 'Not checked' });
+    expect(status()).toMatchObject({ Tailscale: 'Not installed', Service: 'Not checked', Account: 'Not checked' });
     expect(screen.getByRole('switch', { name: SWITCH })).toHaveProperty('disabled', true);
   });
 
@@ -324,10 +324,13 @@ describe('remote access', () => {
   });
 });
 
+// The marker lines of a made-up key, assembled here so that no real-looking key block sits in the source.
+const PEM = (edge: 'BEGIN' | 'END') => `-----${edge} PRIVATE KEY-----`;
+
 describe('push notifications', () => {
   const key = (over: Record<string, unknown> = {}) => JSON.stringify({
     type: 'service_account', project_id: 'mini-summa-push', client_email: 'push@example.iam.gserviceaccount.com',
-    private_key: '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n-----END PRIVATE KEY-----\n', ...over,
+    private_key: `${PEM('BEGIN')}\nZm9yLXRlc3RzLW9ubHk=\n${PEM('END')}\n`, ...over,
   });
   const field = () => screen.getByLabelText('Service account key') as HTMLTextAreaElement;
 

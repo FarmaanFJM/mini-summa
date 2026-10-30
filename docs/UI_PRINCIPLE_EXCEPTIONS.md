@@ -85,3 +85,61 @@ checked for contrast; it never leaks into the surrounding interface.
 - P13: no em dashes in user-facing copy (checked by search over `src/renderer`).
 - The demo build draws a plain rectangle where the native ChatGPT view would be (`dev/demoNative.ts`). It is a test stand-in with its
   own colours, not product interface.
+
+## Reports, activity, settings and onboarding
+
+The four feature areas (`features/reports`, `features/activity`, `features/settings`, `features/onboarding`) follow the same rules. These
+are the places where they differ from the principles, each with the reason.
+
+### X8. A navigation column inside the view when the sidebar is only a rail (P14)
+
+A view that needs its own navigation (the report queue, the settings sections) replaces the sidebar content and shows a back chevron.
+When the sidebar is collapsed to its 52px rail there is no room for that content, so `SideNavigator` shows the same list, with the same
+back chevron, as a column at the left edge of the view, beside the rail. It is still one list of places, never a second sidebar next to
+an expanded one, and it goes back into the sidebar as soon as the sidebar is expanded. The column has one hairline on its right edge,
+like the region boundaries in X3. The cleaner fix is in the shell (give a replaced sidebar its full width while a view holds it); the
+column can be removed when that exists.
+
+### X9. Explanatory sentences that state a fact the person decides on (P05, AP-010, extends X6)
+
+Settings and the report handoff carry more sentences than a minimal interface would. Each one is there because leaving it out would
+make a decision uninformed:
+
+- Hooks: what installing changes and what it does not (only Mini-Summa's own entries, no repository file, sessions already running
+  report only after a restart), next to the exact diff. This is the content of the consent.
+- Handoff: that the declared status is a claim by the model and not proof, that the destination was fixed at capture, and that "I sent
+  it" is the person's statement because Mini-Summa cannot see ChatGPT. Honest wording is the point of that screen.
+- Push, remote access, data and privacy: what a push contains and that the PC must be awake to send it, what Tailscale Serve exposes
+  and that Funnel is never used, what is stored and where. These say what leaves the PC and what does not.
+- Tailscale's own explanation (`problem`) is shown word for word, never summarised, because it names the exact command or page that
+  fixes it.
+
+### X10. Tint on added and removed lines of a diff (P06)
+
+In the hooks diff, added lines have a faint green background and removed lines a faint red one (the terminal palette at 14 percent).
+The `+` and `-` are written in the text of every line, so colour is never the only carrier; the tint only makes a 50 line change
+scannable. Nothing else in these screens uses green or red for meaning except the words on the error and warning notices.
+
+### X11. A white block for the pairing QR code (P02, P06)
+
+The QR code is drawn black on white with its quiet zone, whatever the theme. Cameras read dark on light, and inverted codes fail on
+many phones. It is the only light surface in the application, it appears only while a pairing code is valid, and it is removed from the
+page when the code expires. The same code is also written out as text (offer id and code) for a phone that cannot scan.
+
+### X12. A setup checklist that floats over the application (P14, "never block")
+
+First run shows a checklist over the empty application. It is a panel, not a dialog: no backdrop, nothing behind it is inert, it can be
+hidden, and Settings (About and setup) brings it back. It uses the outline and shadow of other floating surfaces (X3). Once a project
+exists it shrinks to one small button in the corner so it never covers a terminal, and it removes itself when every step that matters
+is done.
+
+## Checked and not exceptions (these four areas)
+
+- P01, P02: cards (one environment, one device) are one surface step above the page and hold plain rows; code blocks inside them fill
+  with the next darker surface. No box has a border inside another box.
+- P04: no tags. State is words with a small icon. The only buttons that look like tags are the report filters ("Waiting for handoff").
+- P15: emerald marks one primary action per view or dialog ("Install hooks", "Save", "Import the key", "Send to Claude", "I sent it").
+- P19: every destructive confirmation (revoke a device, remove the push key, remove old records, remove hooks) is a solid red button with
+  a verb, a plain statement of what happens, and focus starting on Cancel.
+- P13: no em dashes or en dashes in any copy or comment of these areas (checked by `test/renderer/features-copy.test.ts`).
+- The pairing, push and Tailscale fixtures use made-up addresses on example domains only (also checked by that test).

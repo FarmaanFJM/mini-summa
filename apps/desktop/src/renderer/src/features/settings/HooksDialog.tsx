@@ -85,7 +85,7 @@ export function HooksDialog({ env, action, onClose }: HooksDialogProps) {
       footer={(
         <>
           <Button onClick={onClose} disabled={applying}>{plan?.action === 'noop' ? 'Close' : 'Cancel'}</Button>
-          {plan && plan.action !== 'noop' ? <Button variant="primary" loading={applying} disabled={!consent} onClick={() => { void apply(); }}>{verb.button}</Button> : null}
+          {plan && plan.action !== 'noop' ? <Button variant={action === 'uninstall' ? 'destructive' : 'primary'} loading={applying} disabled={!consent} onClick={() => { void apply(); }}>{verb.button}</Button> : null}
         </>
       )}
     >

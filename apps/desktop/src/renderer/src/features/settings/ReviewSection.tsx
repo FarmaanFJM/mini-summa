@@ -79,6 +79,7 @@ export function ReviewSection() {
         />
         <Field
           label="Longest part, in characters"
+          className="ms-set-narrow"
           error={partProblem}
           hint={`A message longer than this is split into parts you paste one after another. Each part says which one it is. At this size the example below is ${parts} ${parts === 1 ? 'part' : 'parts'}.`}
         >

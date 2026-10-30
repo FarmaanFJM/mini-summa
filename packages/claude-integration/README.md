@@ -69,11 +69,13 @@ const reducer = replay(db.allRaw(), createRegistry(registryConfig));
 - `runAsNode` on `hookCommand` and `buildSettings`.
 - `src/index.js`, `src/index.d.ts`, `tsconfig.json`, `test/types/usage.ts`: the public API and its types.
 - `npm run build:hook`, the `./hook` and `./hook-source` subpaths, and `test/bundle.test.mjs` that builds the bundle and runs it.
-- Eight deliberate behaviour differences, each with a regression test, listed in `docs/CHANGES-FROM-POC.md`: an unorderable
+- Eleven deliberate behaviour differences, each with a regression test, listed in `docs/CHANGES-FROM-POC.md`: an unorderable
   spool record is quarantined instead of wedging ingestion; invalid `agents --json` output is recorded as a discovery error;
   `handler`, `event` and `env` are validated and quoted; a resumed generation forgets the previous listing; a file another
   ingestor moved is skipped; a Windows `claude.cmd` shim is started through a correctly quoted `cmd.exe`; the manifest
-  exports the hook; reports say how much was redacted.
+  exports the hook; reports say how much was redacted; the hook hides many more ways of writing a secret (provider tokens, a
+  password in a URL or after `curl -u`, `--password=...`, `DB_PASSWORD=...`, private key blocks); the spool directory is
+  created `0700`; and a Windows hook path with a typographic quote is refused.
 - `docs/POC-README.md` is the proof of concept's README, kept as the evidence table (what was proven, where, and what was not).
 
 ## Tests

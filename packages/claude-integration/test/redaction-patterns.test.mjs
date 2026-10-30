@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { redactString, redactDeep } from '../src/lib/redact.mjs';
 import { root, S1 } from './helpers.mjs';
 import { tmpDir } from './tmp-helpers.mjs';
@@ -442,24 +443,39 @@ test('CHANGE 9: every fixture and example in the package comes out of the redact
 
 // ---- cost ---------------------------------------------------------------------------------------------------------------
 
-test('CHANGE 9: hostile input costs time in proportion to its size, not to its square', () => {
+// The hostile inputs, one megabyte each. Written as a self-contained function so that they can be run in a child process: a rule
+// that backtracked badly would not fail a test in this process, it would never return.
+function hostileInputs() {
   const MB = 1 << 20;
   const rep = (unit, size = MB) => unit.repeat(Math.ceil(size / unit.length)).slice(0, size);
-  const hostile = {
+  const key = '-----BEGIN PRIVATE KEY-----';
+  return {
     'one long capitalised run': rep('A'), 'names with no value': rep('FOO_BAR_TOKEN '), 'an unterminated quote': `NAME="${rep('x')}`, 'quotes after names': rep("N_TOKEN='"),
-    'headers with no body': rep(`${DASHES}BEGIN `), 'headers of keys': rep(header('PRIVATE KEY')), 'one header and a huge body': `${header('PRIVATE KEY')}\n${rep('QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=\n')}`,
+    'headers with no body': rep('-----BEGIN '), 'headers of keys': rep(key), 'one header and a huge body': `${key}\n${rep('QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=\n')}`,
     'Bearer and space': `Bearer${rep(' ')}`, 'Bearer again': rep('Bearer '), 'Authorization and space': `Authorization: Basic${rep(' ')}`, 'scheme and colons': `a://${rep(':')}`, 'userinfo again and again': rep('http://u:p@h '),
-    'flags': rep('--token '), 'a flag with spaces': `--token${rep(' ')}`, 'a long flag name': `--${rep('a-')}`, '-u again and again': `curl ${rep(' -u a:b')}`, '-u far from curl': `curl ${rep('x')}${rep(' -u a:b', MB / 2)}`,
-    'continued lines': `curl${rep(' \\\n')} -u a:b`, 'aws names': rep('aws_secret_access_key = '), 'prefixes': rep('sk-'), 'more prefixes': rep('sk-proj-'), 'slack': rep('hooks.slack.com/services/A/'),
+    'flags': rep('--token '), 'a flag with spaces': `--token${rep(' ')}`, 'a long flag name': `--${rep('a-')}`, 'dashes': rep('--a'), '-u again and again': `curl ${rep(' -u a:b')}`,
+    '-u far from curl': `curl ${rep('x')}${rep(' -u a:b', MB / 2)}`, 'continued lines': `curl${rep(' \\\n')} -u a:b`, 'aws names': rep('aws_secret_access_key = '), 'prefixes': rep('sk-'), 'more prefixes': rep('sk-proj-'),
+    'slack': rep('hooks.slack.com/services/A/'), 'equals': rep('A='), 'unicode': rep('\u2018\u201c'),
   };
-  const slow = [];
-  for (const [name, input] of Object.entries(hostile)) {
-    const start = process.hrtime.bigint();
-    run(input);
-    const ms = Number(process.hrtime.bigint() - start) / 1e6;
-    if (ms > 10000) slow.push(`${name}: ${Math.round(ms)} ms for ${input.length} characters`);
-  }
+}
+
+test('CHANGE 9: hostile input costs time in proportion to its size, not to its square', () => {
+  const moduleUrl = pathToFileURL(path.join(root, 'src', 'lib', 'redact.mjs')).href;
+  const script = `import { redactString } from ${JSON.stringify(moduleUrl)};
+const hostile = (${hostileInputs.toString()})();
+for (const [name, input] of Object.entries(hostile)) {
+  console.log('START ' + name);
+  const t = process.hrtime.bigint(); redactString(input, { n: 0 });
+  console.log('DONE ' + Math.round(Number(process.hrtime.bigint() - t) / 1e6) + ' ' + name);
+}`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 180000 });
+  const lines = (r.stdout ?? '').split('\n').filter(Boolean);
+  const started = lines.filter((l) => l.startsWith('START ')).map((l) => l.slice(6)); const done = lines.filter((l) => l.startsWith('DONE '));
+  assert.ok(!r.error && r.status === 0, `the redactor did not finish within 180 s on "${started[started.length - 1]}" (a rule backtracks): ${r.error?.message ?? r.stderr}`);
+  assert.equal(done.length, started.length);
+  assert.ok(done.length >= 25, 'the whole list ran');
   // a rule that backtracked badly would take minutes on a megabyte; the ones above take well under a second each
+  const slow = done.map((l) => l.split(' ')).filter(([, ms]) => Number(ms) > 10000).map(([, ms, ...name]) => `${name.join(' ')}: ${ms} ms`);
   assert.deepEqual(slow, []);
 });
 

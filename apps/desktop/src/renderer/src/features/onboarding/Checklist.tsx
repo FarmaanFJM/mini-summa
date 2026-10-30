@@ -8,6 +8,7 @@ import { Button, Icon } from '../../ui';
 import { useChatGptView } from '../settings/ChatGptSection';
 import { InstallHelp, useEnvironments } from '../settings/ClaudeCodeSection';
 import { useSettings } from '../settings/useSettings';
+import type { SettingsHandle } from '../settings/useSettings';
 import { deriveSteps, isComplete } from './model';
 import type { Step, StepFacts } from './model';
 import { useOnboarding } from './state';
@@ -56,10 +57,9 @@ function ClaudeHelp({ envs }: { envs: EnvironmentInfo[] | null }) {
   return <InstallHelp env={target} />;
 }
 
-function StepActions({ step, next, setup }: { step: Step; next: boolean; setup: SetupState }) {
+function StepActions({ step, next, setup, save }: { step: Step; next: boolean; setup: SetupState; save: SettingsHandle['save'] }) {
   const route = useRoute();
   const openProjectDialog = useUi((s) => s.openProjectDialog);
-  const { save } = useSettings();
   const first = setup.facts.projects[0];
   const emphasis = next ? 'primary' : 'secondary';
 
@@ -109,6 +109,7 @@ function StepActions({ step, next, setup }: { step: Step; next: boolean; setup: 
  * step is only its title, so what is left to do stays in view.
  */
 export function Checklist({ setup, compact = false }: { setup: SetupState; compact?: boolean }) {
+  const { save } = useSettings();
   const next = setup.steps.find((s) => !s.done && !s.optional);
   return (
     <ol className="ms-onb-steps" aria-label="Setup steps" data-compact={compact ? '' : undefined}>
@@ -123,7 +124,7 @@ export function Checklist({ setup, compact = false }: { setup: SetupState; compa
             {compact && step.done ? null : (
               <>
                 <p className="ms-x-note">{step.detail}</p>
-                <StepActions step={step} next={next?.id === step.id} setup={setup} />
+                <StepActions step={step} next={next?.id === step.id} setup={setup} save={save} />
               </>
             )}
           </div>

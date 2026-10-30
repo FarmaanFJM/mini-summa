@@ -7,6 +7,9 @@ const SRC = path.resolve(__dirname, '../../src/renderer/src');
 const FOLDERS = ['features/reports', 'features/activity', 'features/settings', 'features/onboarding'];
 const EXTRA = ['dev/demo/features-handlers.ts', 'dev/demo/features-seed.ts'];
 
+// Built from character codes so this file itself holds no dash that a search for dashes would find.
+const DASHES = new RegExp(`[${String.fromCharCode(0x2013, 0x2014)}]`);
+
 function walk(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
 }
@@ -19,7 +22,7 @@ describe('the source of the feature areas', () => {
   });
 
   it('has no em dash and no en dash anywhere, in copy or in comments', () => {
-    const offenders = files.flatMap((f) => fs.readFileSync(f, 'utf8').split('\n').map((line, i) => ({ f: path.relative(SRC, f), line: i + 1, text: line })).filter((l) => /[–—]/.test(l.text)));
+    const offenders = files.flatMap((f) => fs.readFileSync(f, 'utf8').split('\n').map((line, i) => ({ f: path.relative(SRC, f), line: i + 1, text: line })).filter((l) => DASHES.test(l.text)));
     expect(offenders).toEqual([]);
   });
 

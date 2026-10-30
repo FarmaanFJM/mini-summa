@@ -33,6 +33,9 @@ export async function waitForSession(h: AppHandle, key: SessionKey, test: (s: Se
   }, { timeout });
 }
 
+/** States in which Claude is waiting for the person (or done with its turn): not working, not asking for a permission or an answer. */
+export const acceptsInput = (s: SessionView): boolean => ['idle', 'waiting_for_you', 'turn_ended', 'report_ready'].includes(s.state);
+
 export async function reportsOf(h: AppHandle, projectId?: string): Promise<ReportSummary[]> {
   return (await h.api.call('reports.list', { query: projectId ? { projectId } : {} })).items;
 }

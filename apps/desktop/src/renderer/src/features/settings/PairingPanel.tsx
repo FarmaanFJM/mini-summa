@@ -65,7 +65,7 @@ export function PairingPanel({ offer, kind, onRenew, onClose }: PairingPanelProp
         <dl className="ms-x-kv" aria-label="The pairing code as text">
           <dt>Offer</dt><dd className="ms-mono">{offer.id}</dd>
           <dt>Code</dt><dd className="ms-mono">{offer.code}</dd>
-          <dt>Allows</dt><dd>{offer.scopes.map((s) => SCOPE_WORDS[s].label).join(', ')}</dd>
+          <dt>Allowed</dt><dd>{offer.scopes.map((s) => SCOPE_WORDS[s].label).join(', ')}</dd>
           {kind === 'extension' ? (<><dt>Link</dt><dd className="ms-mono ms-break">{offer.qrPayload}</dd></>) : null}
         </dl>
         <p className="ms-x-note">

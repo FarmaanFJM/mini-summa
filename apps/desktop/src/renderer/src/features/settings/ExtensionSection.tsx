@@ -8,6 +8,9 @@ import { Group } from './controls';
 import { lastSeenWords } from './model';
 import { PairingPanel } from './PairingPanel';
 
+/** The sentence continues after a comma, so its first letter is lower case. The rest keeps its capitals ("PC", "Tailscale"). */
+const lowerFirst = (text: string): string => text.charAt(0).toLowerCase() + text.slice(1);
+
 export function ExtensionSection() {
   const api = useApi();
   const connected = useApp((s) => s.system?.nativeCapabilities.extensionBridge ?? false);
@@ -29,7 +32,7 @@ export function ExtensionSection() {
         <dl className="ms-x-kv" aria-label="Extension connection">
           <dt>Now</dt>
           <dd>{connected ? 'A browser extension is connected.' : 'No extension is connected.'}</dd>
-          {paired.map((d) => (<Fragment key={d.id}><dt>Paired</dt><dd>{d.name}, {lastSeenWords(d, formatRelative).toLowerCase()}</dd></Fragment>))}
+          {paired.map((d) => (<Fragment key={d.id}><dt>Paired</dt><dd>{d.name}, {lowerFirst(lastSeenWords(d, formatRelative))}</dd></Fragment>))}
         </dl>
       </Group>
 

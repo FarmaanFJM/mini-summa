@@ -34,7 +34,7 @@ function Storage({ usage }: { usage: Usage }) {
     <>
       <dl className="ms-x-kv" aria-label="Storage details">
         <dt>Data folder</dt>
-        <dd className="ms-set-inline"><span className="ms-mono ms-break">{u.dataDir}</span><CopyButton text={u.dataDir} label="Copy the folder path" announce={false} /></dd>
+        <dd className="ms-set-inline"><span className="ms-mono ms-break">{u.dataDir}</span><CopyButton text={u.dataDir} label="Copy the folder path" size="sm" announce={false} /></dd>
         <dt>Database size</dt><dd>{formatBytes(u.databaseBytes)}</dd>
         <dt>Reports</dt><dd>{count(u.reports)}</dd>
         <dt>Handoffs</dt><dd>{count(u.deliveries)}</dd>

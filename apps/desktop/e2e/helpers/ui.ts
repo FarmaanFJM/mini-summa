@@ -36,19 +36,19 @@ export async function showWorkspace(page: Page): Promise<void> {
 export async function openActivity(page: Page): Promise<void> {
   await showWorkspace(page);
   await sectionsNav(page).getByRole('button', { name: /^Activity/ }).click();
-  await page.getByRole('region', { name: 'Activity' }).waitFor();
+  await page.getByRole('region', { name: 'Activity', exact: true }).waitFor();
 }
 
 export async function openReports(page: Page): Promise<void> {
   await showWorkspace(page);
   await sectionsNav(page).getByRole('button', { name: /^Reports/ }).click();
-  await page.getByRole('region', { name: 'Reports' }).waitFor();
+  await page.getByRole('region', { name: 'Reports', exact: true }).waitFor();
 }
 
 export async function openSettings(page: Page): Promise<void> {
   await showWorkspace(page);
   await sectionsNav(page).getByRole('button', { name: /^Settings/ }).click();
-  await page.getByRole('region', { name: 'Settings' }).waitFor();
+  await page.getByRole('region', { name: 'Settings', exact: true }).waitFor();
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -116,11 +116,11 @@ export async function createProjectInUi(page: Page, project: UiProject): Promise
 // ---------------------------------------------------------------------------------------------------------------
 // Sessions and tabs
 
-export const claudeTabs = (page: Page): Locator => page.getByRole('region', { name: 'Claude' }).getByRole('tablist', { name: 'Claude sessions' }).getByRole('tab');
+export const claudeTabs = (page: Page): Locator => page.getByRole('region', { name: 'Claude', exact: true }).getByRole('tablist', { name: 'Claude sessions' }).getByRole('tab');
 
 /** Starts a session with the empty-state button, or with the "+" menu when the project already has one. */
 export async function startSessionInUi(page: Page): Promise<void> {
-  const claude = page.getByRole('region', { name: 'Claude' });
+  const claude = page.getByRole('region', { name: 'Claude', exact: true });
   const start = claude.getByRole('button', { name: 'Start a session' });
   if (await start.isVisible()) { await start.click(); return; }
   await claude.getByRole('button', { name: 'New or resumed session' }).click();
@@ -138,9 +138,10 @@ export const reportRow = (page: Page, task: string): Locator => reportList(page)
 export async function openReport(page: Page, task: string): Promise<Locator> {
   await openReports(page);
   await reportRow(page, task).click();
-  const detail = page.getByRole('region', { name: 'Report' });
+  const detail = reportDetail(page);
   await detail.getByRole('heading', { level: 1, name: task }).waitFor();
   return detail;
 }
 
-export const handoffCard = (page: Page): Locator => page.getByRole('region', { name: 'Handoff to ChatGPT' });
+export const reportDetail = (page: Page): Locator => page.getByRole('region', { name: 'Report', exact: true });
+export const handoffCard = (page: Page): Locator => page.getByRole('region', { name: 'Handoff to ChatGPT', exact: true });

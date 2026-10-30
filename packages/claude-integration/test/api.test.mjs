@@ -78,8 +78,9 @@ test('docs/CHANGES-FROM-POC.md has one section per divergence, and each has regr
   const doc = fs.readFileSync(path.join(root, 'docs', 'CHANGES-FROM-POC.md'), 'utf8');
   const sources = fs.readdirSync(path.join(root, 'test')).filter((f) => f.endsWith('.test.mjs'))
     .map((f) => fs.readFileSync(path.join(root, 'test', f), 'utf8')).join('\n');
-  assert.equal([...doc.matchAll(/^## \d+\. /gm)].length, 8, 'eight numbered sections');
-  for (let n = 1; n <= 8; n++) {
+  assert.equal([...doc.matchAll(/^## \d+\. /gm)].length, 11, 'eleven numbered sections');
+  assert.equal([...doc.matchAll(/^\| \d+ \|/gm)].length, 11, 'and eleven rows in the table at the top');
+  for (let n = 1; n <= 11; n++) {
     assert.match(doc, new RegExp(`^## ${n}\\. `, 'm'), `section ${n}`);
     assert.ok(new RegExp(`test\\('CHANGE ${n}[: ]`).test(sources), `a test titled "CHANGE ${n}"`);
   }

@@ -962,12 +962,23 @@ export interface TruncationStats {
   bytes_dropped: number;
 }
 
-/** Replaces well-known token shapes inside a string and counts them in `counter.n`. */
+/**
+ * Hides, inside a string, what looks like a credential, and adds one to `counter.n` for each value hidden. A deny-list: what
+ * it does not recognise it leaves, and it prefers to hide a placeholder that has the shape of a secret.
+ *
+ * Token shapes are replaced as a whole by `[REDACTED]`: the providers' prefixed tokens (Anthropic, OpenAI, GitHub, GitLab,
+ * Stripe, Slack and Slack webhooks, Google, AWS access key ids, npm, Hugging Face), JWTs, a bearer token of six characters or
+ * more, and PEM private key blocks. A secret written into a command or a configuration keeps its name or option and loses its
+ * value: `aws_secret_access_key = [REDACTED]`, `Authorization: Basic [REDACTED]`, `curl -u [REDACTED]`,
+ * `postgres://[REDACTED]@host`, `AccountKey=[REDACTED]`, `--password=[REDACTED]`, `DB_PASSWORD=[REDACTED]`. Ordinary text that
+ * only mentions these words is left as it is. Hiding the same text again changes nothing and counts nothing. Which shapes, and
+ * what is not covered, are in docs/CHANGES-FROM-POC.md, change 9.
+ */
 export function redactString(s: string, counter: RedactionCounter): string;
 /**
- * Replaces values under credential-like key names, and token shapes inside strings, with `[REDACTED]`. Numbers and
- * booleans are never replaced. The result has the same shape except where a credential-named field was replaced by that
- * string.
+ * Replaces values under credential-like key names, and what `redactString` recognises inside strings, with `[REDACTED]`.
+ * Numbers and booleans are never replaced. The result has the same shape except where a credential-named field was replaced
+ * by that string.
  */
 export function redactDeep<T>(value: T, counter?: RedactionCounter): T;
 /** Caps every string longer than `max` and records what was dropped in `stats`. */

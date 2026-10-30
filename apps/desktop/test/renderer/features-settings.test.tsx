@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@minisumma/shared';
 import { describe, expect, it, vi } from 'vitest';
+import { createFeatureSeed } from '../../src/renderer/src/dev/demo/features-seed';
 import { IDS } from '../../src/renderer/src/dev/demo/seed';
 import { createFakeNative } from './helpers';
 import { callsTo, factsOf, renderFeature, textOf } from './features-helpers';
@@ -41,6 +42,37 @@ describe('the settings frame', () => {
     first.unmount();
     await renderFeature({ view: 'settings' });
     expect(textOf(heading())).toBe('ChatGPT');
+  });
+});
+
+describe('the settings frame with the sidebar collapsed to its rail', () => {
+  const collapsedSeed = () => { const seed = createFeatureSeed(); seed.settings.layout.sidebarCollapsed = true; return seed; };
+
+  it('keeps the sections in a column of the view itself, because the rail has no room for them', async () => {
+    const user = userEvent.setup();
+    const app = await open('hooks', { seed: collapsedSeed() });
+    const rail = screen.getByRole('complementary', { name: 'Mini-Summa navigation' });
+    expect(rail.getAttribute('data-collapsed')).toBe('true');
+    expect(rail.querySelector('.ms-sidebar__slot')?.hasAttribute('hidden')).toBe(true); // nothing was put into the rail
+    const column = screen.getByRole('complementary', { name: 'Settings' });
+    expect(within(column).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? textOf(b))).toEqual(['Back', ...[
+      'ChatGPT', 'Browser extension', 'Claude Code', 'Claude hooks', 'Notifications', 'Phones and devices', 'Remote access', 'Push notifications',
+      'Review and handoff', 'Data and privacy', 'About and setup',
+    ]]);
+    expect(within(column).getByRole('button', { name: 'Claude hooks' }).getAttribute('aria-current')).toBe('true');
+    await user.click(within(column).getByRole('button', { name: 'Notifications' }));
+    expect(textOf(heading())).toBe('Notifications');
+    await user.click(within(column).getByRole('button', { name: 'Back' }));
+    expect(app.runtime.route.getState().view).not.toBe('settings');
+  });
+
+  it('puts the sections back into the sidebar once it is expanded again', async () => {
+    const user = userEvent.setup();
+    await open('chatgpt', { seed: collapsedSeed() });
+    expect(screen.queryByRole('complementary', { name: 'Settings' })).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Expand sidebar' }));
+    await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Settings' })).toBeNull());
+    expect(within(nav()).getByRole('button', { name: 'ChatGPT' })).toBeTruthy();
   });
 });
 
@@ -101,7 +133,7 @@ describe('the browser extension', () => {
   it('states whether an extension is connected, lists who is paired, and gives the load-unpacked steps', async () => {
     const app = await open('extension');
     expect(await screen.findByText('No extension is connected.')).toBeTruthy();
-    expect(textOf(screen.getByLabelText('Extension connection'))).toContain('Chrome extension');
+    expect(factsOf(screen.getByLabelText('Extension connection')).Paired).toMatch(/^Chrome extension, last seen .* on this PC$/);
     const steps = textOf(document.querySelector('.ms-set-steps'));
     expect(steps).toContain('node apps/browser-extension/build.mjs');
     expect(steps).toContain('chrome://extensions');
@@ -119,7 +151,7 @@ describe('the browser extension', () => {
     const facts = factsOf(within(panel).getByLabelText('The pairing code as text'));
     expect(facts.Offer).toMatch(/^ofr_/);
     expect(facts.Code).toMatch(/^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/);
-    expect(facts.Allows).toBe('Browser tab');
+    expect(facts.Allowed).toBe('Browser tab');
     expect(facts.Link).toMatch(/^minisumma:\/\/pair\?/);
     expect(textOf(panel)).toMatch(/It works for [45]:\d\d more, and only once/);
     expect(within(panel).queryByRole('img')).toBeNull(); // an extension takes a link, not a QR code
@@ -263,6 +295,7 @@ describe('Claude hooks', () => {
     expect(removed.length).toBeGreaterThan(0);
     expect(removed.every((l) => (l.textContent ?? '').startsWith('-'))).toBe(true);
     await user.click(within(dialog).getByRole('checkbox'));
+    expect(within(dialog).getByRole('button', { name: 'Remove hooks' }).className).toContain('sm-btn--danger'); // taking things out is a solid red button
     await user.click(within(dialog).getByRole('button', { name: 'Remove hooks' }));
     await waitFor(() => expect(callsTo(spy, 'hooks.apply')).toHaveLength(1));
     expect((callsTo(spy, 'hooks.apply')[0] as { body: { action: string } }).body.action).toBe('uninstall');

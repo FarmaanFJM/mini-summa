@@ -78,7 +78,7 @@ export async function observe(handle: AppHandle, key: SessionKey): Promise<Strea
 // The person's keyboard and the screen
 
 /** The Claude pane of the window. */
-export const claudePane = (page: Page): Locator => page.getByRole('region', { name: 'Claude' });
+export const claudePane = (page: Page): Locator => page.getByRole('region', { name: 'Claude', exact: true });
 
 /** The terminal's keyboard input (xterm's hidden textarea, which has the accessible name "Terminal input"). */
 export const terminalInput = (page: Page): Locator => claudePane(page).getByRole('textbox', { name: 'Terminal input' });

@@ -14,8 +14,10 @@
 .ms-onb-steps[data-compact] { gap: var(--sp-3); }
 .ms-onb__head { display: flex; flex-direction: column; gap: 2px; }
 .ms-onb__title { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; }
-.ms-onb__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
-.ms-onb__foot .ms-x-actions { flex: none; flex-wrap: nowrap; }
+.ms-onb__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); }
+.ms-onb__foot > .ms-x-note { flex: 1 1 260px; }
+.ms-onb__foot .ms-x-actions { flex: none; flex-wrap: nowrap; margin-left: auto; }
+.ms-onb__foot .ms-x-actions > .sm-btn--ghost:first-child { margin-left: 0; }
 
 /* The waiting form: one small button in the corner. It is a floating surface like the panel, and as small as it can be. */
 .ms-onb-pill {

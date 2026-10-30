@@ -22,7 +22,7 @@ export function scopesInWords(scopes: readonly Scope[]): string {
   return scopes.map((s) => SCOPE_WORDS[s].label.toLowerCase()).join(', ').replace(/^./, (c) => c.toUpperCase());
 }
 
-export const PLATFORM_WORDS: Record<DevicePlatform, string> = { android: 'Android phone', ios: 'iPhone', extension: 'Browser extension', desktop: 'Desktop', other: 'Device' };
+export const PLATFORM_WORDS: Record<DevicePlatform, string> = { android: 'Android device', ios: 'iPhone or iPad', extension: 'Browser extension', desktop: 'Desktop', other: 'Device' };
 
 const VIA: Record<NonNullable<Device['lastSeenVia']>, string> = { tailscale: 'over Tailscale', localhost: 'on this PC', unknown: 'from an unknown route' };
 

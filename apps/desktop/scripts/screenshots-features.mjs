@@ -183,6 +183,15 @@ const shots = [
     async run(page) { await goSettings(page, 'ChatGPT'); },
   },
   {
+    name: 'settings-extension',
+    async run(page) {
+      await goSettings(page, 'Browser extension');
+      await page.getByRole('button', { name: 'Create a pairing code' }).click();
+      await page.getByLabel('The pairing code as text').waitFor();
+      await settle(page, 300);
+    },
+  },
+  {
     name: 'settings-claude-code',
     async run(page) {
       await goSettings(page, 'Claude Code');
@@ -291,7 +300,7 @@ const shots = [
       await page.getByRole('button', { name: 'Save limits' }).click();
       await page.getByRole('button', { name: 'Preview the cleanup' }).click();
       await page.getByText(/Nothing has been removed yet\./).waitFor();
-      await scrollTo(page.getByRole('region', { name: 'Clean up now' }));
+      await scrollTo(page.getByRole('button', { name: 'Remove these records' }));
     },
   },
   {
@@ -320,7 +329,18 @@ const shots = [
       await page.getByRole('region', { name: 'Set up Mini-Summa' }).waitFor();
       await withDemo(page, (handlers, server) => server.call('projects.create', { body: { name: 'Mini-Summa', roots: [{ path: 'C:\\code\\mini-summa', env: 'win' }] } }));
       await page.locator('.ms-onb-layer[data-place="corner"]').waitFor();
-      await settle(page, 500);
+      await settle(page, 400);
+    },
+  },
+  {
+    name: 'onboarding-first-project-open',
+    open: { query: '?demo=1&scenario=empty', scene: false },
+    async run(page) {
+      await page.getByRole('region', { name: 'Set up Mini-Summa' }).waitFor();
+      await withDemo(page, (handlers, server) => server.call('projects.create', { body: { name: 'Mini-Summa', roots: [{ path: 'C:\\code\\mini-summa', env: 'win' }] } }));
+      await page.getByRole('button', { name: /^Setup: \d of 6 done$/ }).click();
+      await page.getByRole('region', { name: 'Set up Mini-Summa' }).waitFor();
+      await settle(page, 400);
     },
   },
 ];

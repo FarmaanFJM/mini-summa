@@ -24,8 +24,8 @@ function DeviceCard({ device, onEdit, onRevoke }: { device: Device; onEdit: () =
       </div>
       <dl className="ms-x-kv" aria-label={`${device.name} details`}>
         <dt>Kind</dt><dd>{PLATFORM_WORDS[device.platform]}</dd>
-        <dt>Seen</dt><dd>{lastSeenWords(device, formatRelative)}</dd>
-        <dt>May</dt><dd>{scopesInWords(device.scopes)}</dd>
+        <dt>Connection</dt><dd>{lastSeenWords(device, formatRelative)}</dd>
+        <dt>Allowed</dt><dd>{scopesInWords(device.scopes)}</dd>
         {device.platform !== 'extension' ? (<><dt>Push</dt><dd>{device.pushRegistered ? 'Registered for push notifications' : 'Not registered'}</dd></>) : null}
       </dl>
       <div className="ms-x-actions">

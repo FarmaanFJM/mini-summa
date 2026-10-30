@@ -74,8 +74,10 @@ scenario('[A07] Terminal input and output work', async () => {
   expect(received(h.sandbox.fakeState, session.key)[1]).toBe('abcd');
 
   // Control keys reach the process too: Escape interrupts a turn that is still running.
+  await waitForScreen(h.page, 'Echo: abcd');
   await typeLikeAPerson(h.page, 'a slow one [[fake:sleep=20000]]');
-  await waitForScreen(h.page, 'Thinking');
+  await until('the slow prompt to arrive', () => received(h.sandbox.fakeState, session.key).length === 3);
+  await waitForSession(h, session.key, (s) => s.state === 'working', 'Claude to be working on the slow prompt');
   await h.page.keyboard.press('Escape');
   await waitForScreen(h.page, 'Interrupted');
 
