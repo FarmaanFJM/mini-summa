@@ -1,0 +1,108 @@
+{
+  "synthetic": true,
+  "description": "Resume, end, resume with identical payloads; idle_prompt repeated across different prompts.",
+  "events": [
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "SessionStart",
+        "source": "resume"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "SessionEnd",
+        "reason": "other"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "SessionStart",
+        "source": "resume"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "UserPromptSubmit",
+        "prompt_id": "pp-0001",
+        "prompt": "one"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "Stop",
+        "prompt_id": "pp-0001",
+        "last_assistant_message": "question?",
+        "background_tasks": [],
+        "session_crons": []
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "Notification",
+        "prompt_id": "pp-0001",
+        "notification_type": "idle_prompt",
+        "message": "waiting"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "UserPromptSubmit",
+        "prompt_id": "pp-0002",
+        "prompt": "two"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "Stop",
+        "prompt_id": "pp-0002",
+        "last_assistant_message": "question?",
+        "background_tasks": [],
+        "session_crons": []
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "Notification",
+        "prompt_id": "pp-0002",
+        "notification_type": "idle_prompt",
+        "message": "waiting"
+      }
+    }
+  ]
+}

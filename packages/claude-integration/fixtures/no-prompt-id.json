@@ -1,0 +1,39 @@
+{
+  "synthetic": true,
+  "description": "Events without prompt_id (e.g. before first user input).",
+  "events": [
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "SessionStart",
+        "source": "startup"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "Notification",
+        "notification_type": "permission_prompt",
+        "message": "needs permission"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "Stop",
+        "last_assistant_message": "Implemented the storage layer.\n\n## Implementation Report\n- Added store.ts\n- Ran 42 tests: 41 passed, 1 failed (flaky clock test)\n- Risk: migration untested on Windows\n\n<!-- mini-summa:report status=blocked task=\"No prompt id task\" -->\n",
+        "background_tasks": [],
+        "session_crons": []
+      }
+    }
+  ]
+}
