@@ -1,0 +1,32 @@
+{
+  "name": "mini-summa",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mini-Summa: a personal workspace that connects existing ChatGPT conversations, real Claude Code sessions and an Android companion. Automate communication, preserve context, keep the human in control.",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=22.12" },
+  "workspaces": [
+    "packages/*",
+    "apps/desktop",
+    "apps/browser-extension"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:poc": "npm test --prefix poc/claude-integration",
+    "test:all": "npm run test && npm run test:poc",
+    "build": "npm run build --workspaces --if-present",
+    "dev": "npm run dev -w @minisumma/desktop",
+    "core": "tsx packages/core/src/cli.ts",
+    "dist:win": "npm run dist:win -w @minisumma/desktop",
+    "guard": "node scripts/publish-guard.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "^5.0.5",
+    "esbuild": "^0.28.2"
+  }
+}

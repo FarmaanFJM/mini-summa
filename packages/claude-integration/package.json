@@ -1,0 +1,14 @@
+{
+  "name": "@minisumma/claude-integration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Verified Claude Code integration: hook capture, session discovery, event identity, generations, report protocol. Ported from poc/claude-integration with its regression suite.",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": { ".": { "types": "./src/index.d.ts", "default": "./src/index.js" } },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "build:hook": "esbuild src/hook/capture.mjs --bundle --platform=node --format=esm --target=node22 --outfile=dist/capture.mjs"
+  }
+}

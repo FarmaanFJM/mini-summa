@@ -1,0 +1,14 @@
+{
+  "name": "@minisumma/browser-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Optional MV3 extension: focuses the mapped ChatGPT conversation tab using documented tabs/windows APIs only.",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": { "@minisumma/shared": "*" },
+  "devDependencies": { "@types/chrome": "^0.1.40" }
+}

@@ -7,3 +7,41 @@ node_modules/
 .claude/
 .claude.json
 *.jsonl
+
+# Build output and local runtime data (runtime data lives outside the repo; these are safety nets)
+dist/
+out/
+release/
+coverage/
+*.tsbuildinfo
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.minisumma/
+
+# Packaging and signing material must never be committed
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+google-services.json
+GoogleService-Info.plist
+service-account*.json
+*.apk
+*.aab
+*.exe
+*.blockmap
+
+# Android / Expo generated projects
+apps/android/android/
+apps/android/ios/
+apps/android/.expo/
+apps/android/node_modules/
+apps/android/dist/
+apps/android/.gradle/
+apps/android/local.properties
+.android-sdk/

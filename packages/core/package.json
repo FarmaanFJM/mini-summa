@@ -1,0 +1,22 @@
+{
+  "name": "@minisumma/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": { ".": "./src/index.ts", "./testing": "./src/testing/index.ts" },
+  "bin": { "minisumma-core": "./src/cli.ts" },
+  "scripts": { "test": "vitest run", "typecheck": "tsc -p tsconfig.json", "start": "tsx src/cli.ts" },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@lydell/node-pty": "1.2.0-beta.18",
+    "@minisumma/claude-integration": "*",
+    "@minisumma/shared": "*",
+    "@minisumma/storage": "*",
+    "hono": "^4.13.14",
+    "ws": "^8.22.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": { "@types/ws": "^8.18.2" }
+}
