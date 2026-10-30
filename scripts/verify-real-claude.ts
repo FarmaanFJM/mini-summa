@@ -376,6 +376,7 @@ async function main(): Promise<void> {
     // /clear inside the managed terminal. Claude Code keeps running in the SAME process under a NEW session id; the terminal must
     // stay the managed terminal, now bound to the new id (it used to "end" while an observed stranger appeared next to it).
     if (live) {
+      const originalKey = key;
       const cleared = await check('clear: /clear in the real terminal keeps it managed and live under the NEW session id; the old id becomes history; no phantom session', async () => {
         const ids = (v: SessionView) => v.sessionId.slice(0, 8);
         const ready = ['turn_ended', 'idle', 'report_ready', 'waiting_for_you'];
@@ -445,6 +446,46 @@ async function main(): Promise<void> {
         return `${ids(before)} -> ${ids(found)} in ${(adoptedMs / 1000).toFixed(1)} s, same process ${found.pid}; report "${report.taskTitle}" under the new key`;
       });
       if (!cleared) say('            (the steps that follow keep using the original session)');
+
+      // And back: /resume of the older id inside the same terminal. The terminal follows again (a record exists for that id already).
+      if (cleared) {
+        await check('resume in the terminal: /resume <older id> makes the older session the managed, live one again; the cleared one becomes history', async () => {
+          const ids = (v: SessionView) => v.sessionId.slice(0, 8);
+          const ready = ['turn_ended', 'idle', 'report_ready', 'waiting_for_you'];
+          const current = await until('the cleared session to be ready for /resume', async () => {
+            const x = await client.call('sessions.get', { params: { key } });
+            return ready.includes(x.state) ? x : null;
+          });
+          const olderId = originalKey.slice(originalKey.indexOf('|') + 1);
+          const sentAt = Date.now();
+          await sendLine(`/resume ${olderId}`);
+          let back: SessionView;
+          try {
+            back = await until('the older session to be managed and live again', async () => {
+              const x = await client.call('sessions.get', { params: { key: originalKey } });
+              return x.origin === 'managed' && x.availability === 'live' ? x : null;
+            }, 60_000);
+          } catch (err) {
+            const now = await client.call('sessions.get', { params: { key } });
+            if (now.availability === 'live' && /unknown (slash )?command|not a (valid |recognized )?command|isn'?t a command|command not found/i.test(watcher.text.slice(-3000))) {
+              throw new NotExercised('this Claude Code does not know /resume <id> (unknown-command message), so the behaviour could not be exercised');
+            }
+            throw new Error(`${err instanceof Error ? err.message : String(err)}. The cleared session ${ids(current)} is ${now.availability}/${now.state} (${now.stateLabel}). Terminal tail:\n${watcher.text.slice(-600)}`);
+          }
+          expect(back.pid === current.pid, `the older session runs in process ${back.pid}, the cleared one in ${current.pid}`);
+          const left = await client.call('sessions.get', { params: { key } });
+          expect(left.origin === 'managed' && left.availability !== 'live', `the cleared session is ${left.origin}/${left.availability}`);
+          expect(left.termination !== null && /\/resume/.test(left.termination.reason), `the cleared session does not say what happened: ${JSON.stringify(left.termination)}`);
+          const all = await client.call('sessions.list', { query: { includeEnded: true } });
+          const liveNow = all.filter((x) => x.availability === 'live');
+          expect(liveNow.length === 1 && liveNow[0].key === originalKey, `live sessions: ${liveNow.map((x) => ids(x)).join(', ')}`);
+          expect(all.every((x) => x.origin === 'managed'), `an observed session appeared: ${all.filter((x) => x.origin !== 'managed').map((x) => `${ids(x)} ${x.origin}`).join(', ')}`);
+          key = originalKey;
+          view = back;
+          pid = back.pid;
+          return `${ids(current)} -> ${ids(back)} in ${((Date.now() - sentAt) / 1000).toFixed(1)} s, same process ${back.pid}`;
+        });
+      }
     }
 
     // Resume: the same session id comes back as a managed session in a new generation.

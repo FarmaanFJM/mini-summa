@@ -141,14 +141,65 @@ Keep that keystore out of the repository. Do not add a `google-services.json` un
 
 ## Install (sideload)
 
-1. Copy the APK to the phone (USB, a cloud drive, or `adb install -r Mini-Summa-0.1.0-release-sideload.apk`).
-2. If you open it from a file manager or a browser, Android asks to allow "Install unknown apps" for that app. Allow it for
-   the install only.
-3. Play Protect may warn that the app is from an unknown developer. That is expected for a self-signed APK.
-4. Check the SHA-256 the build printed against `sha256sum` of the file you installed.
+### Install on your phone
 
-These steps describe what Android normally does with a sideloaded APK. They have **not** been tried with the APK built in the sandbox (see
-"Build outcome").
+**Everything in this block is UNTRIED.** There was no phone and no emulator, so none of these steps was run with this APK (`adb devices` in the
+sandbox lists no device). The steps are the standard Android ones. What the app shows is read from its source code
+(`src/screens/Pair.tsx`, `src/notifications/push.ts`), not watched on a screen. Menu names differ between Android versions and phone makers.
+
+**Before you start (UNTRIED).** The phone needs Android 7.0 or newer and a 64-bit ARM processor (nearly every phone since 2017). The file is
+`Mini-Summa-0.1.0-release-sideload.apk` (in `~/minisumma-apk/` after `npm run build:apk`). On the PC, `sha256sum Mini-Summa-0.1.0-release-sideload.apk`
+must print the SHA-256 given under "Build outcome" for the file you were sent, or the one your own build printed. If it differs, do not install it.
+
+**1. Copy it to the phone (UNTRIED). Choose one way.**
+
+* *USB with adb.* No "unknown apps" switch is needed. On the phone: Settings, About phone, tap "Build number" seven times to unlock Developer
+  options; then Settings, System, Developer options, switch on "USB debugging". Connect the cable and answer "Allow USB debugging?" with Allow.
+  On the PC (adb is in the Android SDK's `platform-tools`; `sdkmanager "platform-tools"` installs it):
+  ```bash
+  adb devices        # the phone must be listed as "device", not "unauthorized" or "offline"
+  adb install -r Mini-Summa-0.1.0-release-sideload.apk
+  ```
+  `Success` means it is installed; go on with step 3. If adb prints `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, a copy signed with another key is already
+  installed: run `adb uninstall app.minisumma.companion`, then install again (you will pair again). Some phones (Xiaomi, for example) also need
+  "Install via USB" switched on in Developer options.
+* *USB, then install on the phone.* `adb push Mini-Summa-0.1.0-release-sideload.apk /sdcard/Download/`, then on the phone open Files (or "My Files"),
+  Downloads, and tap the APK. Go on with step 2.
+* *Cloud drive, e-mail or chat.* Upload the APK from the PC, open it on the phone in that app, download it, and tap the downloaded file. Chrome may
+  first ask "This type of file can harm your device. Do you want to keep it anyway?": you keep it. Go on with step 2.
+
+**2. Allow the app you opened it from to install apps (UNTRIED; not needed with `adb install`).** On Android 8.0 and newer the first tap shows
+"For your security, your phone isn't allowed to install unknown apps from this source" with a Settings button. Open it, switch on "Allow from this
+source" for that one app (Files, Drive, Chrome ...), press Back, and press Install. Afterwards switch it off again (Settings, Apps, Special app
+access, Install unknown apps). On Android 7.x there is one global switch instead: Settings, Security, "Unknown sources".
+
+**3. Play Protect's warning (UNTRIED).** The APK is signed with a throwaway key that Google has never seen, so Play Protect is expected to warn
+("Unknown developer", "App blocked to protect your device", or "Send app for scanning?" are the usual wordings). Choose "More details", then "Install
+anyway" (or let it scan the app). Leave Play Protect switched on. If the phone offers only "OK" and no way forward, something on the phone blocks
+the install: do not turn protection off to get past it; use the `adb install` way instead.
+
+**4. First start (UNTRIED).** Tap Open on the installer's last screen, or open "Mini-Summa" from the app list.
+
+**What to expect on first launch (UNTRIED; from the source code).**
+
+* A blank dark screen for a moment while the stored pairing is read, then **Pair this phone**: "On your PC, create a pairing code in Mini-Summa.
+  Then scan its QR code here." with the buttons **Allow camera** and **Enter the code by hand**. Nothing else is shown before pairing, and no
+  notification prompt appears yet.
+* **Camera prompt.** The camera is requested only when you press **Allow camera**. Android then asks in its own words (for example "Allow
+  Mini-Summa to take pictures and record video?") with "While using the app", "Only this time" and "Don't allow". Allowed: the camera view opens and
+  reads the QR code. Denied for good: the screen says "Camera access is off for Mini-Summa. Turn it on in Android settings, or enter the code by
+  hand." with **Open Android settings**; **Enter the code by hand** needs no camera.
+* After a scan: "Check that this is your PC, then pair." with the PC's name and address, a **Name of this phone** field (filled in from the phone's
+  brand and model) and **Pair with ...**. See "Pair" below for what pressing it does.
+* **Notification prompt (Android 13 and newer).** Not at first start. Only once you are paired, the first time the app is connected to your PC, it
+  asks "Allow Mini-Summa to send you notifications?" (Android's wording), provided the PC gave this phone the notify permission when it paired
+  (otherwise Settings says "This phone was not given permission to receive notifications ..." and no prompt appears). Android 12 and older show no
+  prompt. If you decline, Settings says "Notifications are turned off for Mini-Summa. Turn them on in Android settings to get alerts."; the
+  "Send a test notification" button in Settings asks again while Android still allows it.
+* **Push.** This APK was built without a `google-services.json`, so after the notification prompt Settings says "Push notifications need your own
+  Firebase project. See docs/ANDROID.md". That is expected; what the app shows live while it is open keeps working (see "Push notifications").
+
+Then follow "Pair". None of the above has been run on a device.
 
 ## Pair
 
@@ -218,17 +269,28 @@ If the PC is asleep, off or not on the tailnet, nothing can be pushed (the PC is
 
 ## Privacy and permissions
 
-**Permissions.** The app asks Android at run time for two things only: the **camera** (to read the pairing QR code) and
-**notifications**. The built APK declares 27 permissions in its merged manifest (`aapt2 dump badging`); the other 25 need no
-prompt. The app itself asks for `INTERNET` and `VIBRATE` (the alert pattern). The remaining 23 are not features of this app: the
-manifest merger report names the libraries that add them. `ACCESS_NETWORK_STATE` (androidx.media3), `USE_BIOMETRIC` and
-`USE_FINGERPRINT` (androidx.biometric; the app never asks for a fingerprint), `WAKE_LOCK` and
-`com.google.android.c2dm.permission.RECEIVE` (Firebase Messaging, the push receiver), `BIND_GET_INSTALL_REFERRER_SERVICE` (the Play
-install-referrer library), `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (AndroidX, named after the app's own package), and 16
-launcher badge-count permissions (Samsung, HTC, Sony, Huawei, OPPO and other launchers) from ShortcutBadger 1.1.22. They can be
-removed by listing them in `android.blockedPermissions` in `app.config.ts`; that has **not** been done or tested. Storage,
-overlay, microphone and start-at-boot permissions are blocked, and none of `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`,
-`SYSTEM_ALERT_WINDOW`, `RECORD_AUDIO` or `RECEIVE_BOOT_COMPLETED` is in the APK (checked with `aapt2 dump permissions`).
+**Permissions.** The built APK declares exactly **8** permissions (`aapt2 dump permissions`, read from the merged manifest of the finished
+APK). Android asks you at run time about two of them, the camera and notifications; the other six are install-time permissions with no prompt.
+
+| Permission | Why it is there | Prompt |
+| --- | --- | --- |
+| `android.permission.CAMERA` | reads the pairing QR code; requested only when you press "Allow camera" | yes |
+| `android.permission.POST_NOTIFICATIONS` | shows alerts (Android 13 and newer; older versions need no permission) | yes, Android 13+ |
+| `android.permission.INTERNET` | talks to your PC | no |
+| `android.permission.VIBRATE` | the vibration pattern of the `needs-you` alert channel | no |
+| `android.permission.WAKE_LOCK` | declared by Firebase Messaging, the push receiver | no |
+| `com.google.android.c2dm.permission.RECEIVE` | declared by Firebase Messaging: lets the app receive push messages | no |
+| `android.permission.ACCESS_NETWORK_STATE` | declared by androidx.media3, a library dependency; kept on purpose because libraries may ask whether a network is up (which library does at run time was not traced) | no |
+| `app.minisumma.companion.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | AndroidX's own permission, named after this app's package, so that only this app can use it | no |
+
+**Blocked on purpose.** `android.blockedPermissions` in `app.config.ts` lists 24 names. Expo writes a `tools:node="remove"` entry for each into the app
+manifest and the manifest merger removes the permission even when a library declares it (checked in the generated manifest and in the APK). They are:
+storage (read and write), overlay, microphone and start-at-boot (5 names); the 16 launcher badge-count permissions of ShortcutBadger, a dependency of
+`expo-notifications` (the app never sets a launcher badge: `shouldSetBadge` is false and `setBadgeCountAsync` is not called; the tab badge inside the
+app is plain UI); `USE_BIOMETRIC` and `USE_FINGERPRINT` of androidx.biometric, a dependency of `expo-secure-store` (the app stores its token with the
+default options and never asks for a fingerprint or face unlock); and the Play install-referrer binding of `expo-application`, a dependency of
+`expo-notifications` (the app never reads the install referrer). None of the 24 is in the APK. Not run on a device (UNTRIED): a library call that
+needed one of them would fail there, and the app's source contains no such call.
 
 Android cloud backup is off (`allowBackup=false`, read back from the built APK) so the token cannot leave the phone that way,
 and cleartext HTTP is off (`usesCleartextTraffic=false`). The phone never caches report bodies, and no source file imports a
@@ -242,20 +304,21 @@ Verified here (Linux, Node 22.22; commands run from `apps/android` unless noted)
 
 | What | Result |
 | --- | --- |
-| `npx tsc --noEmit` (app, tests and the shared SDK source) and `npx tsc --noEmit -p tsconfig.config.json` | clean |
-| `npx jest` (jest-expo, React Native Testing Library, a fake desktop that speaks the real route table) | 15 suites, 216 tests pass |
-| `npm run check:core` (from the repo root install: the app's own pairing, connection and send code against the **real** headless core in `packages/core`) | 10 of 10 checks pass |
+| `npm run typecheck` (`tsc --noEmit` for the app, tests and the shared SDK source, then `tsc --noEmit -p tsconfig.config.json`), re-run after the permission change | clean |
+| `npx jest --ci` (jest-expo, React Native Testing Library, a fake desktop that speaks the real route table), re-run after the permission change | 15 suites, 216 tests pass |
+| `npm run check:core` (from the repo root install: the app's own pairing, connection and send code against the **real** headless core in `packages/core`), re-run after the permission change | 10 of 10 checks pass |
 | `npx expo-doctor` | 20 of 20 checks pass |
 | `npx expo install --check` | dependencies match Expo SDK 58 |
 | `npx expo export --platform android` (Metro with the shared source and zod, Hermes bytecode) | bundles 1,408 modules into a 3.5 MB `.hbc` |
-| `npx expo prebuild --platform android` | generates the project; the app's own manifest declares CAMERA, INTERNET and VIBRATE (POST_NOTIFICATIONS comes from the notifications library), removes storage, overlay, audio and boot permissions, `allowBackup=false`, `usesCleartextTraffic=false`, the `minisumma` link scheme and FCM default channel `needs-you`. Permissions that libraries add are merged later by Gradle: see the APK rows below |
+| `npx expo prebuild --platform android` | generates the project; the app's own manifest declares CAMERA, INTERNET and VIBRATE (POST_NOTIFICATIONS comes from the notifications library) and 24 `tools:node="remove"` entries (storage, overlay, audio, boot, launcher badges, biometrics, install referrer), `allowBackup=false`, `usesCleartextTraffic=false`, the `minisumma` link scheme and FCM default channel `needs-you`. Permissions that libraries add are merged later by Gradle: see the APK rows below |
 | Android SDK packages from the table above installed with `sdkmanager` | done |
 | Gradle wrapper (9.4.1) downloads and starts | done |
-| `node scripts/build-apk.mjs --gradle-arg --info --retries 3 --wait 30` (the real script, JDK 21, the SDK packages above) | Gradle `BUILD SUCCESSFUL in 8m 35s` (565 tasks), then the script's own signing and `apksigner verify`; it printed the APK path, size and SHA-256 given below |
-| `apksigner verify --verbose --print-certs` on the APK (by the script, and again by hand) | `Verifies`; APK Signature Scheme v2 and v3 true; one signer, the throwaway local key (RSA 2048) |
-| `aapt2 dump badging` and `aapt2 dump permissions` on the APK | package `app.minisumma.companion`, versionName 0.1.0, versionCode 1, minSdk 24, targetSdk 36, launchable activity `app.minisumma.companion.MainActivity`, native code `arm64-v8a` only, 27 permissions (see "Privacy and permissions"), none of the blocked ones |
-| `aapt2 dump xmltree` of the APK's manifest | `allowBackup=false`, `usesCleartextTraffic=false`, link scheme `minisumma` |
-| `unzip -l` and the first bytes of `assets/index.android.bundle` | the JS bundle is embedded (2.9 MB) and is Hermes bytecode (starts `c61fbc03c103191f`); `libhermesvm.so`, `libreactnative.so`, four `classes*.dex` files and the camera barcode models are in the APK |
+| `node scripts/build-apk.mjs --gradle-arg --offline` (the real script, JDK 21, the SDK packages above; run after the permission change, so Gradle used only its cache and the local verified repository, no network) | Gradle `BUILD SUCCESSFUL in 7m 14s` (565 tasks), then the script's own signing and `apksigner verify`; it printed the APK path, size and SHA-256 given below |
+| `apksigner verify --verbose --print-certs` on the APK (by the script, and again by hand) | `Verifies`; APK Signature Scheme v2 and v3 true; one signer, the throwaway local key (RSA 2048), certificate SHA-256 `ef3d7f4065a2aaf56537d45f8cd665615a92256ab59a9d330fb98b43411cd323` |
+| `aapt2 dump permissions` on the APK | exactly the 8 listed under "Privacy and permissions" (CAMERA, INTERNET, VIBRATE, POST_NOTIFICATIONS, ACCESS_NETWORK_STATE, WAKE_LOCK, `com.google.android.c2dm.permission.RECEIVE`, and the app's own `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`); no launcher badge, biometric, install-referrer, storage, overlay, microphone or boot entry. The generated app manifest has 24 `tools:node="remove"` entries, one per blocked name |
+| `aapt2 dump badging` on the APK | package `app.minisumma.companion`, versionName 0.1.0, versionCode 1, minSdk 24, targetSdk 36, launchable activity `app.minisumma.companion.MainActivity`, native code `arm64-v8a` only, no `application-debuggable` entry (not debuggable) |
+| `aapt2 dump xmltree` of the APK's manifest | `allowBackup=false`, `usesCleartextTraffic=false`, link scheme `minisumma`, no `debuggable` attribute |
+| `unzip -l` and the first bytes of `assets/index.android.bundle` | the JS bundle is embedded (2.9 MB) and is Hermes bytecode (starts `c61fbc03c103191f`); native libraries only under `lib/arm64-v8a/` (28 files, including `libhermesvm.so` and `libreactnative.so`), four `classes*.dex` files, the camera barcode models |
 | a SHA-1 audit of 19 of the downloaded libraries against what Maven Central publishes next to each file | 19 of 19 match: the 12 `com.facebook.fresco:*:3.7.0` AARs that blocked the earlier runs and 7 Kotlin 2.2.10 jars (see "Build outcome") |
 | `node --test scripts/gradle-network.test.mjs` (build script's reading of refused downloads) | 10 of 10 pass |
 | the build script's retry loop against a fake `gradlew` that prints real Gradle 429 messages | 4 cases behave as designed: refused every time (lists servers, status and files; stops after the last run), refused once then fine (continues to signing), a compile error (not retried), retry properties you set yourself (not overridden). A fake Gradle, not a real build |
@@ -274,9 +337,9 @@ refusal of a prompt for an unknown session, a 403 for a missing scope that does 
 | --- | --- |
 | File | `Mini-Summa-0.1.0-release-sideload.apk` (written to `~/minisumma-apk/` by the script) |
 | Size | 46,206,686 bytes (44.1 MiB) |
-| SHA-256 | `406b6cdc84b56d7dc0ce04b6afb9b01bfa12d337d675787b58782911a500cc08` |
-| Signed with | a **throwaway local key** (`CN=Mini-Summa sideload (throwaway local key), O=local`, certificate SHA-256 `0506f6add0d964c3fc979a504d71579795b53dc2310e48c748f773e57cafe688`) that the script deleted right after signing. For sideloading on your own phone only; it cannot be updated by a later build (uninstall it first, or build with your own keystore) |
-| Contents | package `app.minisumma.companion`, versionName 0.1.0, minSdk 24, targetSdk 36, `arm64-v8a` only, the Hermes JS bundle embedded, no debug flag |
+| SHA-256 | `4427f35256ba6395d190b492c192541b00d2de3af8683bdcc5536b8a60b3cf54` |
+| Signed with | a **throwaway local key** (`CN=Mini-Summa sideload (throwaway local key), O=local`, certificate SHA-256 `ef3d7f4065a2aaf56537d45f8cd665615a92256ab59a9d330fb98b43411cd323`) that the script deleted right after signing. For sideloading on your own phone only; it cannot be updated by a later build (uninstall it first, or build with your own keystore) |
+| Contents | package `app.minisumma.companion`, versionName 0.1.0, minSdk 24, targetSdk 36, `arm64-v8a` only, the Hermes JS bundle embedded, 8 permissions (see "Privacy and permissions"), not debuggable |
 
 Everything under "Verified" above was run on this file. **Nothing was run on a device**: the app has not been installed, started,
 paired, or shown a notification. The APK is a build product, not a tested product.
@@ -311,7 +374,10 @@ what Gradle had cached by then, and the last three runs stalled on `com.facebook
    `groovy` and `httpclient` are not in Gradle's own cache, so the finished build can only have taken them from there.
    Two of the five modules were found by an `--offline --continue` run, which lists what is missing without touching the network.
 4. The script (`node scripts/build-apk.mjs`) then ran from start to end: prebuild, Gradle (`BUILD SUCCESSFUL in 8m 35s`, no 429 in that run, eight
-   Google Maven downloads for the lint tooling), signing, `apksigner verify`.
+   Google Maven downloads for the lint tooling), signing, `apksigner verify`. That first APK carried 27 permissions, 23 of them added by libraries.
+5. After the permission change in `app.config.ts` (24 names blocked, see "Privacy and permissions") the script ran again, this time with
+   `--gradle-arg --offline` so that Gradle could use only what it had cached and the local verified repository and made no network request
+   (`BUILD SUCCESSFUL in 7m 14s`). This second build is the APK described above; the first one is superseded and its hash is no longer valid.
 
 **How the dependencies were checked, and what that does not prove.**
 

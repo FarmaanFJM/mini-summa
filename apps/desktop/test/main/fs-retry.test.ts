@@ -114,9 +114,10 @@ describe('log rotation (defect: a refused rename lost every later line)', () => 
   it('rotates after the rename was refused once, and loses no line', () => {
     const dir = tmp();
     const rename = refusedThenFine(1, 'EBUSY');
-    const log = createFileLogger(dir, { maxBytes: 400, rename, pause: () => undefined });
+    // about 75 bytes a line: the 1,500 byte limit is passed once, so exactly one rotation happens (each rotation replaces the last)
+    const log = createFileLogger(dir, { maxBytes: 1500, rename, pause: () => undefined });
     for (let i = 0; i < 30; i += 1) log.info(`line ${i} ${'x'.repeat(40)}`);
-    expect(rename).toHaveBeenCalled();
+    expect(rename).toHaveBeenCalledTimes(2); // refused once, then done
     expect(fs.existsSync(path.join(dir, 'main.1.log'))).toBe(true);
     const text = fs.readFileSync(path.join(dir, 'main.1.log'), 'utf8') + fs.readFileSync(log.file, 'utf8');
     for (let i = 0; i < 30; i += 1) expect(text).toContain(`line ${i} `);

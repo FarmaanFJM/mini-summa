@@ -268,6 +268,21 @@ describe('start', () => {
     await expect(down.sessions.start('p1', { mode: 'new' }, actor)).rejects.toMatchObject({ code: 'environment_unavailable', message: 'Claude Code was not found.' });
   });
 
+  it('treats a distribution typed in lower case as the one Windows lists, and starts the session under the listed name', async () => {
+    // A folder typed as \\wsl$\ubuntu\... names the distribution "ubuntu"; Windows lists it as "Ubuntu". Same distribution.
+    const h = await harness({ environments: (layout) => createStubEnvironments('posix', [layout, { ...layout, env: 'wsl:Ubuntu' }]) });
+    h.projects.add({ id: 'p3', name: 'Wsl', roots: [{ path: '/home/u/app', env: 'wsl:ubuntu' }] });
+    await h.sessions.flush();
+    const root = h.projects.get('p3')!.roots[0];
+    const view = await h.sessions.start('p3', { mode: 'new', rootId: root.id }, actor);
+    expect(h.managed.started.map((s) => s.env)).toEqual(['wsl:Ubuntu']);
+    expect(view.key.startsWith('wsl:Ubuntu|')).toBe(true);
+    // A distribution that is not listed at all is still refused.
+    h.projects.add({ id: 'p4', name: 'Other', roots: [{ path: '/home/u/x', env: 'wsl:Debian' }] });
+    await h.sessions.flush();
+    await expect(h.sessions.start('p4', { mode: 'new', rootId: h.projects.get('p4')!.roots[0].id }, actor)).rejects.toMatchObject({ code: 'environment_unavailable' });
+  });
+
   it('refuses a conversation that belongs to another project', async () => {
     const h = await harness();
     await addProject(h);

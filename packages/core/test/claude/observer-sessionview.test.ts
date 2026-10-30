@@ -49,6 +49,20 @@ function build(over: Partial<SessionViewInput> = {}): SessionView {
   return view;
 }
 
+describe('a terminal that went on under another session id', () => {
+  const NEW = '33333333-3333-4333-8333-333333333333';
+  it('names the session that now owns the terminal, so clients can move to it, and nothing otherwise', () => {
+    const left = build({ managed: managed({ status: 'exited', exitedAt: 'E', exitReason: `replaced:clear:${NEW}`, prompted: true }) });
+    expect(left.replacedBy).toBe(`posix|${NEW}`);
+    expect(left.availability).not.toBe('live');
+    // a stop, a quit, a crash and a plain managed session carry no pointer
+    for (const exitReason of [null, 'exited', 'killed_by_user', 'app_exit', 'app_restart']) {
+      expect(build({ managed: managed({ status: 'exited', exitedAt: 'E', exitReason }) })).not.toHaveProperty('replacedBy');
+    }
+    expect(build({ managed: managed() })).not.toHaveProperty('replacedBy');
+  });
+});
+
 describe('origin', () => {
   it('managed when a managed record exists, whatever else is known', () => {
     expect(build({ managed: managed(), reducer: reducer({ kind: 'background' }) }).origin).toBe('managed');

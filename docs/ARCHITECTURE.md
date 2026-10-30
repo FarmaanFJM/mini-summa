@@ -32,6 +32,11 @@ notifications that navigate) come from `window.miniSumma`, exposed by the preloa
 
 1. **Identity.** A session is `(environment, session id)`, written `<env>|<uuid>` (`SessionKey`). Environments are
    `win`, `wsl:<Distro>`, `posix`. A bare session id is never an identity. Windows and WSL are never merged.
+   A managed terminal follows its *process*, not the id: when Claude replaces the conversation inside it (`/clear`, `/resume`),
+   Claude keeps running in the same process under a new session id. The core re-keys the managed record to the new id when the
+   process identity proves it (the pid in `claude agents --json`, which the spool cannot forge; hooks decide only where pids cannot
+   be compared), the old key becomes ordinary history (`SessionView.replacedBy` names its successor), and an ambiguous case is
+   left alone and shown as such, never guessed.
 2. **Routing.** The destination of a report is resolved from explicit mappings only (session binding, then the
    project's preferred conversation, then the project's only conversation) and **frozen into the delivery record**
    when the delivery is created. It never follows the focused tab or window. Changing it is an explicit user action

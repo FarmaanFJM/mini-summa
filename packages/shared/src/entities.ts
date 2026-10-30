@@ -143,6 +143,12 @@ export interface SessionView {
   terminal: { cols: number; rows: number; exited: boolean } | null;
   isProjectDefault: boolean;
   remoteControl: { state: 'enabled' | 'not_enabled' | 'unknown'; hint: string };
+  /**
+   * Set only on a managed session that is history because its terminal went on under another session id (`/clear`, `/resume`
+   * inside the terminal): the key of the session that now owns that terminal. Clients move to it instead of leaving the
+   * person on an ended tab.
+   */
+  replacedBy?: SessionKey;
 }
 
 export interface ManagedStartRequestInfo {

@@ -215,6 +215,46 @@ try {
     return `${h.env}: ${h.captureScript}`;
   });
 
+  await check('a hook call (this executable in Node mode) while the app runs opens no window, is not a second instance, and writes its record', async () => {
+    const hooks = await api('/hooks');
+    const list = Array.isArray(hooks.body) ? hooks.body : [];
+    const h = list.find((x) => x.env === 'posix') ?? list[0];
+    const spool = path.join(run, 'hook-spool');
+    const registry = path.join(run, 'hook-registry.json');
+    fs.mkdirSync(spool, { recursive: true });
+    fs.writeFileSync(registry, '{"version":1,"projects":[]}');
+    const windowsBefore = app.windows().length;
+    const logFile = path.join(info.userData, 'logs', 'main.log');
+    const secondBefore = (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '').split('second instance started').length - 1;
+    // Exactly what Claude Code runs: the app's own executable, the capture script, the hook options, one JSON document on stdin.
+    const hookEnv = { ...env, ELECTRON_RUN_AS_NODE: '1' };
+    const started = Date.now();
+    const result = spawnSync(info.exe, [h.captureScript, '--spool', spool, '--registry', registry, '--env', 'posix', '--handler', 'h1', 'SessionStart'], {
+      env: hookEnv, input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: '00000000-0000-4000-8000-000000000001', cwd: os.tmpdir(), source: 'startup' }), timeout: 30_000, encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, `exit ${result.status} ${result.signal} ${result.stderr}`);
+    assert.equal(fs.readdirSync(spool).filter((f) => f.endsWith('.json')).length, 1, 'the hook wrote no record');
+    await sleep(1500); // a second instance would have been announced to the running copy by now
+    assert.equal(app.windows().length, windowsBefore, 'a window was opened');
+    const secondAfter = (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '').split('second instance started').length - 1;
+    assert.equal(secondAfter, secondBefore, 'the running copy was told about a second instance');
+    assert.equal((await api('/health')).status, 200);
+    return `exit 0 in ${Date.now() - started} ms, 1 record in the spool, ${windowsBefore} window(s) before and after`;
+  });
+
+  await check('a real second launch (no Node mode) is passed to the running copy and exits, leaving one window', async () => {
+    const logFile = path.join(info.userData, 'logs', 'main.log');
+    const count = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '').split('second instance started').length - 1;
+    const before = count();
+    const windowsBefore = app.windows().length;
+    const second = spawnSync(info.exe, packaged ? ['--no-sandbox', 'minisumma://settings'] : [appRoot, '--no-sandbox', 'minisumma://settings'], { env, timeout: 40_000, encoding: 'utf8' });
+    assert.equal(second.signal, null, `the second launch did not exit: ${second.signal}`);
+    await until(() => count() > before, 10_000);
+    assert.equal(app.windows().length, windowsBefore);
+    assert.match(fs.readFileSync(logFile, 'utf8').split('\n').filter((l) => l.includes('second instance started')).at(-1) ?? '', /"link":true/);
+    return `the running copy logged the second launch with its link; ${windowsBefore} window(s)`;
+  });
+
   await check('a managed pty can be started by the real core (node-pty loads from where the build puts it)', async () => {
     const created = await api('/projects', { method: 'POST', body: JSON.stringify({ name: 'smoke project', roots: [{ path: os.tmpdir() }] }) });
     assert.equal(created.status, 200, JSON.stringify(created.body));

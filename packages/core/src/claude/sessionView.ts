@@ -8,7 +8,7 @@ import type {
 } from '@minisumma/shared';
 import { shortSessionId } from '@minisumma/shared';
 import type { ManagedSessionRecord } from '../contracts.ts';
-import { parseReplacedReason } from './continuation.ts';
+import { parseReplacedReason, successorOf } from './continuation.ts';
 import type { Attribution, SessionFacts } from './projection.ts';
 
 /** The fields of the Reducer's session this module reads. */
@@ -295,5 +295,7 @@ export function buildSessionView(i: SessionViewInput): SessionView | null {
     terminal: m ? { cols: m.cols, rows: m.rows, exited: m.status !== 'running' } : null,
     isProjectDefault: i.projectDefaultKey === key,
     remoteControl: remoteControlFor(m, availability),
+    // only for a terminal that went on under another session id; every other view is unchanged
+    ...(m && successorOf(env, m.exitReason) ? { replacedBy: successorOf(env, m.exitReason)! } : {}),
   };
 }

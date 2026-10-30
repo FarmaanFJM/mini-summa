@@ -18,10 +18,18 @@ const run = promisify(execFile);
 const SESSION = '9d3f6a52-6d0e-4b8c-a1d6-3c7e2f1b0a01';
 const roots: string[] = [];
 const ptys: PtyProcess[] = [];
-afterEach(() => {
+afterEach(async () => {
   for (const p of ptys.splice(0)) { try { p.kill('SIGKILL'); } catch { /* gone */ } }
-  // a hook process of the killed fake may still be writing into the spool: retry when the folder is not empty yet
-  for (const r of roots.splice(0)) fs.rmSync(r, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  // A hook process of a killed fake can still be writing into the folder for a moment (a busy machine makes that longer):
+  // removing it is retried instead of failing the test that already passed.
+  for (const r of roots.splice(0)) {
+    for (let attempt = 0; ; attempt++) {
+      try { fs.rmSync(r, { recursive: true, force: true }); break; } catch (err) {
+        if (attempt >= 50) throw err;
+        await new Promise((resolve) => { setTimeout(resolve, 100); });
+      }
+    }
+  }
 });
 
 interface Fake {

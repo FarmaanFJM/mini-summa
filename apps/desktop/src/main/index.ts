@@ -15,6 +15,7 @@ import type { BrowserWindow, MenuItemConstructorOptions } from 'electron';
 import { badgeBitmap, badgeDescription } from './badge.ts';
 import { CH } from './channels.ts';
 import { ChatGptView } from './chatgptView.ts';
+import { isHookInvocation } from './hookInvocation.ts';
 import { chatGptSession, createChatGptViewHandle } from './electronView.ts';
 import { registerIpc } from './ipc.ts';
 import { resolveLocations } from './locations.ts';
@@ -29,6 +30,12 @@ import { applyHostRules, installCertificateTrust, readTestSeams, resolveDataDir,
 import type { TestSeams } from './testSeams.ts';
 import { createAppTray, firstUsableImage } from './tray.ts';
 import { createWindowRouter, trackRendererReadiness } from './windowRouter.ts';
+
+// ---- a hook call is not the application ------------------------------------------------------------------------------
+// Normally unreachable: a hook runs this executable with ELECTRON_RUN_AS_NODE=1 and Electron then never loads this file. If the
+// RunAsNode fuse were ever turned off it would load it, and the process would take the single-instance lock and push the running
+// copy's window to the front on every tool call. See hookInvocation.ts. This stays above everything that has an effect.
+if (isHookInvocation(process.argv)) process.exit(0);
 
 // ---- before ready: identity and paths --------------------------------------------------------------------------------
 
@@ -133,6 +140,16 @@ const quit = createQuitFlow({
     ses.flushStorageData();
   },
   hideWindow: () => { windowAlive()?.hide(); },
+  // The window is already hidden by now, so this is a dialog of its own. It is only reached when ending the terminals has taken
+  // far longer than usual; leaving anyway is the person's decision, because a terminal may then keep running.
+  keepWaiting: async () => {
+    const answer = await dialog.showMessageBox({
+      type: 'warning', title: 'Mini-Summa', message: 'Mini-Summa is still closing',
+      detail: 'Ending the Claude terminals is taking longer than usual. If you quit now, a terminal may keep running in the background.',
+      buttons: ['Keep waiting', 'Quit now'], defaultId: 0, cancelId: 0, noLink: true,
+    });
+    return answer.response === 0;
+  },
   exit: (code) => app.exit(code),
   log,
 });

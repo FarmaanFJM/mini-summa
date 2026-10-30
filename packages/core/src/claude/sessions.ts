@@ -707,7 +707,10 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
       if (resumeTarget && resumeTarget.env !== env) {
         throw unprocessable(`That session ran in ${envLabel(resumeTarget.env)}, so it can only be resumed there. Choose a folder in ${envLabel(resumeTarget.env)}.`, 'resume_env_mismatch');
       }
-      const info = (await environments.list()).find((e) => e.id === env);
+      // A folder typed as \\wsl$\ubuntu\... names the distribution in lower case; Windows lists it as "Ubuntu". The names are the
+      // same distribution, so the listed spelling is the one that is used from here on (session keys, resume checks).
+      const sameWsl = (a: EnvId, b: EnvId): boolean => a.startsWith('wsl:') && b.startsWith('wsl:') && a.slice(4).toLowerCase() === b.slice(4).toLowerCase();
+      const info = (await environments.list()).find((e) => e.id === env || sameWsl(e.id, env));
       if (!info) throw unprocessable(`${envLabel(env)} is not available on this computer.`, 'environment_unavailable');
       if (!info.available) throw unprocessable(info.notes[0] ?? `Claude Code is not available in ${info.label}.`, 'environment_unavailable');
       if (resumeTarget && !resumeTarget.resumable) throw unprocessable(resumeProblem(resumeTarget), 'not_resumable');
@@ -717,7 +720,7 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
       }
 
       const record = await managed.start({
-        projectId, rootId: root.id, env,
+        projectId, rootId: root.id, env: info.id,
         // Claude finds a transcript through the directory it runs in, so a resume goes back to where the session ran.
         cwd: resumeTarget?.cwd ?? root.path,
         name: req.name?.trim() ? req.name.trim() : null,
@@ -728,7 +731,7 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
         conversationId: req.conversationId ?? null,
       });
       observeRun(record); // normally noticed already, when the manager announced the record (before the process existed)
-      log.info('Started a Claude session in a Mini-Summa terminal.', { key: record.key, project: projectId, env, mode: req.mode, by: actor.kind });
+      log.info('Started a Claude session in a Mini-Summa terminal.', { key: record.key, project: projectId, env: info.id, mode: req.mode, by: actor.kind });
       refreshAndCommit(resumeTarget ? [record.key, resumeTarget.key] : [record.key]);
       const view = views.get(record.key);
       if (!view) throw new CoreError(500, 'session_missing', 'The session was started but Mini-Summa could not describe it.');
