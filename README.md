@@ -63,6 +63,14 @@ unsigned). See [docs/SETUP.md](docs/SETUP.md).
 
 ## Status
 
-The base application is implemented end to end. Windows, WSL2, real Android devices, real push delivery and the real
-ChatGPT site could not be exercised from the cloud environment this was built in, and are reported as **NOT TESTED**
-rather than assumed. [docs/VERIFICATION.md](docs/VERIFICATION.md) lists every layer with its real result.
+The base application is implemented end to end. It was verified on Linux at every layer that could run there: about 3,900 unit,
+service and integration tests; the real core with real terminals; the real Claude Code CLI driven through the core (17 of 17
+steps, including approving and rejecting a real permission dialog and a phone's prompt); the real Electron app under a virtual
+display (the 25 desktop behaviours and the four-project scenario: 25 pass, and desktop notifications are partial because an
+operating-system toast cannot be observed on Linux); and the browser extension in a real Chromium.
+
+**Not exercised:** Windows, WSL2, an Android device or emulator, real push delivery, the real ChatGPT site, real Tailscale.
+**Not built:** the Android APK (Maven Central rate-limited the build from the sandbox it was made in; see
+[docs/ANDROID.md](docs/ANDROID.md)). The Windows installer builds but has never been installed.
+[docs/VERIFICATION.md](docs/VERIFICATION.md) lists every layer with its real result, [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
+what remains, and [docs/WINDOWS_VERIFICATION.md](docs/WINDOWS_VERIFICATION.md) what only your PC can confirm.
