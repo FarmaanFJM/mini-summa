@@ -28,8 +28,12 @@ export async function selectProject(page: Page, name: string): Promise<void> {
 
 /** Leave Reports / Settings / Activity (which replace the sidebar or the workspace) and come back to the project list. */
 export async function showWorkspace(page: Page): Promise<void> {
-  if (await projectsNav(page).isVisible()) return;
-  await page.getByRole('button', { name: 'Back' }).first().click();
+  // "Back" returns to the view before this one, which may itself be Reports or Settings: press it until the project list is back.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (await projectsNav(page).isVisible()) return;
+    await page.getByRole('button', { name: 'Back', exact: true }).first().click();
+    await projectsNav(page).waitFor({ state: 'visible', timeout: 1500 }).catch(() => undefined);
+  }
   await projectsNav(page).waitFor({ state: 'visible' });
 }
 
