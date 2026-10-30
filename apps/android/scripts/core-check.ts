@@ -86,9 +86,8 @@ async function main(): Promise<void> {
   };
 
   try {
-    // The core allows 10 pairing attempts per minute (rate_limited), so the phones this script needs are paired up front
-    // and the checks that burn attempts on purpose run after the window has passed.
-    const t0 = Date.now();
+    // The core counts FAILED pairing attempts (twenty per minute, then rate_limited); a successful pairing never counts.
+    // The phones this script needs are paired up front, and the checks that fail on purpose run afterwards.
     const first = await pair();
     const phones = {
       connect: (await pair('Connect')).result.credentials,
@@ -177,10 +176,6 @@ async function main(): Promise<void> {
       manager.dispose();
     });
 
-    // The pairing limiter is a sliding window of 60 s over every redeem attempt; wait it out before spending attempts.
-    const wait = 61_000 - (Date.now() - t0);
-    if (wait > 0) { console.log(`      (waiting ${Math.ceil(wait / 1000)} s for the core's pairing rate limit window)`); await sleep(wait); }
-
     await check('pairing errors in words: a used code, a wrong code, an unknown offer, a cancelled code', async () => {
       const used = await newOffer();
       const usedPayload = parseScannedCode(used.qrPayload)!;
@@ -203,12 +198,17 @@ async function main(): Promise<void> {
       expect(last!.message.includes('cancelled'), `message was: ${last!.message}`);
     });
 
-    await check('pairing rate limit: after ten attempts in a minute the phone says to wait, and how long', async () => {
+    await check('pairing rate limit: after twenty failed attempts in a minute the phone says to wait, and how long', async () => {
       const offer = await newOffer();
       let last: PairingError | undefined;
-      // The previous check used 9 of the 10 attempts this minute; two more cross the limit.
-      for (let i = 0; i < 3; i++) last = await pairWithDesktop({ ...parseScannedCode(offer.qrPayload)!, code: `probe-${i}-xxxxxxxxxxxx` }, { deviceName: 'Limit' }).catch((e) => e as PairingError);
-      expect(last instanceof PairingError && last.kind === 'rate_limited', `rate limit gave ${last?.kind}: ${last?.message}`);
+      let attempts = 0;
+      // Only failures count and the previous check made several; keep failing until the core says to wait (it must within 25).
+      while (attempts < 25 && !(last instanceof PairingError && last.kind === 'rate_limited')) {
+        last = await pairWithDesktop({ ...parseScannedCode(offer.qrPayload)!, code: `probe-${attempts}-xxxxxxxxxxxx` }, { deviceName: 'Limit' }).catch((e) => e as PairingError);
+        attempts++;
+      }
+      expect(last instanceof PairingError && last.kind === 'rate_limited', `rate limit gave ${last?.kind}: ${last?.message} after ${attempts} attempts`);
+      expect(attempts >= 12, `the limit came after only ${attempts} attempts, which is too early for twenty failures a minute`);
       expect(/Wait \d+ seconds/.test(last!.message), `message was: ${last!.message}`);
     });
 
