@@ -50,8 +50,9 @@ export function createSandbox(knobs: Record<string, string> = {}): Sandbox {
 }
 
 /** A project repository: a real directory with a file in it, and (by default) a real git repository. */
-export function makeRepo(sb: Sandbox, name: string, options: { git?: boolean } = {}): string {
-  const dir = path.join(sb.repos, name.replace(/[^A-Za-z0-9_.-]/g, '_'));
+export function makeRepo(sb: Sandbox, name: string, options: { git?: boolean; verbatim?: boolean } = {}): string {
+  // `verbatim` keeps spaces and parentheses in the directory name: the kind of folder people really have.
+  const dir = path.join(sb.repos, options.verbatim ? name : name.replace(/[^A-Za-z0-9_.-]/g, '_'));
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'README.md'), `# ${name}\n\nA repository for the acceptance suite.\n`);
   if (options.git !== false) {

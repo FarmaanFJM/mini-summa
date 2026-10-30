@@ -2,12 +2,14 @@
 // the page shows one section at a time and the route remembers which, so a link or a notification can open a section directly.
 import '../reports/shared.css';
 import './settings.css';
+import { useState } from 'react';
 import type { ComponentType } from 'react';
 import { useRoute } from '../../app/runtime';
 import { SidebarContent } from '../shell/SidebarSlot';
 import { AboutSection } from './AboutSection';
 import { ChatGptSection } from './ChatGptSection';
 import { ClaudeCodeSection } from './ClaudeCodeSection';
+import { StatusSlotContext } from './controls';
 import { DataSection } from './DataSection';
 import { ExtensionSection } from './ExtensionSection';
 import { HooksSection } from './HooksSection';
@@ -37,6 +39,7 @@ export default function SettingsView() {
   const route = useRoute();
   const current = resolveSection(route.section);
   const Body = BODY[current];
+  const [statusSlot, setStatusSlot] = useState<HTMLElement | null>(null);
   const label = SECTIONS.find((s) => s.id === current)?.label ?? 'Settings';
 
   return (
@@ -52,10 +55,15 @@ export default function SettingsView() {
           </ul>
         </nav>
       </SidebarContent>
-      <header className="ms-view__head"><h1 className="ms-view__title">{label}</h1></header>
-      <div className="ms-view__body" key={current}>
-        <Body />
-      </div>
+      <header className="ms-view__head">
+        <h1 className="ms-view__title">{label}</h1>
+        <div className="ms-x-head-actions ms-set-head-status" ref={setStatusSlot} />
+      </header>
+      <StatusSlotContext.Provider value={statusSlot}>
+        <div className="ms-view__body" key={current}>
+          <Body />
+        </div>
+      </StatusSlotContext.Provider>
     </section>
   );
 }

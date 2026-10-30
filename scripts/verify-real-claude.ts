@@ -323,13 +323,17 @@ async function main(): Promise<void> {
           const s = await client.call('sessions.get', { params: { key } });
           return `item ${closed!.status}; session state afterwards: ${s.state} (${s.stateEvidence})`;
         });
-        await check('permission: after a reject the session still takes the next prompt and leaves the permission state', async () => {
+        await check('permission: after a reject the session still takes the next prompt and answers it', async () => {
+          const before = (await client.call('candidates.list', { query: { projectId: project.id } })).length;
           await sendLine('Reply with the single word ok.');
-          const s = await until('the session to move past the rejected dialog', async () => {
-            const x = await client.call('sessions.get', { params: { key } });
-            return x.state !== 'needs_permission' && ['turn_ended', 'idle', 'report_ready', 'waiting_for_you'].includes(x.state) ? x : null;
+          // The answer proves the prompt was submitted and processed; a state label alone could be stale.
+          const answer = await until('Claude\'s answer after the rejected dialog', async () => {
+            const all = await client.call('candidates.list', { query: { projectId: project.id } });
+            return all.length > before ? all.find((c) => /\bok\b/i.test(c.body) && c.sessionKey === key) : null;
           });
-          return `state ${s.state} (${s.stateEvidence})`;
+          const s = await client.call('sessions.get', { params: { key } });
+          expect(s.state !== 'needs_permission', `the session still shows ${s.state}`);
+          return `answer "${answer.body.trim().slice(0, 20)}", state ${s.state} (${s.stateEvidence})`;
         });
       }
     } else if (live) {

@@ -9,8 +9,8 @@ import { until } from './wait.ts';
 export interface MadeProject { project: Project; dir: string; conversations: Conversation[] }
 
 /** A project whose repository really exists, with conversations added in order; `preferred` picks which one is preferred. */
-export async function createProject(h: AppHandle, name: string, options: { conversations?: string[]; preferred?: number; github?: string; git?: boolean } = {}): Promise<MadeProject> {
-  const dir = makeRepo(h.sandbox, name, { git: options.git });
+export async function createProject(h: AppHandle, name: string, options: { conversations?: string[]; preferred?: number; github?: string; git?: boolean; verbatim?: boolean } = {}): Promise<MadeProject> {
+  const dir = makeRepo(h.sandbox, name, { git: options.git, verbatim: options.verbatim });
   const project = await h.api.call('projects.create', { body: { name, githubRepo: options.github, roots: [{ path: dir }] } });
   const conversations: Conversation[] = [];
   for (const url of options.conversations ?? []) conversations.push(await h.api.call('conversations.add', { params: { id: project.id }, body: { url } }));

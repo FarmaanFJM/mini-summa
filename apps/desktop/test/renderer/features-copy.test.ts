@@ -28,6 +28,13 @@ describe('the source of the feature areas', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('keeps every made-up email address in the demo data and the tests on an example domain', () => {
+    const tests = fs.readdirSync(__dirname).filter((f) => /^features-.*\.tsx?$/.test(f)).map((f) => path.join(__dirname, f));
+    const found = [...files, ...tests].flatMap((f) => [...fs.readFileSync(f, 'utf8').matchAll(/[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)/g)].map((m) => ({ f: path.basename(f), address: m[0], domain: m[1] })));
+    expect(found.length).toBeGreaterThan(0); // the fixtures do use some, so the scan is looking at something
+    expect(found.filter((a) => !/^example\./i.test(a.domain))).toEqual([]);
+  });
+
   it('never says a report was "completed": Claude declares, nothing here has verified it', () => {
     const offenders = files.filter((f) => /\.tsx?$/.test(f) && !/dev\/demo/.test(f)).flatMap((f) => fs.readFileSync(f, 'utf8').split('\n').map((line, i) => ({ f: path.relative(SRC, f), line: i + 1, text: line.trim() })).filter((l) => /['"`>][^'"`<]*\bcompleted\b/i.test(l.text) && !/^(\/\/|\/\*|\*)/.test(l.text)));
     expect(offenders).toEqual([]);

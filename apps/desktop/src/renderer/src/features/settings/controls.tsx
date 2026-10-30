@@ -1,4 +1,6 @@
+import { createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon, Spinner, Switch } from '../../ui';
 import type { SaveState } from './useSettings';
 
@@ -8,6 +10,16 @@ export function SaveStatus({ status }: { status: SaveState }) {
   if (status.state === 'saving') return <span className="ms-x-saving" role="status"><Spinner />Saving</span>;
   if (status.state === 'saved') return <span className="ms-x-saving" role="status"><Icon name="check" size={14} />Saved</span>;
   return <span className="ms-x-saving" data-state="failed" role="alert"><Icon name="circle-alert" size={14} />Could not save: {status.error}</span>;
+}
+
+/** Where a page's save status is shown: the header of the settings view, which stays in sight however far the page is scrolled. */
+export const StatusSlotContext = createContext<HTMLElement | null>(null);
+
+/** The save status of a whole page. In the header when there is one, in place when there is not (a section shown on its own). */
+export function PageStatus({ status }: { status: SaveState }) {
+  const slot = useContext(StatusSlotContext);
+  const body = <SaveStatus status={status} />;
+  return slot ? createPortal(body, slot) : body;
 }
 
 export interface SwitchRowProps {

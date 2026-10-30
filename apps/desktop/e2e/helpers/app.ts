@@ -28,6 +28,8 @@ export interface LaunchOptions {
   cwd?: string;
   /** Resize the window right after it opened. */
   size?: { width: number; height: number };
+  /** Leave the first-run checklist ("Set up Mini-Summa") on screen. By default a person's first click, "Hide the checklist", is done for the test. */
+  firstRun?: boolean;
 }
 
 export interface AppHandle {
@@ -98,6 +100,15 @@ export async function launchApp(options: LaunchOptions = {}): Promise<AppHandle>
 
     // The window shows the project list once the first snapshot arrived.
     await until('the app to finish loading its data', () => page.evaluate(() => !document.querySelector('[aria-label="Loading projects"]') && !!document.querySelector('nav[aria-label="Projects"]')), { timeout: 30_000 });
+
+    // The first-run checklist floats over the corner of the window until it is hidden; every test but the first-run one hides it.
+    if (!options.firstRun) {
+      const checklist = page.getByRole('region', { name: 'Set up Mini-Summa' });
+      if (await checklist.waitFor({ state: 'visible', timeout: 4000 }).then(() => true, () => false)) {
+        await page.getByRole('button', { name: 'Hide the checklist' }).click();
+        await checklist.waitFor({ state: 'hidden' });
+      }
+    }
 
     // Hard guard: this suite only ever runs the fake Claude. The app must have been told so, and must have believed it.
     const environments = await api.call('environments.list');

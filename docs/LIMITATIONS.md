@@ -30,9 +30,9 @@ Windows, no WSL2, no phone and no ChatGPT login. Until you have done them, treat
   folder-trust screen were observed on version 2.1.314. `npm run verify:claude` repeats those checks against your installed
   version in about three minutes; run it after upgrading Claude Code.
 * **Claude Code fires no hook for some things.** Escape on a permission dialog produces no event, so after you reject a
-  request the session keeps showing "needs permission" until Claude's next event (the terminal shows the truth, and the
-  feed entry is closed). A `Stop` event means the turn ended, not that the task is done; only a report marker (a
-  declaration by the model) says "finished".
+  request the session can keep showing "needs permission" until Claude's next event or the next discovery poll (the
+  interval is a setting; the terminal shows the truth, and the feed entry is closed at once). A `Stop` event means the
+  turn ended, not that the task is done; only a report marker (a declaration by the model) says "finished".
 * **Push notifications need your own Firebase project**, and the PC must be awake and on your tailnet to send them.
 * **Remote access needs Tailscale** with HTTPS enabled for your tailnet. Mini-Summa never uses Funnel.
 * **External sessions** (started outside Mini-Summa) can be observed but not typed into. Anthropic's Remote Control is the
@@ -44,6 +44,10 @@ Windows, no WSL2, no phone and no ChatGPT login. Until you have done them, treat
 
 * **Redaction is pattern based.** It catches the usual shapes of keys, tokens, private keys, passwords in URLs and command
   lines, but it cannot know a secret that looks like ordinary text. Each report shows the number of replacements.
+* **"Someone typed and has not pressed Enter" is a heuristic.** It follows the keystrokes Mini-Summa forwards to the terminal.
+  A digit typed at a start-up dialog without Enter keeps the flag until Enter, Escape, Ctrl-C or Ctrl-U; a phone prompt left
+  unsubmitted does not set it; terminals that use the kitty keyboard protocol are not understood. A remote permission approval
+  does not wait for it, so in the rare case the dialog closed a moment earlier, that Enter could submit a line you were typing.
 * **Programs running as your Windows user are trusted.** The hook spool is a folder they can write into. Mini-Summa treats
   spool contents as untrusted when deciding what you are asked to approve, but it does not defend the data directory
   against its own user.

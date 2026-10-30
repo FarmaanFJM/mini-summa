@@ -2,7 +2,7 @@ import type { ChatGptViewState } from '@minisumma/shared';
 import { useEffect, useState } from 'react';
 import { useNative } from '../../app/native';
 import { Button, Icon, Radio } from '../../ui';
-import { Group, SaveStatus } from './controls';
+import { Group, PageStatus } from './controls';
 import { viewStatusWords } from './model';
 import { useSettings } from './useSettings';
 
@@ -37,7 +37,7 @@ export function ChatGptSection() {
 
   return (
     <div className="ms-set-page">
-      <div className="ms-set-status"><SaveStatus status={status} /></div>
+      <PageStatus status={status} />
 
       <Group title="How ChatGPT opens" note="Google sign-in is often refused inside embedded browsers. If ChatGPT will not let you sign in here, use your browser instead: copying a report and opening the conversation work the same in both.">
         <div role="radiogroup" aria-label="How ChatGPT opens" className="ms-x-stack ms-x-stack--tight">

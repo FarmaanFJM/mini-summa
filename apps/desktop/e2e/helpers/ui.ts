@@ -22,12 +22,6 @@ export async function selectProject(page: Page, name: string): Promise<void> {
   await page.getByRole('heading', { level: 1, name }).waitFor();
 }
 
-/** The names of the project rows, top to bottom. */
-export async function projectNames(page: Page): Promise<string[]> {
-  const labels = await projectsNav(page).locator('li.ms-project > button[aria-current], li.ms-project > button').evaluateAll((nodes) => nodes.map((n) => n.getAttribute('aria-label') ?? ''));
-  return labels.map((l) => l.split(',')[0]);
-}
-
 /** Leave Reports / Settings / Activity (which replace the sidebar or the workspace) and come back to the project list. */
 export async function showWorkspace(page: Page): Promise<void> {
   if (await projectsNav(page).isVisible()) return;

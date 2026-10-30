@@ -71,6 +71,18 @@ async function goReports(page, title) {
   await settle(page, 450);
 }
 
+const sections = (page) => page.getByRole('navigation', { name: 'Settings sections' });
+
+/** Opens Settings (which takes over the sidebar) and, if given, one of its sections. */
+async function goSettings(page, section) {
+  await nav(page, 'Settings').click();
+  await sections(page).waitFor();
+  if (section) await sections(page).getByRole('button', { name: section, exact: true }).click();
+  await settle(page, 450);
+}
+
+const scrollTo = async (locator) => { await locator.scrollIntoViewIfNeeded(); await settle(locator.page(), 250); };
+
 // ------------------------------------------------------------------------------------------------ the shots
 
 const shots = [
@@ -162,6 +174,153 @@ const shots = [
       await page.getByRole('tab', { name: 'Notifications' }).click();
       await page.getByRole('list', { name: /^Notifications, / }).first().waitFor();
       await settle(page, 400);
+    },
+  },
+
+  // ---- settings
+  {
+    name: 'settings-chatgpt',
+    async run(page) { await goSettings(page, 'ChatGPT'); },
+  },
+  {
+    name: 'settings-claude-code',
+    async run(page) {
+      await goSettings(page, 'Claude Code');
+      await page.getByRole('list', { name: 'Environments' }).waitFor();
+      await settle(page, 300);
+    },
+  },
+  {
+    name: 'settings-hooks',
+    async run(page) {
+      await goSettings(page, 'Claude hooks');
+      await page.getByRole('list', { name: 'Hooks per environment' }).waitFor();
+    },
+  },
+  {
+    name: 'settings-hooks-diff',
+    async run(page) {
+      await goSettings(page, 'Claude hooks');
+      const ubuntu = page.getByRole('list', { name: 'Hooks per environment' }).getByRole('listitem').filter({ hasText: 'WSL (Ubuntu)' });
+      await ubuntu.getByRole('button', { name: 'Review changes' }).click();
+      const dialog = page.getByRole('dialog', { name: 'Install hooks for WSL (Ubuntu)' });
+      await dialog.getByRole('region', { name: /^Changes to / }).waitFor();
+      await dialog.getByRole('checkbox').check();
+      await settle(page, 300);
+    },
+  },
+  {
+    name: 'settings-notifications',
+    async run(page) {
+      await goSettings(page, 'Notifications');
+      await page.getByRole('switch', { name: 'Quiet every day' }).click();
+      await settle(page, 300);
+    },
+  },
+  {
+    name: 'settings-notifications-projects',
+    async run(page) {
+      await goSettings(page, 'Notifications');
+      await scrollTo(page.getByRole('table', { name: 'Notifications per project' }));
+      await page.getByRole('switch', { name: 'Also send to my phone, Atlas API' }).click();
+      await settle(page, 300);
+    },
+  },
+  {
+    name: 'settings-phones',
+    async run(page) {
+      await goSettings(page, 'Phones and devices');
+      await page.getByRole('list', { name: 'Paired devices' }).waitFor();
+    },
+  },
+  {
+    name: 'settings-pair-phone',
+    async run(page) {
+      await goSettings(page, 'Phones and devices');
+      await page.getByRole('checkbox', { name: /^Prompt/ }).check();
+      await page.getByRole('button', { name: 'Create pairing code' }).click();
+      await page.getByRole('img', { name: 'QR code that holds the pairing code' }).waitFor();
+      await scrollTo(page.getByRole('region', { name: 'Pair a phone' }));
+    },
+  },
+  {
+    name: 'settings-remote',
+    async run(page) {
+      await goSettings(page, 'Remote access');
+      await page.getByLabel('Tailscale status').waitFor();
+      await page.getByRole('switch', { name: /Allow my phone to reach Mini-Summa/ }).click();
+      await page.getByText('Published to your tailnet').waitFor();
+      await settle(page, 300);
+    },
+  },
+  {
+    name: 'settings-remote-problem',
+    async run(page) {
+      await withDemo(page, (handlers, server) => {
+        handlers.featureState(server.data).tailscale = {
+          ...handlers.defaultTailscale(), running: false, backendState: 'Stopped',
+          problem: 'Tailscale is turned off. Open the Tailscale app and choose Connect (or run "tailscale up" in a terminal), then refresh.',
+        };
+      });
+      await goSettings(page, 'Remote access');
+      await page.getByText(/Tailscale is turned off/).waitFor();
+      await settle(page, 300);
+    },
+  },
+  {
+    name: 'settings-push',
+    async run(page) { await goSettings(page, 'Push notifications'); },
+  },
+  {
+    name: 'settings-review',
+    async run(page) { await goSettings(page, 'Review and handoff'); },
+  },
+  {
+    name: 'settings-data',
+    async run(page) {
+      await goSettings(page, 'Data and privacy');
+      await page.getByLabel('Storage details').waitFor();
+      await settle(page, 300);
+    },
+  },
+  {
+    name: 'settings-data-cleanup',
+    async run(page) {
+      await goSettings(page, 'Data and privacy');
+      await page.getByLabel('Activity feed, days').fill('3');
+      await page.getByRole('button', { name: 'Save limits' }).click();
+      await page.getByRole('button', { name: 'Preview the cleanup' }).click();
+      await page.getByText(/Nothing has been removed yet\./).waitFor();
+      await scrollTo(page.getByRole('region', { name: 'Clean up now' }));
+    },
+  },
+  {
+    name: 'settings-about',
+    async run(page) {
+      await goSettings(page, 'About and setup');
+      await page.getByRole('list', { name: 'Setup steps' }).waitFor();
+      await settle(page, 400);
+    },
+  },
+
+  // ---- first run
+  {
+    name: 'onboarding-empty',
+    open: { query: '?demo=1&scenario=empty', scene: false },
+    async run(page) {
+      await page.getByRole('region', { name: 'Set up Mini-Summa' }).waitFor();
+      await page.getByRole('heading', { level: 3, name: /Claude Code is installed/ }).waitFor();
+      await settle(page, 500);
+    },
+  },
+  {
+    name: 'onboarding-first-project',
+    open: { query: '?demo=1&scenario=empty', scene: false },
+    async run(page) {
+      await page.getByRole('region', { name: 'Set up Mini-Summa' }).waitFor();
+      await withDemo(page, (handlers, server) => server.call('projects.create', { body: { name: 'Mini-Summa', roots: [{ path: 'C:\\code\\mini-summa', env: 'win' }] } }));
+      await page.locator('.ms-onb-layer[data-place="corner"]').waitFor();
+      await settle(page, 500);
     },
   },
 ];

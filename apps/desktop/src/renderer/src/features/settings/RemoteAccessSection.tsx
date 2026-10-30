@@ -4,7 +4,7 @@ import { useApi, useApp } from '../../app/runtime';
 import { Button, CopyButton, Icon } from '../../ui';
 import { formatRelative } from '../workspace/sessionModel';
 import { errorText } from '../reports/support';
-import { Group, SaveStatus, SwitchRow } from './controls';
+import { Group, PageStatus, SwitchRow } from './controls';
 import { tailscaleFacts } from './model';
 import { useSettings } from './useSettings';
 
@@ -67,7 +67,7 @@ export function RemoteAccessSection() {
 
   return (
     <div className="ms-set-page">
-      <div className="ms-set-status"><SaveStatus status={saveStatus} /></div>
+      <PageStatus status={saveStatus} />
 
       <Group
         title="Phone access"

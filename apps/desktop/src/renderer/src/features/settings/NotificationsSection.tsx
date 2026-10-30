@@ -4,7 +4,7 @@ import { useApi, useApp } from '../../app/runtime';
 import { activeProjects } from '../../app/selectors';
 import { Field, Select, Switch, TextInput } from '../../ui';
 import { useNow } from '../reports/support';
-import { Group, SaveStatus, SwitchRow } from './controls';
+import { Group, PageStatus, SaveStatus, SwitchRow } from './controls';
 import { NOTIFICATION_SWITCHES, QUIET_CHOICES, quietSummary, quietUntil, TIME_RE } from './model';
 import type { QuietChoice } from './model';
 import { useSaveTracker, useSettings } from './useSettings';
@@ -31,7 +31,7 @@ function QuietSettings({ settings, save }: { settings: Settings; save: Save }) {
   return (
     <Group title="Quiet mode" note="Quiet mode silences desktop notifications and phone pushes. Everything still appears in the Activity feed, so nothing is lost.">
       <SwitchRow label="Quiet now" hint="Silence notifications until the time below." checked={on} onChange={(v) => setManual(v, choice)} />
-      <Field label="How long">
+      <Field label="How long" className="ms-set-narrow">
         <Select<QuietChoice>
           value={choice}
           options={QUIET_CHOICES.map((c) => ({ value: c.value, label: c.label }))}
@@ -183,7 +183,7 @@ export function NotificationsSection() {
 
   return (
     <div className="ms-set-page">
-      <div className="ms-set-status"><SaveStatus status={status} /></div>
+      <PageStatus status={status} />
 
       <Group title="On this PC">
         <SwitchRow

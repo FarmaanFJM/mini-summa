@@ -358,13 +358,14 @@ describe('normalizeSessionName', () => {
     expect(normalizeSessionName('x" --dangerously-skip-permissions "y')).toBe('x --dangerously-skip-permissions y');
   });
 
-  it.each(Array.from({ length: 8 }, (_v, i) => 0x2018 + i))('removes the typographic quote U+%s', (code) => {
+  const hex = (code: number): string => `U+${code.toString(16).toUpperCase().padStart(4, '0')}`;
+  it.each(Array.from({ length: 8 }, (_v, i) => [hex(0x2018 + i), 0x2018 + i] as const))('removes the typographic quote %s', (_label, code) => {
     const quote = String.fromCharCode(code);
     expect(normalizeSessionName(`a${quote}b${quote}`)).toBe('ab');
     expect(normalizeSessionName(`${quote}quoted${quote}`)).toBe('quoted');
   });
 
-  it.each([[0xff02, 'full-width quotation mark'], [0xff07, 'full-width apostrophe'], [0xff3c, 'full-width backslash']])('removes the full-width U+%s (%s), which some code pages turn into the ASCII character', (code) => {
+  it.each([[hex(0xff02), 0xff02, 'quotation mark'], [hex(0xff07), 0xff07, 'apostrophe'], [hex(0xff3c), 0xff3c, 'backslash']] as const)('removes the full-width %s (%s), which some code pages turn into the ASCII character', (_label, code, _what) => {
     expect(normalizeSessionName(`a${String.fromCharCode(code)}b`)).toBe('ab');
   });
 

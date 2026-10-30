@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { useApp } from '../../app/runtime';
 import { activeProjects } from '../../app/selectors';
 import { Button, Field, TextArea, TextInput } from '../../ui';
-import { Group, SaveStatus, SwitchRow } from './controls';
+import { Group, PageStatus, SwitchRow } from './controls';
 import { count, parsePartSize, partCountFor, previewMessage } from './model';
 import { useSettings } from './useSettings';
 
@@ -59,7 +59,7 @@ export function ReviewSection() {
 
   return (
     <div className="ms-set-page">
-      <div className="ms-set-status"><SaveStatus status={status} /></div>
+      <PageStatus status={status} />
 
       <Group title="The request" note="This text follows every report you hand to ChatGPT. Leave it empty to hand over the report without a request.">
         <Field label="Request to the reviewer" error={templateProblem} aside={<span className="ms-x-note">{count(template.length)} of {count(MAX_TEMPLATE)}</span>}>

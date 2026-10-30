@@ -5,7 +5,13 @@
 */
 .ms-set-view .ms-view__body { padding-top: var(--sp-5); padding-bottom: var(--sp-6); }
 .ms-set-page { display: flex; flex-direction: column; gap: var(--sp-6); max-width: 720px; min-width: 0; }
-.ms-set-status { display: flex; justify-content: flex-end; min-height: 20px; margin-bottom: calc(var(--sp-3) * -1); }
+
+/* The save status sits in the header, right-aligned. A failure may be a sentence long, so the header can grow to hold it. */
+.ms-set-view .ms-view__head { height: auto; min-height: 44px; padding-top: 6px; padding-bottom: 6px; }
+.ms-set-head-status { max-width: min(620px, 65%); text-align: right; }
+.ms-set-head-status .ms-x-saving { align-items: flex-start; line-height: 1.4; }
+.ms-set-head-status .ms-x-saving .sm-icon, .ms-set-head-status .ms-x-saving .sm-spinner { margin-top: 2px; flex: none; }
+.ms-set-narrow { max-width: 320px; }
 
 .ms-set-group { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
 .ms-set-group__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 28px; }
@@ -13,9 +19,9 @@
 .ms-set-group__note { max-width: 62ch; }
 .ms-set-group__body { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
 
-.ms-set-points, .ms-set-steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; line-height: 1.5; max-width: 66ch; }
-.ms-set-points { color: var(--text-2); font-size: var(--fs-md); }
-.ms-set-steps { color: var(--text); font-size: var(--fs-md); }
+.ms-set-points, .ms-set-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; line-height: 1.5; max-width: 66ch; }
+.ms-set-points { list-style: disc; color: var(--text-2); font-size: var(--fs-md); }
+.ms-set-steps { list-style: decimal; color: var(--text); font-size: var(--fs-md); }
 .ms-set-points li::marker, .ms-set-steps li::marker { color: var(--text-3); }
 .ms-set-steps .ms-mono { font-size: var(--fs-sm); }
 

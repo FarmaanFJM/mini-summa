@@ -68,6 +68,10 @@ These are product rules the code enforces, and tests pin each of them.
    command, not a prompt, so an approval card would show "a prompt" for something else. The desktop is not restricted.
 6. **A revoked device cannot leave approvals behind.** Its waiting prompts are rejected, and approving one of them is
    refused.
+7. **A phone's prompt is never glued onto a line you started.** If you typed in the terminal and have not pressed Enter,
+   a prompt from another device is refused ("Someone typed in that terminal and has not pressed Enter yet") until you finish
+   or clear that line. This is detected from the keystrokes Mini-Summa forwards, so it is a heuristic. A permission approval
+   does not wait for it, because the open dialog takes that key.
 
 ## Secrets and data
 
@@ -125,9 +129,11 @@ These are product rules the code enforces, and tests pin each of them.
   need it.
 * **A Claude session that lies.** The report marker is a declaration by the model, never proof that the work succeeded,
   and Mini-Summa says so wherever a report appears.
-* **Windows-specific hardening that could not be tested here.** Quoting of unusual session names, executable lookup order
-  and WSL2 launching were reviewed and covered by tests with simulated Windows paths, but they were not run on Windows. See
-  [LIMITATIONS.md](LIMITATIONS.md).
+* **Windows-specific hardening that could not be run on Windows.** Session names have quotes and look-alike quotes removed
+  before they reach a command line; `wsl.exe`, `cmd.exe` and `tailscale.exe` are started by absolute path (never a bare
+  name that Windows could resolve in the current folder); PATH entries that are not absolute are ignored; a Claude launcher
+  path with shell metacharacters is refused. These are covered by tests that simulate Windows, but they were never run on
+  Windows. See [LIMITATIONS.md](LIMITATIONS.md).
 * **Code signing.** The Windows installer is not code-signed, so SmartScreen will warn. An Android APK, when you build one,
   is signed with a key on your own machine and is meant for sideloading on your own phone.
 
