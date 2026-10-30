@@ -346,7 +346,7 @@ scenario('[X01] The Handoff card follows the delivery after "Copy and open" and 
 
   // Back on the report: the card must say what the core says.
   await openReport(h.page, 'Card state');
-  const headline = () => handoffCard(h.page).locator('h3').first().innerText();
+  const headline = () => handoffCard(h.page).getByRole('heading', { level: 3 }).first().innerText();
   let shown = '';
   await until('the card to show "Awaiting your send" (the core holds awaiting_user_send)', async () => { shown = await headline(); return shown === 'Awaiting your send'; }, { timeout: 10_000 })
     .catch((error) => { throw new Error(`${error.message}. The card shows "${shown}" while the core says awaiting_user_send; the report queue row says "${'Awaiting your send'}".`); });
