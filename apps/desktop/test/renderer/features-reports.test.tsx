@@ -458,10 +458,12 @@ describe('the destination', () => {
     expect(textOf(dest)).toContain('Release planning');
     expect(textOf(dest)).not.toContain('Code review notes');
     // What Copy and open would use is the same: the delivery, not the project.
+    const opened: string[] = [];
+    app.server.onOpen = (url) => opened.push(url);
     await press('Copy and open');
     await waitFor(() => expect(stateOf(app, 'dlv_gm_1').state).toBe('awaiting_user_send'));
     expect(stateOf(app, 'dlv_gm_1').destination?.title).toBe('Release planning');
-    expect(app.fake.native.chatgpt.navigate).not.toHaveBeenCalledWith('https://chatgpt.com/g/g-p-6720aa11bb22cc33/c/0b9c8d7e-6f5a-4b4c-9d3e-2f1a0b9c8d7e');
+    expect(opened).toEqual(['https://chatgpt.com/c/6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b']);
   });
 
   it('says so when the conversation was removed or its address edited after the destination was fixed', async () => {
@@ -544,7 +546,7 @@ describe('long reports in parts', () => {
     expect(within(parts).getAllByRole('listitem')).toHaveLength(3);
     expect(textOf(parts)).toContain('Part 1 of 3');
     expect(within(parts).getAllByRole('img', { name: 'Not copied yet' })).toHaveLength(3);
-    expect(textOf(card())).toContain('This message has 3 parts');
+    expect(textOf(card())).toContain('it has 3 parts');
 
     await user.click(within(card()).getByRole('button', { name: 'Copy part 1 of 3 and open' }));
     await waitFor(() => expect(within(card()).getByRole('button', { name: 'Copy part 2 of 3 and open' })).toBeTruthy());
@@ -647,7 +649,7 @@ describe('Other final messages', () => {
   it('lists the messages that carried no report marker and keeps them apart from reports', async () => {
     const user = userEvent.setup();
     await renderFeature();
-    await user.click(await screen.findByRole('tab', { name: /Other messages \(2\)/ }));
+    await user.click(await screen.findByRole('tab', { name: 'Other messages (2)' }));
     const list = await screen.findByRole('list', { name: 'Other final messages' });
     expect(within(list).getAllByRole('button')).toHaveLength(2);
     expect(textOf(list)).toContain('The final message has no report marker.');
@@ -688,5 +690,245 @@ describe('Other final messages', () => {
     await user.click(await screen.findByRole('button', { name: 'Make this a report' }));
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
     expect(callsTo(spy, 'candidates.promote')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+
+const review = () => screen.getByRole('region', { name: 'Review' });
+const stepper = () => within(review()).getByRole('list', { name: 'Review progress' });
+const stepStatus = (label: string) => within(stepper()).getByText(label).closest('li')!.getAttribute('data-status');
+
+describe('the review, step by step', () => {
+  it('shows the six steps and where the review stands, from delivery.review', async () => {
+    await open('rpt_gm_3');
+    const items = within(stepper()).getAllByRole('listitem');
+    expect(items.map((i) => i.textContent!.replace(/, (done|current step|not reached)$/, ''))).toEqual(['Report ready', 'Sent by you', 'Review awaiting you', 'Review noted', 'Follow-up prepared', 'Sent to Claude']);
+    expect(stepStatus('Report ready')).toBe('done');
+    expect(stepStatus('Sent by you')).toBe('done');
+    expect(stepStatus('Review awaiting you')).toBe('current');
+    expect(stepStatus('Review noted')).toBe('todo');
+    expect(within(stepper()).getByText('Review awaiting you').closest('li')!.getAttribute('aria-current')).toBe('step');
+    expect(textOf(review())).toContain('Mini-Summa cannot see ChatGPT');
+  });
+
+  it('moves only when the person says so: read, then a follow-up, then closing and reopening', async () => {
+    const user = userEvent.setup();
+    const app = await open('rpt_gm_3');
+    const spy = vi.spyOn(app.demo, 'call');
+    // Nothing moves by itself.
+    await new Promise((r) => setTimeout(r, 200));
+    expect(callsTo(spy, 'deliveries.setReview')).toHaveLength(0);
+    expect(within(review()).getByRole('button', { name: 'I have read the review' }).className).toContain('sm-btn--primary');
+
+    await user.click(within(review()).getByRole('button', { name: 'I have read the review' }));
+    await waitFor(() => expect(stepStatus('Review noted')).toBe('done'));
+    expect(callsTo(spy, 'deliveries.setReview')).toEqual([{ params: { id: 'dlv_gm_3' }, body: { review: 'received' } }]);
+    expect(stepStatus('Follow-up prepared')).toBe('current');
+    expect(within(review()).queryByRole('button', { name: 'I have read the review' })).toBeNull();
+    expect(within(review()).getByRole('button', { name: 'Write a follow-up for Claude' }).className).toContain('sm-btn--primary');
+
+    await user.click(within(review()).getByRole('button', { name: 'Close review' }));
+    await waitFor(() => expect(textOf(review())).toContain('You closed this review.'));
+    expect(within(review()).getByRole('button', { name: 'Reopen review' })).toBeTruthy();
+    expect(within(review()).queryByRole('button', { name: 'Close review' })).toBeNull();
+
+    await user.click(within(review()).getByRole('button', { name: 'Reopen review' }));
+    await waitFor(() => expect(stepStatus('Review noted')).toBe('done'));
+    expect(callsTo(spy, 'deliveries.setReview').map((c) => (c as { body: { review: string } }).body.review)).toEqual(['received', 'closed', 'received']);
+  });
+
+  it('is not shown before the message was sent', async () => {
+    await open('rpt_gm_2');
+    expect(screen.queryByRole('region', { name: 'Review' })).toBeNull();
+  });
+
+  it('explains a send without a review request instead of offering steps that cannot happen', async () => {
+    const app = await renderFeature({ route: { reportId: 'rpt_gm_3' } });
+    changeDelivery(app.server, 'dlv_gm_3', { review: 'none' });
+    await screen.findByRole('region', { name: 'Review' });
+    await waitFor(() => expect(textOf(review())).toContain('No review was requested with this message'));
+    expect(within(review()).queryByRole('button', { name: 'I have read the review' })).toBeNull();
+  });
+});
+
+describe('the follow-up to Claude', () => {
+  async function composer(options: { eligibleOrigin?: boolean } = {}) {
+    const user = userEvent.setup();
+    const app = await renderFeature({ route: { reportId: 'rpt_gm_3' } });
+    if (options.eligibleOrigin) {
+      // The session that wrote the report is waiting for the person.
+      const s = app.server.data.sessions.find((x) => x.key === IDS.s.gmExternal)!;
+      Object.assign(s, { origin: 'managed', state: 'waiting_for_you', stateLabel: 'Waiting for you', terminal: { cols: 120, rows: 32, exited: false } });
+      app.server.transport.emit({ type: 'session.upserted', session: structuredClone(s) });
+    }
+    await screen.findByRole('region', { name: 'Review' });
+    changeDelivery(app.server, 'dlv_gm_3', { review: 'received' });
+    await user.click(await within(review()).findByRole('button', { name: 'Write a follow-up for Claude' }));
+    return { user, app };
+  }
+  const target = (name: RegExp) => within(review()).getByRole('radio', { name });
+
+  it('lists the project\'s sessions with who they are, and disables the ones that cannot take it, with the reason', async () => {
+    await composer();
+    const group = within(review()).getByRole('radiogroup', { name: 'Claude session' });
+    const rows = within(group).getAllByRole('radio');
+    expect(rows).toHaveLength(5); // GitManager has five sessions in the demo
+    const row = (short: string) => target(new RegExp(`session ${short}`)).closest('.ms-rep-target') as HTMLElement;
+
+    // Eligible: managed, live, waiting for the person.
+    expect((target(/session e5f6a7b8/) as HTMLInputElement).disabled).toBe(false);
+    expect(textOf(row('e5f6a7b8'))).toBe('GitManager, session e5f6a7b8managed, Windows, live, Waiting for you, generation 1');
+
+    // Working, waiting for permission, observed, ended: each is disabled and says why.
+    expect((target(/session a1b2c3d4/) as HTMLInputElement).disabled).toBe(true);
+    expect(textOf(row('a1b2c3d4'))).toContain('Not ready: Claude is working. Wait until it is waiting for you.');
+    expect((target(/session b7c8d9e0/) as HTMLInputElement).disabled).toBe(true);
+    expect(textOf(row('b7c8d9e0'))).toContain('Not ready: Claude is waiting for permission. Answer that first.');
+    expect((target(/session d4e5f6a1/) as HTMLInputElement).disabled).toBe(true);
+    expect(textOf(row('d4e5f6a1'))).toContain('observed, Windows, live, Idle, generation 1');
+    expect(textOf(row('d4e5f6a1'))).toContain('Observed session: Mini-Summa only watches sessions it did not start, so it cannot type into them. You can continue it from the Claude app with Remote Control.');
+    expect((target(/session 2a3b4c5d/) as HTMLInputElement).disabled).toBe(true);
+    expect(textOf(row('2a3b4c5d'))).toContain('Ended: this session is not running. Resume it in its project first.');
+    // A disabled option is described by its reason for assistive technology.
+    const described = target(/session a1b2c3d4/).getAttribute('aria-describedby')!;
+    expect(document.getElementById(described)?.textContent).toContain('Not ready');
+  });
+
+  it('chooses nothing by itself when the session that wrote the report cannot take it', async () => {
+    await composer();
+    expect(within(review()).getAllByRole('radio').some((r) => (r as HTMLInputElement).checked)).toBe(false);
+    expect(textOf(review())).toContain('The session that wrote the report cannot take it right now. Choose another one, or wait.');
+    expect(textOf(review())).toContain('(wrote this report)');
+  });
+
+  it('defaults to the session that wrote the report when it can take it', async () => {
+    await composer({ eligibleOrigin: true });
+    expect((target(/session d4e5f6a1/) as HTMLInputElement).checked).toBe(true);
+    expect(textOf(review())).not.toContain('cannot take it right now');
+  });
+
+  it('will not send until the exact text has been inspected, and an edit takes the inspection back', async () => {
+    const { user } = await composer({ eligibleOrigin: true });
+    const send = () => within(review()).getByRole('button', { name: 'Send to Claude' }) as HTMLButtonElement;
+    expect(send().disabled).toBe(true);
+    await user.type(within(review()).getByRole('textbox', { name: 'Feedback for Claude' }), 'Use the fake clock in the second backoff test too.');
+    expect(send().disabled).toBe(true);
+    expect(textOf(review())).toContain('Inspect the exact text first. Nothing is sent until you confirm.');
+
+    await user.click(within(review()).getByRole('button', { name: 'Inspect exact text' }));
+    const shown = within(review()).getByRole('region', { name: 'Exact text that will be typed' });
+    expect(textOf(shown)).toContain('Mini-Summa will type this into GitManager, session d4e5f6a1 (managed, Windows) and press Enter.');
+    expect(textOf(shown)).toContain('Use the fake clock in the second backoff test too.');
+    expect(send().disabled).toBe(false);
+
+    await user.type(within(review()).getByRole('textbox', { name: 'Feedback for Claude' }), ' And run it on Linux.');
+    // The inspection panel is open and shows the new text, so it counts as inspected again.
+    expect(textOf(within(review()).getByRole('region', { name: 'Exact text that will be typed' }))).toContain('And run it on Linux.');
+    expect(send().disabled).toBe(false);
+    await user.click(within(review()).getByRole('button', { name: 'Hide exact text' }));
+    await user.type(within(review()).getByRole('textbox', { name: 'Feedback for Claude' }), ' More.');
+    expect(send().disabled).toBe(true);
+  });
+
+  it('asks in a dialog that names the destination, starts on Cancel, and sends nothing until confirmed', async () => {
+    const { user, app } = await composer({ eligibleOrigin: true });
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.type(within(review()).getByRole('textbox', { name: 'Feedback for Claude' }), 'Fix the second backoff test.');
+    await user.click(within(review()).getByRole('button', { name: 'Inspect exact text' }));
+    await user.click(within(review()).getByRole('button', { name: 'Send to Claude' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Send to GitManager, session d4e5f6a1 (managed, Windows)?' });
+    expect(textOf(dialog)).toContain('Mini-Summa will type this text into that terminal and press Enter.');
+    expect(within(dialog).getByLabelText('Text that will be typed').textContent).toBe('Fix the second backoff test.');
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(callsTo(spy, 'actions.create')).toHaveLength(0);
+    expect(callsTo(spy, 'deliveries.setReview')).toHaveLength(0);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(callsTo(spy, 'actions.create')).toHaveLength(0);
+  });
+
+  it('keeps the draft, types it, and reports the true outcome', async () => {
+    const { user, app } = await composer({ eligibleOrigin: true });
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.type(within(review()).getByRole('textbox', { name: 'Feedback for Claude' }), 'Fix the second backoff test.');
+    await user.click(within(review()).getByRole('button', { name: 'Inspect exact text' }));
+    await user.click(within(review()).getByRole('button', { name: 'Send to Claude' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Send to Claude' }));
+
+    await waitFor(() => expect(callsTo(spy, 'actions.create')).toHaveLength(1));
+    // The draft is saved first, so the record holds exactly what was typed; then the prompt goes with the session's generation and the report.
+    expect(callsTo(spy, 'deliveries.setReview')).toEqual([{ params: { id: 'dlv_gm_3' }, body: { review: 'follow_up_drafted', followUpDraft: 'Fix the second backoff test.' } }]);
+    expect(callsTo(spy, 'actions.create')).toEqual([{ body: { sessionKey: IDS.s.gmExternal, text: 'Fix the second backoff test.', expectGeneration: 1, reportId: 'rpt_gm_3', deliveryId: 'dlv_gm_3' } }]);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await within(review()).findByText(/^Typed into GitManager, session d4e5f6a1 \(managed, Windows\) and sent with Enter at /)).toBeTruthy();
+    await waitFor(() => expect(stepStatus('Sent to Claude')).toBe('done'));
+    expect(textOf(review())).toContain('What was typed:');
+    expect(textOf(review())).toContain('Fix the second backoff test.');
+    expect(app.server.data.deliveries.find((d) => d.id === 'dlv_gm_3')!.review).toBe('follow_up_sent');
+  });
+
+  it('shows the failure text and keeps everything for another try when the terminal could not take it', async () => {
+    const { user, app } = await composer({ eligibleOrigin: true });
+    app.demoState.promptFailure = 'Typing failed unexpectedly (the terminal closed). Look at the terminal to see whether anything arrived.';
+    await user.type(within(review()).getByRole('textbox', { name: 'Feedback for Claude' }), 'Try again later.');
+    await user.click(within(review()).getByRole('button', { name: 'Inspect exact text' }));
+    await user.click(within(review()).getByRole('button', { name: 'Send to Claude' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Send to Claude' }));
+    const outcome = await within(review()).findByText(/^Not sent: /);
+    expect(outcome.textContent).toBe('Not sent: Typing failed unexpectedly (the terminal closed). Look at the terminal to see whether anything arrived. Nothing is retried for you, and your text is kept.');
+    expect(outcome.getAttribute('role')).toBe('alert');
+    expect((within(review()).getByRole('textbox', { name: 'Feedback for Claude' }) as HTMLTextAreaElement).value).toBe('Try again later.');
+    expect(app.server.data.deliveries.find((d) => d.id === 'dlv_gm_3')!.review).toBe('follow_up_drafted');
+    expect((within(review()).getByRole('button', { name: 'Send to Claude' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('shows the core\'s refusal inside the dialog when the session changed since it was inspected', async () => {
+    const { user, app } = await composer({ eligibleOrigin: true });
+    await user.type(within(review()).getByRole('textbox', { name: 'Feedback for Claude' }), 'Check the logs.');
+    await user.click(within(review()).getByRole('button', { name: 'Inspect exact text' }));
+    await user.click(within(review()).getByRole('button', { name: 'Send to Claude' }));
+    // While the dialog is open the session starts working again: the core re-checks and refuses.
+    const s = app.server.data.sessions.find((x) => x.key === IDS.s.gmExternal)!;
+    s.state = 'working'; s.stateLabel = 'Working';
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Send to Claude' }));
+    expect(textOf(await within(dialog).findByRole('alert'))).toContain('Claude is not ready for input (working). Wait until it is waiting for you.');
+    expect(app.server.data.actions.some((a) => a.kind === 'claude_prompt' && a.text === 'Check the logs.')).toBe(false);
+    expect((within(review()).getByRole('textbox', { name: 'Feedback for Claude' }) as HTMLTextAreaElement).value).toBe('Check the logs.');
+  });
+
+  it('saves a draft on request and says so, and never loses the text when saving fails', async () => {
+    const { user, app } = await composer();
+    const field = within(review()).getByRole('textbox', { name: 'Feedback for Claude' });
+    await user.type(field, 'Draft for later.');
+    expect(textOf(review())).toContain('Not saved yet');
+    app.demoState.failNext.set('deliveries.setReview', new ApiError(500, 'x', 'The database is locked.'));
+    await user.click(within(review()).getByRole('button', { name: 'Save draft' }));
+    expect(textOf(await within(review()).findByRole('alert'))).toContain('The database is locked.');
+    expect((field as HTMLTextAreaElement).value).toBe('Draft for later.');
+    await user.click(within(review()).getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(textOf(review())).toContain('Draft saved'));
+    expect(app.server.data.deliveries.find((d) => d.id === 'dlv_gm_3')).toMatchObject({ review: 'follow_up_drafted', followUpDraft: 'Draft for later.' });
+    expect(stepStatus('Follow-up prepared')).toBe('done');
+  });
+
+  it('comes back with the saved draft', async () => {
+    const app = await renderFeature({ route: { reportId: 'rpt_gm_3' } });
+    changeDelivery(app.server, 'dlv_gm_3', { review: 'follow_up_drafted', followUpDraft: 'Saved earlier.' });
+    const field = await within(await screen.findByRole('region', { name: 'Review' })).findByRole('textbox', { name: 'Feedback for Claude' });
+    expect((field as HTMLTextAreaElement).value).toBe('Saved earlier.');
+    expect(textOf(review())).toContain('Draft saved');
+  });
+
+  it('says so when the project has no session to send to', async () => {
+    const app = await renderFeature({ route: { reportId: 'rpt_docs_1' } });
+    changeDelivery(app.server, 'dlv_docs_1', { state: 'user_confirmed_sent', review: 'received' });
+    await userEvent.setup().click(await within(await screen.findByRole('region', { name: 'Review' })).findByRole('button', { name: 'Write a follow-up for Claude' }));
+    // The Docs project has one session, and it is disconnected.
+    expect(textOf(review())).toContain('Disconnected: Mini-Summa lost this terminal');
+    expect((within(review()).getByRole('button', { name: 'Send to Claude' }) as HTMLButtonElement).disabled).toBe(true);
   });
 });

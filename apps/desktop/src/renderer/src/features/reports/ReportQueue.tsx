@@ -75,7 +75,7 @@ export function ReportQueue({ mode, onMode, selectedReportId, onSelectReport, se
 
   const tabs = [
     { id: 'reports', label: 'Reports' },
-    { id: 'other', label: unmarked ? `Other messages (${unmarked})` : 'Other messages', title: 'Other final messages' },
+    { id: 'other', label: unmarked ? `Other messages (${unmarked})` : 'Other messages' },
   ];
 
   return (

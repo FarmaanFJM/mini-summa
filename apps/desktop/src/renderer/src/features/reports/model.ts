@@ -139,6 +139,10 @@ const DESTINATION_CHANGE: readonly DeliveryState[] = ['destination_missing', 'de
 export const isClosed = (state: DeliveryState): boolean => CLOSED.includes(state);
 export const canDiscard = (state: DeliveryState): boolean => !CLOSED.includes(state);
 
+const splitNote = (total: number): string[] => (total > 1
+  ? [`This message is long, so it has ${total} parts. Copy and open copies part 1 first. Paste and send each part in order; the parts tell ChatGPT not to answer until the last one.`]
+  : []);
+
 const handoffLabel = (part: number, total: number): string => (total > 1 ? `Copy part ${part} of ${total} and open` : 'Copy and open');
 
 export function handoffPlan(delivery: Delivery, ctx: HandoffContext): HandoffPlan {
@@ -173,14 +177,14 @@ export function handoffPlan(delivery: Delivery, ctx: HandoffContext): HandoffPla
     case 'destination_unverified':
       return {
         ...base, headline: STATE_LABEL.destination_unverified,
-        body: ['Mini-Summa has not confirmed that this address opens the conversation you mean. Open it first to check, or copy and open anyway.'],
+        body: ['Mini-Summa has not confirmed that this address opens the conversation you mean. Open it first to check, or copy and open anyway.', ...splitNote(total)],
         primary: copyButton, secondary: [{ id: 'open', label: 'Open to check it first' }], quiet: [discard], alternatives: alternatives(true),
       };
 
     case 'ready_for_handoff':
       return {
         ...base, headline: STATE_LABEL.ready_for_handoff,
-        body: ['Copy and open puts the message on your clipboard and opens the conversation. You paste it and press Send in ChatGPT yourself.'],
+        body: ['Copy and open puts the message on your clipboard and opens the conversation. You paste it and press Send in ChatGPT yourself.', ...splitNote(total)],
         primary: copyButton, secondary: [{ id: 'open', label: 'Open to check it first' }], quiet: [discard], alternatives: alternatives(true),
       };
 
