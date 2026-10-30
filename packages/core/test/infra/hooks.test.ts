@@ -565,9 +565,11 @@ describe('a plan is consent to one exact change', () => {
     for (const hash of [other.planHash, 'f'.repeat(64), '', install.planHash.toUpperCase()]) {
       expect(await rejection(c.service.apply('posix', 'install', hash))).toMatchObject({ status: 409, code: 'plan_stale' });
     }
-    const wrongAction = await rejection(c.service.apply('posix', 'uninstall', install.planHash));
-    expect(wrongAction.status).toBe(409);
-    expect(JSON.stringify(JSON.parse(read(c.settingsPath)))).toBe(JSON.stringify(userSettings()));
+    // the hash of the (noop) uninstall plan does not authorise the install
+    const uninstall = await c.service.plan('posix', 'uninstall');
+    expect(uninstall.action).toBe('noop');
+    expect(await rejection(c.service.apply('posix', 'install', uninstall.planHash))).toMatchObject({ status: 409, code: 'plan_stale' });
+    expect(read(c.settingsPath)).toBe(canon(userSettings()));
   });
 
   it('notices a change made while the backup was being taken', async () => {
@@ -749,11 +751,11 @@ describe('Windows and WSL command lines (built by the PoC builder; Windows is NO
     expect(hook.command).toBe('"/usr/bin/node" "/mnt/c/Program Files/Mini-Summa/resources/capture.mjs" --spool "/mnt/c/Users/me/AppData/Roaming/Mini-Summa/spool/wsl-Ubuntu-22.04" --registry "/mnt/c/Users/me/AppData/Roaming/Mini-Summa/registry.json" --env wsl:Ubuntu-22.04 --handler ms-user Stop');
   });
 
-  it('tags the backup of a WSL environment without the colon', async () => {
+  it('tags the backup of a WSL environment with the same tag the PoC layout uses (no colon, no dots)', async () => {
     const c = setup({ layouts: (r) => ({ 'wsl:Ubuntu-22.04': posixLayout(r, { env: 'wsl:Ubuntu-22.04' }) }) });
     write(c.settingsPath, canon({ model: 'opus' }));
     const plan = await c.service.plan('wsl:Ubuntu-22.04', 'install');
-    expect(path.basename(plan.backupPath)).toBe('settings-wsl-Ubuntu-22.04-20261030T141500Z.json');
+    expect(path.basename(plan.backupPath)).toBe('settings-wsl-Ubuntu-22-04-20261030T141500Z.json');
   });
 });
 

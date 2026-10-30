@@ -52,9 +52,10 @@ export function socketFactory(now: () => number): { Ctor: SocketCtor; sockets: F
 
 export class MemoryArea implements StorageAreaLike {
   data: Record<string, unknown> = {};
-  /** Mirrors chrome.storage.onChanged: called, asynchronously, after every single write. */
+  /** Mirrors chrome.storage.onChanged: called after every single write. Synchronous on purpose: the worst case, a listener
+   *  that reads the storage before the next write of the same logical update has happened. */
   onChange: (() => void) | null = null;
-  private notify(): void { const cb = this.onChange; if (cb) queueMicrotask(cb); }
+  private notify(): void { this.onChange?.(); }
   async get(keys: string[]): Promise<Record<string, unknown>> {
     const out: Record<string, unknown> = {};
     for (const k of keys) if (k in this.data) out[k] = this.data[k];

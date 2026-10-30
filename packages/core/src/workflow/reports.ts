@@ -180,7 +180,7 @@ export function createReportsService(deps: ReportsServiceDeps): ReportsService {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'marker', ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
         [r.reportId, r.sessionKey, r.env, r.sessionId, r.generation, existingProjectId(db, r.projectId), r.projectName, r.promptId, r.taskId,
           r.taskTitle, r.declaredStatus, packText(r.body), r.bodySha256, r.cwd, int(r.late), int(r.stopHookActive), r.capturedSeq, r.note,
-          r.capturedAt, 0, 0],
+          r.capturedAt, count(r.redactions), count(r.truncations)],
       );
       const created = res.changes === 1;
       const report = summary(r.reportId)!;
