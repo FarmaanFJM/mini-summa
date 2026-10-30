@@ -122,10 +122,11 @@ function ensureSpoolDir(spool) {
 // directory (not a link), owned by this user, group- or world-accessible, holding only what the hook and the ingestor put there
 // (pending files, temp files, done/, quarantine/). The directory somebody pointed --spool at by mistake is left as it is.
 // Best effort: the capture must not fail over this, and the common case (already private) costs one lstat.
-const OURS = /^(?:\d+-[0-9a-f-]{36}\.json|\.tmp-[0-9a-f-]{36}|done|quarantine)$/;
 function tightenSpoolDir(spool) {
   if (process.platform === 'win32') return;
   try {
+    // inside the function: main() runs before the declarations further down this file have been evaluated
+    const OURS = /^(?:\d+-[0-9a-f-]{36}\.json|\.tmp-[0-9a-f-]{36}|done|quarantine)$/;
     const st = fs.lstatSync(spool);
     if (!st.isDirectory() || (st.mode & 0o077) === 0) return;
     if (typeof process.getuid === 'function' && st.uid !== process.getuid()) return;

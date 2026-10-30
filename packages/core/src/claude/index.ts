@@ -15,3 +15,4 @@ export { createSessionsService } from './sessions.ts';
 export type { ObserverSessionsService, ProjectsPort, SessionsDeps } from './sessions.ts';
 export { createRegistryFileWriter, writeFileAtomic } from './registryFile.ts';
 export { createManagedManager } from './managed.ts';
+export type { ManagedManagerExtras } from './managed.ts';

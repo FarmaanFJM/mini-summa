@@ -34,7 +34,7 @@ function redactPem(s, counter) {
       let run = /^[A-Za-z0-9+/=\\\r\n]*/.exec(window)[0]; // base64 lines, or the same with escaped newlines
       if (/^[ \t]/.test(window.slice(run.length))) run = run.slice(0, run.lastIndexOf('\n') + 1); // do not eat the first word of prose that follows
       if (run.replace(/[\s\\]/g, '').length < PEM_MIN_BODY) continue; // the header mentioned in prose, with no key after it: nothing to hide
-      stop = bodyStart + run.length;
+      stop = bodyStart + run.replace(/[\r\n]+$/, '').length;           // the line break that ends the key stays outside the hidden part
     }
     out += s.slice(from, m.index) + REDACTED;
     from = stop;

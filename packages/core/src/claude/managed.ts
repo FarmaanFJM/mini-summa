@@ -241,14 +241,14 @@ const clampInt = (value: unknown, fallback: number, min: number, max: number): n
 // into one string, and the program then parses it again): the double quote and the backslash, the typographic quotes
 // U+2018..U+201F (some Windows code pages convert them to a plain quote when a program reads its command line as ANSI text),
 // and the full-width quote, apostrophe and backslash U+FF02 / U+FF07 / U+FF3C that convert the same way.
-const NAME_QUOTE_CHARS = /["\\‘-‟＂＇＼]/g;
+const NAME_QUOTE_CHARS = /["\\\u2018-\u201f\uff02\uff07\uff3c]/g;
 
 /**
  * Session names become command-line arguments (`--name <name>`, `--remote-control <name>`). Control characters are replaced by
- * spaces. Double quotes, backslashes and typographic quotes are removed (not escaped: no escaping is reliable across the
- * programs a command line passes through), so "Bob’s \"fix\"" becomes "Bobs fix". A name that starts with a dash is refused:
- * as the optional value of `--remote-control` it would be read as the next option (for example
- * `--dangerously-skip-permissions`).
+ * spaces. Double quotes, backslashes and typographic quotes are removed, not escaped: no escaping is reliable across the
+ * programs a command line passes through (a name with a curly apostrophe and quoted words comes out as plain words). A name
+ * that starts with a dash is refused: as the optional value of `--remote-control` it would be read as the next option (for
+ * example `--dangerously-skip-permissions`).
  */
 export function normalizeSessionName(raw: string | null | undefined): string | null {
   // eslint-disable-next-line no-control-regex

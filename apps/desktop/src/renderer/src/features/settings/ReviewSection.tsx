@@ -1,5 +1,5 @@
 import { DEFAULT_REVIEW_REQUEST } from '@minisumma/shared';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '../../app/runtime';
 import { activeProjects } from '../../app/selectors';
 import { Button, Field, TextArea, TextInput } from '../../ui';
@@ -10,27 +10,27 @@ import { useSettings } from './useSettings';
 const MAX_TEMPLATE = 4000;
 
 /**
- * The words that go with every report handed to ChatGPT, and how long a part may be. The text is kept as the person typed
- * it until Save works; if Save fails it is still there.
+ * The words that go with every report handed to ChatGPT, and how long a part may be.
+ *
+ * What the person typed is a draft: until they type, the fields show what the core has (even if it arrives late or changes
+ * from another window); once they type, the draft is theirs until it is saved or discarded. If Save fails the draft is
+ * still there.
  */
 export function ReviewSection() {
   const { settings, save, status } = useSettings();
   const projects = useApp((s) => s.projects);
   const stored = settings?.review ?? null;
 
-  const [template, setTemplate] = useState(stored?.requestTemplate ?? '');
-  const [partText, setPartText] = useState(stored ? String(stored.maxPartChars) : '');
+  const [templateDraft, setTemplateDraft] = useState<string | null>(null);
+  const [partDraft, setPartDraft] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Follow the core when it changes somewhere else, unless there is an unsaved edit here.
-  const templateDirty = stored !== null && template !== stored.requestTemplate;
-  const partDirty = stored !== null && partText.replace(/[\s,]/g, '') !== String(stored.maxPartChars);
-  const storedTemplate = stored?.requestTemplate;
-  const storedPart = stored?.maxPartChars;
-  useEffect(() => { if (storedTemplate !== undefined && !templateDirty) setTemplate(storedTemplate); }, [storedTemplate, templateDirty]);
-  useEffect(() => { if (storedPart !== undefined && !partDirty) setPartText(String(storedPart)); }, [storedPart, partDirty]);
-
+  const template = templateDraft ?? stored?.requestTemplate ?? '';
+  const partText = partDraft ?? (stored ? String(stored.maxPartChars) : '');
+  const templateDirty = stored !== null && templateDraft !== null && templateDraft !== stored.requestTemplate;
   const partSize = parsePartSize(partText);
+  const partDirty = stored !== null && partDraft !== null && partSize !== stored.maxPartChars;
+
   const partProblem = partSize === null ? 'Use a whole number from 2,000 to 100,000.' : undefined;
   const templateProblem = template.length > MAX_TEMPLATE ? `The request can be at most ${count(MAX_TEMPLATE)} characters.` : undefined;
   const projectName = activeProjects(projects)[0]?.name ?? 'Your project';
@@ -41,12 +41,20 @@ export function ReviewSection() {
 
   const dirty = templateDirty || partDirty;
   const canSave = dirty && partProblem === undefined && templateProblem === undefined;
+  const parts = partCountFor(preview.length, partSize ?? stored.maxPartChars);
 
   const saveAll = async () => {
     if (partSize === null) return;
+    const sentTemplate = templateDirty ? template : null;
+    const sentPart = partDirty ? partText : null;
     setSaving(true);
-    await save({ review: { ...(templateDirty ? { requestTemplate: template } : {}), ...(partDirty ? { maxPartChars: partSize } : {}) } });
+    const ok = await save({ review: { ...(sentTemplate !== null ? { requestTemplate: sentTemplate } : {}), ...(sentPart !== null ? { maxPartChars: partSize } : {}) } });
     setSaving(false);
+    // Only what was sent is let go. Anything typed while the save ran stays a draft.
+    if (ok) {
+      setTemplateDraft((d) => (d === sentTemplate ? null : d));
+      setPartDraft((d) => (d === sentPart ? null : d));
+    }
   };
 
   return (
@@ -55,10 +63,10 @@ export function ReviewSection() {
 
       <Group title="The request" note="This text follows every report you hand to ChatGPT. Leave it empty to hand over the report without a request.">
         <Field label="Request to the reviewer" error={templateProblem} aside={<span className="ms-x-note">{count(template.length)} of {count(MAX_TEMPLATE)}</span>}>
-          <TextArea rows={5} value={template} onChange={(e) => setTemplate(e.target.value)} />
+          <TextArea rows={5} value={template} onChange={(e) => setTemplateDraft(e.target.value)} />
         </Field>
         <div className="ms-x-actions">
-          <Button size="sm" variant="ghost" disabled={template === DEFAULT_REVIEW_REQUEST} onClick={() => setTemplate(DEFAULT_REVIEW_REQUEST)}>Use the standard request</Button>
+          <Button size="sm" variant="ghost" disabled={template === DEFAULT_REVIEW_REQUEST} onClick={() => setTemplateDraft(DEFAULT_REVIEW_REQUEST)}>Use the standard request</Button>
         </div>
       </Group>
 
@@ -69,8 +77,12 @@ export function ReviewSection() {
           checked={includeRef}
           onChange={(v) => { void save({ review: { includeSessionRef: v } }); }}
         />
-        <Field label="Longest part, in characters" error={partProblem} hint={`A message longer than this is split into parts you paste one after another. Each part says which one it is. At this size the example below is ${partCountFor(preview.length, partSize ?? stored.maxPartChars)} ${partCountFor(preview.length, partSize ?? stored.maxPartChars) === 1 ? 'part' : 'parts'}.`}>
-          <TextInput inputMode="numeric" value={partText} onChange={(e) => setPartText(e.target.value)} autoComplete="off" />
+        <Field
+          label="Longest part, in characters"
+          error={partProblem}
+          hint={`A message longer than this is split into parts you paste one after another. Each part says which one it is. At this size the example below is ${parts} ${parts === 1 ? 'part' : 'parts'}.`}
+        >
+          <TextInput inputMode="numeric" value={partText} onChange={(e) => setPartDraft(e.target.value)} autoComplete="off" />
         </Field>
       </Group>
 
@@ -80,7 +92,7 @@ export function ReviewSection() {
 
       <div className="ms-x-actions">
         <Button variant="primary" loading={saving} disabled={!canSave} onClick={() => { void saveAll(); }}>Save</Button>
-        <Button disabled={!dirty || saving} onClick={() => { setTemplate(stored.requestTemplate); setPartText(String(stored.maxPartChars)); }}>Discard changes</Button>
+        <Button disabled={!dirty || saving} onClick={() => { setTemplateDraft(null); setPartDraft(null); }}>Discard changes</Button>
       </div>
     </div>
   );

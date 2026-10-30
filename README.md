@@ -26,7 +26,10 @@ It is not an agent loop. Nothing is sent to ChatGPT or typed into Claude unless 
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, data flow and the product rules the code enforces |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, what is stored where, public-repository policy |
 | [docs/VERIFICATION.md](docs/VERIFICATION.md) | What was tested, at which layer, and what was not |
+| [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) | The 25 desktop behaviours and the four-project scenario, one row each, generated from the run |
+| [docs/WINDOWS_VERIFICATION.md](docs/WINDOWS_VERIFICATION.md) | The 40-minute checklist for what only a Windows PC can confirm |
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | Prioritised remaining limitations |
+| [docs/UI_PRINCIPLE_EXCEPTIONS.md](docs/UI_PRINCIPLE_EXCEPTIONS.md) | Where the interface differs from the vendored Summa-UI guidance, and why |
 
 ## Repository layout
 
@@ -50,6 +53,8 @@ Requires Node.js 22.12 or newer and Claude Code installed on the machine that ru
 npm install
 npm run dev            # builds the hook script and the app, then launches the desktop app
 npm test               # unit and integration suites of every workspace
+npm run verify         # every layer this machine can run (types, unit, integration, browser, Electron), PASS/FAIL/NOT RUN
+npm run verify:claude  # drives your real Claude Code through the core: launch, hooks, report, approve, reject, restart, resume
 npm run core -- --print-connection   # the core without the desktop shell (prints its address and token)
 ```
 

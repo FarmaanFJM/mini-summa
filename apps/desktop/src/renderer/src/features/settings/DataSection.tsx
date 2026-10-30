@@ -32,7 +32,7 @@ function Storage({ usage }: { usage: Usage }) {
   const u = usage.usage;
   return (
     <>
-      <dl className="ms-x-kv" aria-label="What is stored">
+      <dl className="ms-x-kv" aria-label="Storage details">
         <dt>Data folder</dt>
         <dd className="ms-set-inline"><span className="ms-mono ms-break">{u.dataDir}</span><CopyButton text={u.dataDir} label="Copy the folder path" announce={false} /></dd>
         <dt>Database size</dt><dd>{formatBytes(u.databaseBytes)}</dd>
@@ -51,38 +51,35 @@ function Storage({ usage }: { usage: Usage }) {
   );
 }
 
-type DaysText = Record<keyof RetentionSettings, string>;
+type Draft = Partial<Record<keyof RetentionSettings, string>>;
 
-const toText = (s: RetentionSettings | null): DaysText => ({
-  rawEventsDays: String(s?.rawEventsDays ?? 0), activityDays: String(s?.activityDays ?? 0),
-  notificationsDays: String(s?.notificationsDays ?? 0), reportsDays: String(s?.reportsDays ?? 0),
-});
-
-/** The limits. What is typed stays as typed until it is valid and saved; a failed save leaves it all in place. */
+/**
+ * The limits. Until a field is typed in it shows what the core has, however late that arrives; once typed in, the text is
+ * the person's until it is valid and saved. A failed save leaves every field as typed.
+ */
 function Retention({ onDirty }: { onDirty: (dirty: boolean) => void }) {
   const { settings, save, status } = useSettings();
   const stored = settings?.retention ?? null;
-  const [text, setText] = useState<DaysText>(() => toText(stored));
+  const [draft, setDraft] = useState<Draft>({});
   const [saving, setSaving] = useState(false);
 
-  const parsed = Object.fromEntries(RETENTION_FIELDS.map((f) => [f.key, parseDays(text[f.key])])) as Record<keyof RetentionSettings, number | null>;
-  const dirtyKeys = stored ? RETENTION_FIELDS.filter((f) => parsed[f.key] !== stored[f.key]).map((f) => f.key) : [];
+  const text = (k: keyof RetentionSettings): string => draft[k] ?? (stored ? String(stored[k]) : '');
+  const parsed = Object.fromEntries(RETENTION_FIELDS.map((f) => [f.key, parseDays(text(f.key))])) as Record<keyof RetentionSettings, number | null>;
+  const dirtyKeys = stored ? RETENTION_FIELDS.filter((f) => draft[f.key] !== undefined && parsed[f.key] !== stored[f.key]).map((f) => f.key) : [];
   const valid = RETENTION_FIELDS.every((f) => parsed[f.key] !== null);
   const dirty = dirtyKeys.length > 0;
   useEffect(() => { onDirty(dirty); }, [dirty, onDirty]);
-
-  // Follow the core when it changes from somewhere else, unless there are unsaved edits here.
-  const storedKey = stored ? RETENTION_FIELDS.map((f) => stored[f.key]).join(',') : '';
-  // (`stored` is read through storedKey, which changes exactly when one of its numbers does.)
-  useEffect(() => { if (storedKey !== '' && !dirty) setText(toText(stored)); }, [storedKey, dirty]);
 
   if (!stored) return <p className="ms-x-note">Settings are not loaded yet.</p>;
 
   const apply = async () => {
     if (!valid) return;
+    const sent = Object.fromEntries(dirtyKeys.map((k) => [k, draft[k] as string])) as Draft;
     setSaving(true);
-    await save({ retention: Object.fromEntries(dirtyKeys.map((k) => [k, parsed[k] as number])) });
+    const ok = await save({ retention: Object.fromEntries(dirtyKeys.map((k) => [k, parsed[k] as number])) });
     setSaving(false);
+    // Only what was sent is let go. A field typed in while the save ran stays as typed.
+    if (ok) setDraft((d) => Object.fromEntries(Object.entries(d).filter(([k, v]) => sent[k as keyof RetentionSettings] !== v)) as Draft);
   };
 
   return (
@@ -94,13 +91,13 @@ function Retention({ onDirty }: { onDirty: (dirty: boolean) => void }) {
       <div className="ms-set-fields">
         {RETENTION_FIELDS.map((f) => (
           <Field key={f.key} label={`${f.label}, days`} hint={f.hint} error={parsed[f.key] === null ? 'Use a whole number of days from 0 to 3650.' : undefined}>
-            <TextInput inputMode="numeric" value={text[f.key]} onChange={(e) => setText((t) => ({ ...t, [f.key]: e.target.value }))} autoComplete="off" />
+            <TextInput inputMode="numeric" value={text(f.key)} onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))} autoComplete="off" />
           </Field>
         ))}
       </div>
       <div className="ms-x-actions">
         <Button variant="primary" loading={saving} disabled={!dirty || !valid} onClick={() => { void apply(); }}>Save limits</Button>
-        <Button disabled={!dirty || saving} onClick={() => setText(toText(stored))}>Discard changes</Button>
+        <Button disabled={!dirty || saving} onClick={() => setDraft({})}>Discard changes</Button>
       </div>
     </Group>
   );

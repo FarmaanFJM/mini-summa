@@ -91,7 +91,7 @@ describe('hooks', () => {
   it('words the runtime that runs the hooks', () => {
     expect(runtimeWords({ command: 'electron', kind: 'electron', version: '33' })).toContain('Node.js is not needed');
     expect(runtimeWords({ command: 'node', kind: 'node', version: '22.1' })).toBe('node, version 22.1');
-    expect(runtimeWords({ command: '', kind: 'none', version: null })).toContain('Hooks cannot run until Node.js is installed');
+    expect(runtimeWords({ command: '', kind: 'missing', version: null })).toContain('Hooks cannot run until Node.js is installed');
   });
 
   it('gives exact install commands per environment', () => {
@@ -168,7 +168,7 @@ describe('the setup steps', () => {
   });
   const project = (id: string, name = id): Project => ({ id, name } as Project);
   const conversation = (projectId: string): Conversation => ({ id: `c_${projectId}`, projectId } as Conversation);
-  const session = (origin: SessionView['origin']): SessionView => ({ key: 'win|x', origin } as SessionView);
+  const session = (origin: SessionView['origin']): SessionView => ({ key: 'win|x', origin } as unknown as SessionView);
   const hooks = (installed: boolean): HookStatus => ({
     env: 'win', configDir: '', settingsPath: '', settingsExists: true, installed, events: installed ? ['Stop'] : [], missingEvents: [], duplicateRegistrations: false,
     runtime: { command: 'node', kind: 'node', version: null }, captureScript: '', issues: [],
@@ -203,7 +203,7 @@ describe('the setup steps', () => {
     expect(s.conversation.done).toBe(true);
     expect(s.session.done).toBe(true);
     // A conversation of a project that is no longer active does not count, and an observed session is not one Mini-Summa started.
-    const g = byId(facts({ projects: [project('p1')], conversations: [conversation('gone')], sessions: [session('observed')] }));
+    const g = byId(facts({ projects: [project('p1')], conversations: [conversation('gone')], sessions: [session('external')] }));
     expect(g.conversation.done).toBe(false);
     expect(g.session.done).toBe(false);
     expect(g.conversation.detail).toContain('Paste the address');
