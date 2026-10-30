@@ -43,7 +43,11 @@ Windows, no WSL2, no phone and no ChatGPT login. Until you have done them, treat
 <!-- TODO(verify) fill from the final acceptance results and review -->
 
 * **Redaction is pattern based.** It catches the usual shapes of keys, tokens, private keys, passwords in URLs and command
-  lines, but it cannot know a secret that looks like ordinary text. Each report shows the number of replacements.
+  lines, but it cannot know a secret that looks like ordinary text. It does not cover lower-case or dotted names
+  (`password=x`, `db.password=x`), YAML or JSON text such as `password: x`, `-p secret`, `Cookie:` and `X-API-Key:` headers,
+  ADO.NET `Password=...;`, secrets mentioned in a sentence, or anything encoded or split. Placeholders with the shape of a
+  credential (`user:pass@host`) are hidden too, because they cannot be told apart. Each report shows the number of
+  replacements, including zero.
 * **"Someone typed and has not pressed Enter" is a heuristic.** It follows the keystrokes Mini-Summa forwards to the terminal.
   A digit typed at a start-up dialog without Enter keeps the flag until Enter, Escape, Ctrl-C or Ctrl-U; a phone prompt left
   unsubmitted does not set it; terminals that use the kitty keyboard protocol are not understood. A remote permission approval

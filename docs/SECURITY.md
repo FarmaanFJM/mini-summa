@@ -137,6 +137,32 @@ These are product rules the code enforces, and tests pin each of them.
 * **Code signing.** The Windows installer is not code-signed, so SmartScreen will warn. An Android APK, when you build one,
   is signed with a key on your own machine and is meant for sideloading on your own phone.
 
+## The independent security review
+
+Before release, a separate reviewer read the code and attacked a running core (headless, fake Claude CLI) with forged hook
+files, malformed requests, every route under every kind of token, pairing abuse, path tricks and a hostile local process. It
+found no critical or high issue; transport, authentication, scopes and pairing held under test. Fifteen weaker findings are
+recorded here with what was done. Every fix has tests, and each fix was also checked by breaking it on purpose to see the test
+fail.
+
+| ID | Severity | Finding | Outcome |
+| --- | --- | --- | --- |
+| SEC-01 | medium | A forged or repeated permission request let an approval answer a different dialog than the one shown | Fixed. Approvals carry the id of the request shown and are refused when another is open |
+| SEC-02 | medium | Redaction missed common secret shapes | Fixed. 32 shapes now covered, false positives measured against 20,000 files; limits listed in LIMITATIONS |
+| SEC-03 | low-medium | A phone prompt could be typed after text the desktop user had already typed | Fixed with a heuristic guard |
+| SEC-04 | low-medium | A phone could flip another delivery's review state | Fixed. Ids from devices are ignored; the state moves only when the typed text equals the stored draft |
+| SEC-05 | low | A revoked device's waiting prompts stayed approvable | Fixed. They are rejected on revocation |
+| SEC-06 | low | Anyone could lock out pairing by flooding it | Fixed. Only failures are counted |
+| SEC-07 | low | Data directory, database and backups were readable by other local users on POSIX | Fixed. Directories 0700, files 0600, including the spool |
+| SEC-08 | low | The hook installer followed a symbolic link without saying so | Fixed. The plan names the real file and warns first |
+| SEC-09 | low | The project name is in push titles | Accepted and documented. Mitigations in "Secrets and data" |
+| SEC-10 | low | URL classifier and browsers disagreed about backslashes | Fixed. Ambiguous addresses are refused |
+| SEC-11 | medium-low | A leftover Serve entry could hand phone traffic to another local process | Fixed. Serve ownership is recorded; the entry is removed on quit; no address is offered unless it points at the core |
+| SEC-12 | low | Funnel was detected but not refused | Fixed. Such requests get 403 |
+| SEC-13 | info | CSP, unrestricted device names | Fixed (`connect-src 'self'`, cleaned names). Read-scope devices can still mark reports and activity as read |
+| SEC-14 | medium if trusted | A phone prompt starting with `!` or `/` would run as a command in Claude Code | Fixed. Refused from non-desktop actors |
+| SEC-15 | low, Windows | Quoting and lookup order for session names, `wsl.exe`, `cmd.exe`, `tailscale` and hook paths | Fixed in code with string-level tests. **Not run on Windows** |
+
 ## Reporting a problem
 
 This is a personal project. Open an issue in the repository, and do not paste tokens, reports or hook payloads into it.
