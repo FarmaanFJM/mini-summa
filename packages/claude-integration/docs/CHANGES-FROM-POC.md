@@ -26,6 +26,7 @@ behaviour that did **not** change still pass.
 | 13 | `src/hook/capture.mjs` | The hook retries the rename of its record, so a scanner holding the new file does not lose the event |
 | 14 | `src/lib/discovery.mjs` | The deadline of `claude agents --json` also ends the children of a Windows `.cmd` launcher, and the command's input is closed |
 | 15 | `src/lib/registry.mjs` | `\\?\` and `\\.\` paths are read as the path they name; the name of a WSL distribution is compared without case |
+| 16 | `src/lib/setup.mjs` | The Windows hook that runs the Electron executable waits for it: the call is made part of a pipeline (`| Write-Output`) |
 
 ## 1. A spool record that cannot be ordered no longer wedges ingestion
 
@@ -428,6 +429,25 @@ behaviour that did **not** change still pass.
   `\\?\` working directory is not known; the change makes it harmless if it does. Junctions, 8.3 short names and symbolic links
   are resolved by `realpath` in the hook only (when `real` is true, which is the default there); the core builds its registry with
   `{ real: false }` and compares strings.
+
+## 16. The Windows hook waits for the Electron executable
+
+- **Proof of concept.** The hook ran `node.exe`, a console program, which PowerShell always waits for. The product runs the hook with the
+  application's own executable in Node mode when the PC has no Node (`runAsNode`), and the first version of that form was
+  `$env:ELECTRON_RUN_AS_NODE='1'; & "<exe>" "<capture>" ...`.
+- **Why that is a problem (found by reading, not by running).** `Mini-Summa.exe` is a Windows-subsystem (GUI) program. PowerShell does not
+  wait for a GUI program that is the only command of its pipeline, so on Windows the hook could return before `capture.mjs` had run:
+  the `SessionStart` context that carries the report protocol could be lost, and the hook's 5-second limit would not bound the script.
+  The audit of the desktop shell raised this as W-11 and could not confirm it without Windows.
+- **Now.** With `runAsNode` the Windows command ends with ` | Write-Output`. A call that is part of a pipeline is waited for, and its output
+  is passed on to the hook's output. Without `runAsNode` (a console `node.exe`), and for POSIX and WSL, nothing changes. The script's
+  output is ASCII, so PowerShell's re-encoding of it does no harm; the exit code of the hook is that of the last pipeline element, so
+  it stays 0.
+- **Windows: NOT TESTED.** The change follows PowerShell's documented behaviour for GUI programs (the `| Out-Null` idiom). Whether the
+  old form really returned early, and that the new form waits and still delivers the protocol text, must be confirmed on a Windows PC:
+  `docs/audit/windows-desktop.md`, check 8, and `docs/WINDOWS_VERIFICATION.md`.
+- **Tests** (`test/setup-runasnode.test.mjs`, `test/setup-tokens.test.mjs`): the exact command with and without `runAsNode`; the settings built
+  for every event carry the wait only with `runAsNode`; the other environments are byte-identical to before. These pin strings only.
 
 ## Additions that change no existing behaviour
 

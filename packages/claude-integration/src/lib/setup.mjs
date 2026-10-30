@@ -44,7 +44,7 @@ function hookToken(name, value, powershell) {
 // binary (the application's own, when the user has no node on PATH): the command then sets ELECTRON_RUN_AS_NODE=1 for
 // this one invocation so Electron behaves as plain Node. The variable is set inside the command, never globally.
 //   POSIX / WSL   ELECTRON_RUN_AS_NODE=1 "<exe>" "<capture>" --spool ...
-//   Windows       $env:ELECTRON_RUN_AS_NODE='1'; & "<exe>" "<capture>" --spool ...      (runs in PowerShell)
+//   Windows       $env:ELECTRON_RUN_AS_NODE='1'; & "<exe>" "<capture>" --spool ... | Write-Output   (runs in PowerShell; the pipe makes it wait)
 // Without `runAsNode` the output is exactly what it always was.
 export function hookCommand({ env, node, capture, spool, registry, handler, event, runAsNode }) {
   const parts = { node, capture, spool, registry, handler, event, env };
@@ -57,8 +57,13 @@ export function hookCommand({ env, node, capture, spool, registry, handler, even
     const h = hookToken('handler', handler, true); const e = hookToken('event', event, true);
     const q = (s) => `"${s}"`;
     const asNode = runAsNode ? "$env:ELECTRON_RUN_AS_NODE='1'; " : '';
+    // The Electron executable is a Windows-subsystem (GUI) program. PowerShell does not wait for a GUI program that is the only
+    // command of its pipeline, so the hook could return before capture.mjs ran, lose the SessionStart context it prints, and
+    // escape the timeout. Making the call part of a pipeline makes PowerShell wait for it and pass its output on. node.exe is a
+    // console program, which PowerShell always waits for, so that case is unchanged (docs/CHANGES-FROM-POC.md, change 16).
+    const wait = runAsNode ? ' | Write-Output' : '';
     return { type: 'command', shell: 'powershell', timeout: 5,
-      command: `${asNode}& ${q(node)} ${q(capture)} --spool ${q(spool)} --registry ${q(registry)} --env win --handler ${h} ${e}` };
+      command: `${asNode}& ${q(node)} ${q(capture)} --spool ${q(spool)} --registry ${q(registry)} --env win --handler ${h} ${e}${wait}` };
   }
   for (const [k, v] of Object.entries({ node, capture, spool, registry })) {
     if (/["\r\n]/.test(v) || v.includes('$') || v.includes('`')) throw new Error(`path for ${k} contains a character that is unsafe inside a shell string: ${v}`);

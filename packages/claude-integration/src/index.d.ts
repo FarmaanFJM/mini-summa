@@ -897,7 +897,7 @@ export interface HookCommandOptions {
   event: string;
   /**
    * Set `ELECTRON_RUN_AS_NODE=1` for this one invocation so an Electron executable acts as Node. POSIX and WSL:
-   * `ELECTRON_RUN_AS_NODE=1 "<exe>" ...`. Windows (PowerShell): `$env:ELECTRON_RUN_AS_NODE='1'; & "<exe>" ...`.
+   * `ELECTRON_RUN_AS_NODE=1 "<exe>" ...`. Windows (PowerShell): `$env:ELECTRON_RUN_AS_NODE='1'; & "<exe>" ... | Write-Output` (the pipe makes PowerShell wait for the GUI-subsystem executable).
    * Absent or `false` leaves the command line exactly as it was.
    */
   runAsNode?: boolean;

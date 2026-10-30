@@ -770,7 +770,7 @@ describe('Windows and WSL command lines (built by the PoC builder; Windows is NO
     } }) });
     const cmd = JSON.parse((await c.service.plan('win', 'install')).after).hooks.SessionStart[0].hooks[0].command as string;
     expect(cmd.startsWith('$env:ELECTRON_RUN_AS_NODE=\'1\'; & "C:\\Apps\\Mini-Summa\\Mini-Summa.exe" "C:\\ms\\capture.mjs"')).toBe(true);
-    expect(cmd.endsWith('--env win --handler ms-user SessionStart')).toBe(true);
+    expect(cmd.endsWith('--env win --handler ms-user SessionStart | Write-Output')).toBe(true); // waits for the GUI-subsystem executable
     expect((await c.service.status('win')).runtime.kind).toBe('electron');
   });
 

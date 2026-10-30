@@ -53,7 +53,7 @@ test('CHANGE 3: a token with a character that splits arguments is quoted, so a W
   assert.equal(hook(win, { handler: 'my handler' }).shell, 'powershell');
   // runAsNode and quoting combine
   assert.match(hook(posix, { env: 'wsl:My Distro', runAsNode: true }).command, /^ELECTRON_RUN_AS_NODE=1 "\/usr\/bin\/node" .* --env "wsl:My Distro" --handler h1 Stop$/);
-  assert.match(hook(win, { handler: 'a b', runAsNode: true }).command, /^\$env:ELECTRON_RUN_AS_NODE='1'; & .* --env win --handler "a b" Stop$/);
+  assert.match(hook(win, { handler: 'a b', runAsNode: true }).command, /^\$env:ELECTRON_RUN_AS_NODE='1'; & .* --env win --handler "a b" Stop \| Write-Output$/);
   // buildSettings quotes the environment in all nine registrations, and keeps handlers apart
   const s = buildSettings({ ...posix, env: 'wsl:My Distro', handlers: ['h 1', 'h2'] });
   for (const ev of EVENTS) {

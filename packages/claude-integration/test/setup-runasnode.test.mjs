@@ -25,6 +25,9 @@ const GOLDEN = {
   posix: '"/opt/Mini Summa/mini-summa" "/home/u/.mini-summa/hook/capture.mjs" --spool "/home/u/.mini-summa/spool" --registry "/home/u/.mini-summa/registry.json" --env posix --handler h1 Stop',
 };
 const PS_PREFIX = "$env:ELECTRON_RUN_AS_NODE='1'; ";
+// The Electron executable is a GUI-subsystem program, which PowerShell does not wait for when it is the only command of a pipeline
+// (change 16): the call is therefore made part of a pipeline, which also passes the script's output on.
+const PS_WAIT = ' | Write-Output';
 const SH_PREFIX = 'ELECTRON_RUN_AS_NODE=1 ';
 const stop = (c, extra = {}) => hookCommand({ ...c, handler: 'h1', event: 'Stop', ...extra });
 const messageOf = (fn) => { try { fn(); } catch (e) { return e.message; } return null; };
@@ -53,10 +56,31 @@ test('runAsNode on POSIX and WSL: the command starts with ELECTRON_RUN_AS_NODE=1
 
 test('runAsNode on Windows: PowerShell assignment, then the call operator with the quoted executable', () => {
   const h = stop(cfg.win, { runAsNode: true });
-  assert.equal(h.command, PS_PREFIX + GOLDEN.win);
+  assert.equal(h.command, PS_PREFIX + GOLDEN.win + PS_WAIT);
   assert.equal(h.shell, 'powershell'); assert.equal(h.timeout, 5); assert.equal(h.type, 'command');
   assert.ok(h.command.startsWith(`$env:ELECTRON_RUN_AS_NODE='1'; & "C:\\Program Files\\MiniSumma\\MiniSumma.exe" "C:\\Users\\Some One\\AppData\\Roaming\\MiniSumma\\hook\\capture.mjs" --spool `));
-  assert.match(h.command, /--env win --handler h1 Stop$/);
+  assert.match(h.command, /--env win --handler h1 Stop \| Write-Output$/);
+  // without runAsNode the executable is a console program that PowerShell always waits for: nothing is added
+  assert.equal(stop(cfg.win).command, GOLDEN.win);
+  assert.ok(!stop(cfg.win).command.includes('Write-Output'));
+});
+
+test('CHANGE 16 (simulated Windows): the call to the Electron executable is a pipeline element so that PowerShell waits for it, on every event', () => {
+  // PowerShell starts a GUI-subsystem program without waiting when it is the only command of a pipeline; the hook would then return
+  // before the capture script has written the record. Piping the call into Write-Output makes PowerShell wait and passes the output on.
+  // This asserts the text of the command; whether Windows PowerShell then waits is a native check (docs/WINDOWS_VERIFICATION.md).
+  for (const ev of EVENTS) {
+    const h = hookCommand({ ...cfg.win, handler: 'h1', event: ev, runAsNode: true });
+    assert.ok(h.command.endsWith(` ${ev} | Write-Output`), `${ev}: ${h.command}`);
+    assert.equal((h.command.match(/Write-Output/g) ?? []).length, 1, 'exactly once, after the whole call');
+    assert.ok(h.command.indexOf(' | Write-Output') > h.command.indexOf('--handler h1'), 'the pipe comes after the arguments, never inside them');
+    assert.equal(h.shell, 'powershell');
+  }
+  // a console program (node.exe) is always waited for: without runAsNode, and on POSIX and WSL, nothing is added
+  for (const name of ['win', 'wsl', 'posix']) {
+    assert.ok(!stop(cfg[name]).command.includes('Write-Output'), `${name} without runAsNode`);
+  }
+  for (const name of ['posix', 'wsl']) assert.ok(!stop(cfg[name], { runAsNode: true }).command.includes('Write-Output'), `${name} with runAsNode`);
 });
 
 test('the unsafe-character guards still apply to every path with runAsNode on, with the same messages as with it off', () => {
@@ -95,8 +119,9 @@ test('required fields are still required, and runAsNode itself must be a boolean
 });
 
 test('buildSettings passes runAsNode to every event and every registration; without it the settings are unchanged', () => {
-  const stripPrefix = (settings, prefix) => ({ hooks: Object.fromEntries(Object.entries(settings.hooks).map(([ev, groups]) => [ev,
-    groups.map((g) => ({ hooks: g.hooks.map((h) => ({ ...h, command: h.command.slice(prefix.length) })) }))])) });
+  // `suffix` is what the Windows form appends so that PowerShell waits for the GUI executable (change 16)
+  const stripPrefix = (settings, prefix, suffix = '') => ({ hooks: Object.fromEntries(Object.entries(settings.hooks).map(([ev, groups]) => [ev,
+    groups.map((g) => ({ hooks: g.hooks.map((h) => ({ ...h, command: h.command.slice(prefix.length, h.command.length - suffix.length) })) }))])) });
   const plain = buildSettings({ ...cfg.win, handlers: ['h1', 'h2'] });
   const asNode = buildSettings({ ...cfg.win, handlers: ['h1', 'h2'], runAsNode: true });
   assert.deepEqual(Object.keys(asNode.hooks), EVENTS);
@@ -106,7 +131,7 @@ test('buildSettings passes runAsNode to every event and every registration; with
     assert.notEqual(hs[0].command, hs[1].command, 'the handler id still keeps two registrations apart');
     for (const h of hs) { assert.ok(h.command.startsWith(`${PS_PREFIX}& "`), ev); assert.equal(h.shell, 'powershell'); }
   }
-  assert.deepEqual(stripPrefix(asNode, PS_PREFIX), plain, 'removing the prefix leaves exactly the default settings');
+  assert.deepEqual(stripPrefix(asNode, PS_PREFIX, PS_WAIT), plain, 'removing the prefix and the wait leaves exactly the default settings');
   assert.doesNotThrow(() => JSON.parse(JSON.stringify(asNode)));
 
   for (const name of ['posix', 'wsl']) {

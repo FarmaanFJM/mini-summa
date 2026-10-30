@@ -83,8 +83,8 @@ describe('writeManagedSettings', () => {
     const hook = plan.settings.hooks.SessionStart[0].hooks[0];
     expect(hook.shell).toBe('powershell');
     expect(hook.command).toBe(
-      "$env:ELECTRON_RUN_AS_NODE='1'; & \"C:\\Program Files\\MiniSumma\\MiniSumma.exe\" \"C:\\MS\\capture.mjs\" --spool \"C:\\MS\\spool\\win\" --registry \"C:\\MS\\registry.json\" --env win --handler ms-managed SessionStart",
-    );
+      "$env:ELECTRON_RUN_AS_NODE='1'; & \"C:\\Program Files\\MiniSumma\\MiniSumma.exe\" \"C:\\MS\\capture.mjs\" --spool \"C:\\MS\\spool\\win\" --registry \"C:\\MS\\registry.json\" --env win --handler ms-managed SessionStart | Write-Output",
+    ); // the pipe makes PowerShell wait for the GUI-subsystem executable (SIMULATED: strings only)
   });
 
   it('refuses with no_hook_runtime (422) and a plain-language message when the environment has no Node, and writes nothing', () => {
