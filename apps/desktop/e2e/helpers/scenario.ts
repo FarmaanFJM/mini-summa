@@ -33,7 +33,8 @@ export function scenario(name: string, body: (ctx: TestContext) => Promise<void>
         expect(handle.pageErrors.filter((e) => e.startsWith('pageerror')), 'uncaught exceptions in the window').toEqual([]);
       }
     } catch (error) {
-      await saveArtifacts(path.join(ARTIFACTS_DIR, slug(name))).catch(() => undefined);
+      // A test that declares itself NOT TESTED (ctx.skip) is not a failure: no artifacts for it.
+      if ((error as { code?: string }).code !== 'VITEST_PENDING') await saveArtifacts(path.join(ARTIFACTS_DIR, slug(name))).catch(() => undefined);
       throw error;
     } finally {
       await cleanupAll();
