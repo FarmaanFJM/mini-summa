@@ -12,12 +12,6 @@ directories:
 # version from node_modules. scripts/before-pack.cjs fails the build if this and the installed Electron ever differ.
 electronVersion: 45.1.0
 
-# The NSIS target needs to run its own stub once to produce the uninstaller. On Windows that is native. Elsewhere
-# electron-builder downloads a portable wine (a checksummed bundle from electron-builder-binaries) so that no system
-# wine is needed. Ignored when building on Windows.
-toolsets:
-  wine: '1.0.1'
-
 asar: true
 # Nothing is compiled at install time; the native pty ships as a prebuilt per-platform package.
 npmRebuild: false
@@ -70,7 +64,6 @@ win:
   # Building from Linux without wine: the executable is not edited or signed (see the report: icon and version info of
   # the .exe itself need a Windows or wine build).
   signAndEditExecutable: false
-  artifactName: Mini-Summa-Setup-${version}-${arch}.${ext}
   # The Windows pty is fetched by scripts/fetch-win-natives.mjs (the beforePack hook runs it) and added to the app as an
   # ordinary node_modules package, so @lydell/node-pty finds it with its usual require(`...-${process.platform}-${process.arch}`).
   files:
@@ -81,7 +74,11 @@ win:
         - '!**/*.pdb'
         - '!.fetched-integrity'
 
+# NSIS runs its own stub once to produce the uninstaller. That is native on Windows; on Linux or macOS it needs wine
+# on the PATH (apt install wine). electron-builder's own portable wine toolset (toolsets.wine 1.0.1) was tried and its
+# Linux bundle has no Windows-side DLLs ("failed to load ntdll.dll error c0000135"), so it is not used.
 nsis:
+  artifactName: Mini-Summa-Setup-${version}-${arch}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

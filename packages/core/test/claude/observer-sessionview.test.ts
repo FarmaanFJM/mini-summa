@@ -3,7 +3,7 @@ import type { GenerationPhase } from '@minisumma/claude-integration';
 import type { SessionState, SessionView } from '@minisumma/shared';
 import type { ManagedSessionRecord } from '../../src/contracts.ts';
 import type { Attribution, SessionFacts } from '../../src/claude/projection.ts';
-import { EXTERNAL_REMOTE_CONTROL_HINT, buildSessionView, labelOf } from '../../src/claude/sessionView.ts';
+import { EXTERNAL_REMOTE_CONTROL_HINT, STARTING_PROBLEM, buildSessionView, isStarting, labelOf } from '../../src/claude/sessionView.ts';
 import type { ReducerFields, SessionViewInput } from '../../src/claude/sessionView.ts';
 
 const SID = '11111111-1111-4111-8111-111111111111';
@@ -36,7 +36,7 @@ const managed = (o: Partial<ManagedSessionRecord> = {}): ManagedSessionRecord =>
 });
 
 const facts = (o: Partial<SessionFacts> = {}): SessionFacts => ({
-  firstAt: null, lastHookAt: null, hookCount: 0, startedAtHook: null, name: null, sessionEndReason: null, stateSince: null, abnormalEnd: false, endedAt: null, ...o,
+  firstAt: null, lastHookAt: null, hookCount: 0, lastHookSeq: 0, startedAtHook: null, name: null, sessionEndReason: null, stateSince: null, abnormalEnd: false, endedAt: null, ...o,
 });
 
 const attribution = (o: Partial<Attribution> = {}): Attribution => ({ projectId: 'p1', projectName: 'Proj', resolution: 'matched', ...o });
@@ -139,13 +139,38 @@ describe('a managed terminal', () => {
   });
 
   it('takes its state from the reducer once hooks arrive', () => {
-    const v = build({ managed: managed(), reducer: reducer({ state: 'working', evidence: 'hook:UserPromptSubmit' }), facts: facts({ lastHookAt: 'T' }) });
+    const v = build({ managed: managed(), reducer: reducer({ state: 'working', evidence: 'hook:UserPromptSubmit' }), facts: facts({ lastHookAt: '2026-01-01T10:00:05.000Z' }) });
     expect(v).toMatchObject({ state: 'working', stateLabel: 'Working', stateEvidence: 'hook:UserPromptSubmit', generation: 1 });
   });
 
-  it('uses what discovery observed when it is all there is (and says it was observed only)', () => {
+  it('is still starting when only discovery has seen it: only a hook proves Claude is up and past its startup dialogs', () => {
     const v = build({ managed: managed(), reducer: reducer({ state: 'idle', evidence: 'discovery', hookSeen: false }) });
-    expect(v).toMatchObject({ state: 'idle', stateEvidence: 'discovery' });
+    expect(v).toMatchObject({ state: 'unknown', stateLabel: 'Starting', stateEvidence: 'managed:pty', attention: null });
+  });
+
+  it('shows nothing of an earlier process while it starts (a resume): not its state, its attention, its pid or its end', () => {
+    const earlier = reducer({
+      state: 'needs_permission', evidence: 'hook:PermissionRequest', n: 1, phase: 'live', proc: { pid: 777, startedAt: 1700000000000 }, pid: 777, kind: 'interactive',
+      prompted: true,
+    });
+    const v = build({
+      managed: managed({ prompted: true, pid: 4321, startedAt: '2026-01-02T09:00:00.000Z' }), reducer: earlier,
+      facts: facts({ lastHookAt: '2026-01-01T12:00:00.000Z', stateSince: { state: 'needs_permission', at: '2026-01-01T12:00:00.000Z' } }), starting: true,
+    });
+    expect(v).toMatchObject({
+      origin: 'managed', availability: 'live', resumable: false, termination: null, state: 'unknown', stateLabel: 'Starting', stateEvidence: 'managed:pty',
+      attention: null, pid: 4321, startedAt: '2026-01-02T09:00:00.000Z', generation: 1,
+    });
+    // and the moment a hook of the new process has arrived the reducer's state counts again
+    expect(build({ managed: managed({ pid: 4321 }), reducer: reducer({ state: 'idle', n: 2 }), facts: facts({ lastHookAt: '2026-01-02T09:00:03.000Z' }), starting: false }))
+      .toMatchObject({ state: 'idle', stateLabel: 'Idle', generation: 2, pid: 4321 });
+  });
+
+  it('the starting flag only ever applies to a terminal that is running', () => {
+    const exited = build({ managed: managed({ status: 'exited', exitedAt: 'E', exitCode: 0 }), reducer: reducer({ state: 'working' }), starting: true });
+    expect(exited).toMatchObject({ state: 'ended', stateLabel: 'Session ended' });
+    expect(build({ managed: managed({ status: 'disconnected' }), reducer: reducer({ state: 'working' }), starting: true }).stateLabel).toBe('Working (last known)');
+    expect(build({ reducer: reducer({ state: 'working' }), starting: true })).toMatchObject({ origin: 'external', state: 'working' });
   });
 
   it('keeps its first generation number before and after the first hook, so a pending request does not look stale', () => {
@@ -199,6 +224,54 @@ describe('a managed terminal', () => {
     expect(build({ managed: managed({ remoteControl: true }) }).remoteControl).toMatchObject({ state: 'enabled' });
     expect(build({ managed: managed({ remoteControl: false }) }).remoteControl).toMatchObject({ state: 'not_enabled', hint: expect.stringContaining('/remote-control') });
     expect(build({ managed: managed({ remoteControl: true, status: 'exited', exitedAt: 'x', exitCode: 0 }) }).remoteControl.state).toBe('not_enabled');
+  });
+});
+
+describe('isStarting: has this terminal shown a sign of life since it was started?', () => {
+  const run = (o: Partial<ManagedSessionRecord> = {}) => ({ status: 'running' as const, startedAt: '2026-01-02T09:00:00.000Z', ...o });
+  const hook = (lastHookAt: string | null, lastHookSeq: number) => ({ lastHookAt, lastHookSeq });
+
+  it('is never true for anything but a running managed terminal', () => {
+    expect(isStarting(null, null)).toBe(false);
+    expect(isStarting(run({ status: 'exited' }), null)).toBe(false);
+    expect(isStarting(run({ status: 'disconnected' }), null)).toBe(false);
+  });
+
+  describe('when the start of the run was seen (a position in the log)', () => {
+    const baseline = { startedAt: '2026-01-02T09:00:00.000Z', seq: 40 };
+    it.each([
+      ['no hook at all yet', null, true],
+      ['only hooks from before the start', hook('2026-01-01T12:00:00.000Z', 38), true],
+      ['a hook at exactly the position of the start', hook('2026-01-01T12:00:00.000Z', 40), true],
+      ['the first hook of the new process', hook('2026-01-02T09:00:02.000Z', 41), false],
+      ['later hooks', hook('2026-01-02T09:05:00.000Z', 90), false],
+    ])('%s', (_name, facts, expected) => {
+      expect(isStarting(run(), facts, baseline)).toBe(expected);
+    });
+
+    it('does not depend on wall clocks: a hook stamped BEFORE the start (a lagging WSL clock) still counts when it arrives after it', () => {
+      expect(isStarting(run(), hook('2026-01-02T08:58:00.000Z', 41), baseline)).toBe(false);
+    });
+
+    it('a baseline of an earlier run is not used for the next one (a resume writes a new startedAt)', () => {
+      const nextRun = run({ startedAt: '2026-01-03T09:00:00.000Z' });
+      expect(isStarting(nextRun, hook('2026-01-02T09:00:02.000Z', 41), baseline)).toBe(true); // falls back to the wall-clock rule: older than the start
+    });
+  });
+
+  describe('when the start of the run was not seen (a running record found at startup): the newest hook must not be older than the start', () => {
+    it.each([
+      ['no hook', null, true],
+      ['a hook from before the start', hook('2026-01-02T08:59:59.999Z', 5), true],
+      ['a hook at the very moment of the start', hook('2026-01-02T09:00:00.000Z', 5), false],
+      ['a hook after the start', hook('2026-01-02T09:00:01.000Z', 5), false],
+    ])('%s', (_name, facts, expected) => {
+      expect(isStarting(run(), facts)).toBe(expected);
+    });
+  });
+
+  it('has a plain explanation that points at the trust dialog', () => {
+    expect(STARTING_PROBLEM).toBe('Claude has not finished starting. If it is asking whether you trust this folder, answer in the terminal.');
   });
 });
 

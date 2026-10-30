@@ -49,6 +49,8 @@ export interface SessionFacts {
   lastHookAt: string | null;
   /** How many hook receipts were applied for this session (a counter, so "did anything new arrive" needs no clock). */
   hookCount: number;
+  /** Raw-log position of the newest hook receipt applied for this session (0 = none). Order in the log, not wall time. */
+  lastHookSeq: number;
   /** Time of the latest startup/resume/fork SessionStart. */
   startedAtHook: string | null;
   /** Name `claude agents` reported. */
@@ -180,7 +182,7 @@ export function createProjection(deps: ProjectionDeps): Projection {
   const factsFor = (s: State, key: SessionKey): SessionFacts => {
     let f = s.facts.get(key);
     if (!f) {
-      f = { firstAt: null, lastHookAt: null, hookCount: 0, startedAtHook: null, name: null, sessionEndReason: null, stateSince: null, abnormalEnd: false, endedAt: null };
+      f = { firstAt: null, lastHookAt: null, hookCount: 0, lastHookSeq: 0, startedAtHook: null, name: null, sessionEndReason: null, stateSince: null, abnormalEnd: false, endedAt: null };
       s.facts.set(key, f);
     }
     return f;
@@ -283,6 +285,7 @@ export function createProjection(deps: ProjectionDeps): Projection {
       const f = factsFor(s, keyOf(entry.transport?.env_id, p.session_id));
       f.firstAt ??= at;
       f.hookCount++;
+      f.lastHookSeq = entry.seq;
       if (!f.lastHookAt || at > f.lastHookAt) f.lastHookAt = at;
       if (p.hook_event_name === 'SessionStart' && ['startup', 'resume', 'fork'].includes(p.source ?? 'startup')) f.startedAtHook = at;
       if (p.hook_event_name === 'SessionEnd') f.sessionEndReason = typeof p.reason === 'string' && p.reason !== '' ? p.reason : null;

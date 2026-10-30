@@ -157,7 +157,12 @@ export interface RenderedApp extends Harness, RenderResult {}
 /** Boot the app and wait until the project list is on screen. */
 export async function renderApp(options: HarnessOptions = {}): Promise<RenderedApp> {
   const harness = createHarness(options);
-  const view = render(<App runtime={harness.runtime} />, { container: document.getElementById('root') ?? undefined });
+  // A fresh #root every time: RTL refuses to render again into a container whose root it has unmounted.
+  document.getElementById('root')?.remove();
+  const container = document.createElement('div');
+  container.id = 'root';
+  document.body.appendChild(container);
+  const view = render(<App runtime={harness.runtime} />, { container });
   if (options.startLoader !== false && (options.scenario ?? 'normal') === 'normal') {
     await screen.findByRole('button', { name: /^GitManager/ });
   }

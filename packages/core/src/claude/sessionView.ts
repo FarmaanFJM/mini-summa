@@ -19,11 +19,49 @@ export interface SessionViewInput {
   reducer: ReducerFields | null;
   facts: SessionFacts | null;
   managed: ManagedSessionRecord | null;
+  /**
+   * The managed terminal has not shown a sign of life since it was started (see isStarting). Omitted = decided here from
+   * the wall-clock rule alone, which is what a caller with no memory of the start gets.
+   */
+  starting?: boolean;
   attribution: Attribution;
   /** The attributed project's default session, if it has one. */
   projectDefaultKey: SessionKey | null;
   /** The last persisted view: all that is left of a session the Reducer and the managed manager no longer know. */
   history: SessionView | null;
+}
+
+/** What a person is told when a terminal is still starting. The trust dialog is the case that makes this matter. */
+export const STARTING_PROBLEM = 'Claude has not finished starting. If it is asking whether you trust this folder, answer in the terminal.';
+export const STARTING_LABEL = 'Starting';
+
+/** The log position the sessions service saw when it first noticed this run of a managed terminal. */
+export interface RunBaseline {
+  /** The managed record's startedAt identifies the run: a resume writes a new one. */
+  startedAt: string;
+  /** Highest raw-log position at that moment. */
+  seq: number;
+}
+
+/**
+ * Has this managed terminal not yet shown a sign of life? A process that was just started (or resumed) may still be on its
+ * startup screens or on Claude Code's "do you trust this folder" dialog, where a blind Enter ends the session. The first hook
+ * of the new process is the proof that Claude is up, so until one has been ingested the terminal is "starting", whatever the
+ * Reducer still says about an earlier process of the same session.
+ *
+ *  - With the baseline (the service saw the run begin): a hook receipt of this session at a log position after it. No clock
+ *    is involved, so a WSL clock that lags the Windows one cannot keep a session in "starting" forever.
+ *  - Without it (a running record found at startup): the newest hook receipt must be at or after the record's startedAt.
+ *    Both times come from this machine; this is the fallback, and it fails safe (a terminal is refused, never trusted).
+ */
+export function isStarting(
+  managed: Pick<ManagedSessionRecord, 'status' | 'startedAt'> | null,
+  facts: Pick<SessionFacts, 'lastHookAt' | 'lastHookSeq'> | null,
+  baseline?: RunBaseline,
+): boolean {
+  if (!managed || managed.status !== 'running') return false;
+  if (baseline && baseline.startedAt === managed.startedAt) return !((facts?.lastHookSeq ?? 0) > baseline.seq);
+  return !(facts?.lastHookAt != null && facts.lastHookAt >= managed.startedAt);
 }
 
 export const EXTERNAL_REMOTE_CONTROL_HINT = 'Type /remote-control inside that Claude session to control it from the Claude app';
@@ -167,6 +205,7 @@ export function buildSessionView(i: SessionViewInput): SessionView | null {
   }
 
   // ---- state ----
+  const starting = m ? (i.starting ?? isStarting(m, f)) : false;
   const reducerState: SessionState = r?.state ?? 'unknown';
   let state: SessionState = reducerState;
   let stateLabel: string;
@@ -175,8 +214,10 @@ export function buildSessionView(i: SessionViewInput): SessionView | null {
     state = 'ended'; // the terminal exit was observed by Mini-Summa itself
     stateLabel = labelOf('ended');
     stateEvidence = 'managed:pty';
-  } else if (state === 'unknown' && m?.status === 'running') {
-    stateLabel = 'Starting';
+  } else if (starting) {
+    // Nothing about the earlier process of this session (a resume) may be shown as this process's state.
+    state = 'unknown';
+    stateLabel = STARTING_LABEL;
     stateEvidence = 'managed:pty';
   } else if (m?.status === 'disconnected' && state !== 'unknown' && state !== 'ended' && state !== 'presence_lost') {
     stateLabel = `${labelOf(state)} (last known)`;
@@ -187,7 +228,7 @@ export function buildSessionView(i: SessionViewInput): SessionView | null {
   // ---- the rest ----
   const proc = r?.gen.proc ?? null;
   const generation = r ? (m && r.gen.n === 0 ? 1 : r.gen.n) : 1; // a managed terminal is a process incarnation before any hook says so
-  const lastActivityAt = latest(f?.lastHookAt, m?.lastOutputAt) ?? (m ? m.startedAt : null) ?? h?.lastActivityAt ?? null;
+  const lastActivityAt = latest(f?.lastHookAt, m?.lastOutputAt, m?.status === 'running' ? m.startedAt : null) ?? (m ? m.startedAt : null) ?? h?.lastActivityAt ?? null;
 
   return {
     key, env, sessionId, origin, availability, termination, resumable,
@@ -195,7 +236,8 @@ export function buildSessionView(i: SessionViewInput): SessionView | null {
     cwd: r?.cwd ?? m?.cwd ?? h?.cwd ?? null,
     name: m?.name ?? f?.name ?? h?.name ?? null,
     state, stateLabel, stateEvidence, generation,
-    pid: availability === 'live' ? (proc?.pid ?? r?.observed?.pid ?? m?.pid ?? null) : null,
+    // a terminal that is still starting has its own process; the Reducer's pid belongs to the earlier one
+    pid: availability === 'live' ? (starting ? (m?.pid ?? null) : (proc?.pid ?? r?.observed?.pid ?? m?.pid ?? null)) : null,
     startedAt: m?.startedAt ?? isoOrNull(proc?.startedAt) ?? f?.startedAtHook ?? h?.startedAt ?? null,
     lastActivityAt,
     attention: attentionFor(state, availability, f),

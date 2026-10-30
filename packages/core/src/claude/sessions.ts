@@ -24,9 +24,13 @@
 //                 absent from a full discovery listing .................................... suspected
 //                 A suspected end is never shown as observed, and an observed end never as suspected.
 //
-//   state         the Reducer's state and label (a failed discovery call changes nothing). A managed session with no hook
-//                 yet is "unknown / Starting". A managed terminal that exited is "ended" (observed by us). A disconnected
-//                 managed session keeps its last known state, labelled "(last known)".
+//   state         the Reducer's state and label (a failed discovery call changes nothing). A managed terminal that has not
+//                 shown a sign of life since it was started (no hook after the start; the older hooks of a resumed session
+//                 do not count) is "unknown / Starting" with no attention, and the target check, typeInto and
+//                 answerPermission refuse it ("Claude has not finished starting. If it is asking whether you trust this
+//                 folder, answer in the terminal."): at a startup or trust dialog a blind Enter can end the session. A person
+//                 typing at the desktop terminal is never held back. A managed terminal that exited is "ended" (observed by
+//                 us). A disconnected managed session keeps its last known state, labelled "(last known)".
 //   attention     needs_permission -> permission, needs_input -> input (only while live: nobody can answer a gone
 //                 process), error -> error, ended abnormally -> abnormal_end, presence_lost -> presence_lost,
 //                 report_ready -> report.
@@ -43,6 +47,11 @@
 //
 // Contract notes (decisions where contracts.ts was silent):
 //  - init() calls managed.init() and shutdown() calls managed.shutdown(): the composition root must not call them again.
+//  - "Has shown a sign of life" is a hook receipt of the session at a raw-log position after the one noticed when the run
+//    began (no wall clock, so a lagging WSL clock cannot hold a session in "Starting"); a running record found at startup
+//    falls back to comparing its startedAt with the newest hook's received_at.
+//  - typeInto / answerPermission refuse a second send until a hook shows Claude reacted (or 4 s pass): a double click must
+//    not type twice, and a second "approve" must not land on the next dialog.
 //  - Hook files already waiting when the app starts are ingested before the replay and are reported as `replay: true`.
 //  - Resuming a session starts Claude in the session's own working directory (Claude finds the transcript through it);
 //    the chosen project folder only decides the project attribution.
@@ -67,7 +76,8 @@ import { createRegistryFileWriter } from './registryFile.ts';
 import { SerialQueue } from './serialQueue.ts';
 import { clearManualBinding, conversationOf, setManualBinding } from './sessionBindings.ts';
 import type { BindingRow } from './sessionBindings.ts';
-import { buildSessionView, labelOf } from './sessionView.ts';
+import { STARTING_PROBLEM, buildSessionView, isStarting, labelOf } from './sessionView.ts';
+import type { RunBaseline } from './sessionView.ts';
 
 /** What the sessions layer needs from ProjectsService (a real ProjectsService satisfies it). */
 export type ProjectsPort = Pick<ProjectsService, 'get' | 'require' | 'list' | 'registry' | 'registryFileContents' | 'onRootsChanged' | 'setDefaultSession'>
@@ -138,6 +148,22 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
   let shuttingDown = false;
   let rebuildQueued = false;
 
+  // Managed terminals that have not shown a sign of life since they were started (see isStarting in sessionView.ts), and the
+  // log position at which each running terminal was first noticed.
+  const startingKeys = new Set<SessionKey>();
+  const runBaselines = new Map<SessionKey, RunBaseline>();
+
+  /** Remembers where the log stood when a run of a managed terminal began, so its first hook can be told from older ones. */
+  function observeRun(record: ManagedSessionRecord): void {
+    if (record.status !== 'running') {
+      runBaselines.delete(record.key);
+      return;
+    }
+    const known = runBaselines.get(record.key);
+    if (known && known.startedAt === record.startedAt) return;
+    runBaselines.set(record.key, { startedAt: record.startedAt, seq: rawStore.maxSeq() });
+  }
+
   const inFlight = new Map<SessionKey, { hooks: number; at: number; what: 'text' | 'answer' }>();
   const hooksSeen = (key: SessionKey): number => projection.facts(key)?.hookCount ?? 0;
 
@@ -195,8 +221,11 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
         : m?.projectId ? { sessionKey: key, projectId: m.projectId, conversationId: m.conversationId, source: 'managed' } : stored;
       const reducerSession = projection.session(key) ?? null;
       const att = attribute(binding, reducerSession, lookup);
+      const facts = projection.facts(key) ?? null;
+      const starting = isStarting(m, facts, runBaselines.get(key));
+      if (starting) startingKeys.add(key); else startingKeys.delete(key);
       const view = buildSessionView({
-        key, env: parsed.env, sessionId: parsed.sessionId, reducer: reducerSession, facts: projection.facts(key) ?? null, managed: m,
+        key, env: parsed.env, sessionId: parsed.sessionId, reducer: reducerSession, facts, managed: m, starting,
         attribution: att, projectDefaultKey: att.projectId ? (projectsById.get(att.projectId)?.defaultSessionKey ?? null) : null,
         history: views.get(key) ?? null,
       });
@@ -314,18 +343,25 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
     }
   }
 
-  function targetCheck(key: SessionKey, expectGeneration: number | null): ReturnType<SessionsService['targetCheck']> {
+  /** The target check, and whether the terminal is one that has not finished starting. */
+  function inspect(key: SessionKey, expectGeneration: number | null): { check: ReturnType<SessionsService['targetCheck']>; starting: boolean } {
     const view = views.get(key);
-    if (!view) return { managed: false, live: false, generation: null, generationMatches: false, state: null, problem: 'Mini-Summa does not know this session.' };
+    if (!view) {
+      return { starting: false, check: { managed: false, live: false, generation: null, generationMatches: false, state: null, problem: 'Mini-Summa does not know this session.' } };
+    }
     const isManaged = view.origin === 'managed';
     const live = view.availability === 'live';
     const generationMatches = expectGeneration === null || expectGeneration === view.generation;
+    const starting = isManaged && live && startingKeys.has(key);
     let problem: string | null = null;
     if (!isManaged) problem = 'Mini-Summa only types into sessions it started itself. This session is observed only.';
     else if (!live) problem = availabilityProblem(view);
     else if (!generationMatches) problem = `This session restarted after the request was made (it is on run ${view.generation} now, the request was for run ${expectGeneration}).`;
-    return { managed: isManaged, live, generation: view.generation, generationMatches, state: view.state, problem };
+    else if (starting) problem = STARTING_PROBLEM;
+    return { starting, check: { managed: isManaged, live, generation: view.generation, generationMatches, state: view.state, problem } };
   }
+
+  const targetCheck = (key: SessionKey, expectGeneration: number | null): ReturnType<SessionsService['targetCheck']> => inspect(key, expectGeneration).check;
 
   function refusal(check: ReturnType<typeof targetCheck>): TypeIntoResult | null {
     const problem = check.problem ?? 'The session cannot receive text right now.';
@@ -415,6 +451,7 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
         resumeSessionId: resumeTarget ? parseSessionKey(resumeTarget.key)?.sessionId : undefined,
         conversationId: req.conversationId ?? null,
       });
+      observeRun(record); // normally noticed already, when the manager announced the record (before the process existed)
       log.info('Started a Claude session in a Mini-Summa terminal.', { key: record.key, project: projectId, env, mode: req.mode, by: actor.kind });
       refreshAndCommit(resumeTarget ? [record.key, resumeTarget.key] : [record.key]);
       const view = views.get(record.key);
@@ -477,9 +514,11 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
         throw unprocessable('The text contains control characters (for example from copying terminal output). They cannot be typed safely, so nothing was sent. Remove them and try again.', 'unsafe_text');
       }
       await freshen();
-      const check = targetCheck(key, req.expectGeneration);
+      const { check, starting } = inspect(key, req.expectGeneration);
       const refused = refusal(check);
       if (refused) return refused;
+      // Not even allowedStates can open this door: a terminal that is still starting may be showing a dialog where Enter means "no".
+      if (starting) return { ok: false, code: 'state_not_allowed', problem: STARTING_PROBLEM };
       if (!req.allowedStates.includes(check.state as SessionState)) {
         return { ok: false, code: 'state_not_allowed', problem: `Claude is "${labelOf(check.state as SessionState)}" right now. Text can only be sent when it is: ${stateWords(req.allowedStates)}.` };
       }
@@ -500,9 +539,10 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
 
     async answerPermission(key, decision, expectGeneration) {
       await freshen();
-      const check = targetCheck(key, expectGeneration);
+      const { check, starting } = inspect(key, expectGeneration);
       const refused = refusal(check);
       if (refused) return refused;
+      if (starting) return { ok: false, code: 'state_not_allowed', problem: STARTING_PROBLEM };
       if (check.state !== 'needs_permission') {
         return { ok: false, code: 'state_not_allowed', problem: 'Claude is not waiting for a permission answer right now, so nothing was sent.' };
       }
@@ -553,6 +593,7 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
 
         offs.push(managed.onChange((record, previous) => {
           if (shuttingDown) return;
+          observeRun(record);
           // Terminal output alone changes lastOutputAt over and over; the view only needs the changes that mean something.
           if (previous && JSON.stringify({ ...record, lastOutputAt: null }) === JSON.stringify({ ...previous, lastOutputAt: null })) return;
           refreshAndCommit([record.key]);

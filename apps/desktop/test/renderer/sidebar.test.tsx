@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { IDS } from '../../src/renderer/src/dev/demo/seed';
-import { createHarness, renderApp, until } from './helpers';
+import { renderApp, until } from './helpers';
 
 const row = (name: RegExp | string) => screen.getByRole('button', { name: typeof name === 'string' ? new RegExp(`^${name}(,|$)`) : name });
 const MUTATING = /^(sessions\.(start|stop|bind|setDefault)|projects\.(update|remove|create)|conversations\.(add|remove|update|setPreferred)|settings\.update)$/;
@@ -53,7 +53,6 @@ describe('sidebar', () => {
   it('selecting a project never stops, starts, redirects or detaches a session', async () => {
     const user = userEvent.setup();
     const app = await renderApp();
-    await screen.findByRole('textbox', { name: /^Input goes to/ }).catch(() => undefined);
     await until(() => app.adapters.size === 1, 'the first terminal');
     const calls = vi.spyOn(app.demo, 'call');
     const sessionsBefore = app.runtime.store.getState().sessions;
@@ -183,7 +182,6 @@ describe('the sidebar before and without data', () => {
   });
 
   it('says plainly that there are no projects once it knows', async () => {
-    createHarness({ scenario: 'empty' });
     await renderApp({ scenario: 'empty' });
     expect(await screen.findByText('No projects yet.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Create project' }).className).toContain('sm-btn--primary');
