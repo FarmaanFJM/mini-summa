@@ -1,0 +1,36 @@
+{
+  "note": "REAL payload captured from Claude Code, sanitized: paths are masked and session, prompt and tool-use ids are replaced by synthetic ones. The transport block is added by the capture script.",
+  "transport": {
+    "transport_id": "<uuid>",
+    "received_at": "2026-10-30T10:07:47.618Z",
+    "wall_ms": 1793354867618,
+    "monotonic_ns": "892938529572",
+    "capture_version": 1,
+    "hook_arg": "Stop",
+    "pid": 0,
+    "ppid": 0,
+    "platform": "linux",
+    "claude_project_dir": "<SCRATCH>/work/projA",
+    "claude_config_dir": "<SCRATCH>/config",
+    "claude_code_remote": null,
+    "redactions": 0,
+    "truncations": 0,
+    "truncated_chars": 0,
+    "parse_error": null
+  },
+  "payload": {
+    "session_id": "00000000-0000-4000-8000-000000000003",
+    "transcript_path": "<SCRATCH>/config/projects/<SCRATCH-ENCODED>-work-projA/00000000-0000-4000-8000-000000000003.jsonl",
+    "cwd": "<SCRATCH>/work/projA",
+    "prompt_id": "00000000-0000-4000-8000-000000000004",
+    "permission_mode": "acceptEdits",
+    "effort": {
+      "level": "high"
+    },
+    "hook_event_name": "Stop",
+    "stop_hook_active": false,
+    "last_assistant_message": "The file `hello.txt` now exists in the project directory and contains exactly the two bytes `hi`, with no trailing newline.\n\n## Implementation Report\n\n**What changed:** Created `hello.txt` in the working directory with the content `hi`. No other files were touched, and nothing was committed.\n\n**Tests run:** I dumped the file at the byte level to confirm the content. The output showed only the characters `h` and `i`, for a total of 2 bytes and no newline.\n\n**Unresolved problems:** None.\n\n**Risks:** None. The file is untracked in git, alongside the existing untracked `README.md`.\n\n**Recommended next steps:** Commit the file if it should be part of the repository.\n\n<!-- mini-summa:report status=complete task=\"Create hello.txt containing hi\" -->",
+    "background_tasks": [],
+    "session_crons": []
+  }
+}

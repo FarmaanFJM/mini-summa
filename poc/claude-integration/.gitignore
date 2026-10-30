@@ -1,0 +1,20 @@
+# Runtime artifacts must never be committed: raw hook payloads, transcripts, spools, stores, configs.
+.tmp-tests/
+**/spool*/
+**/store/
+**/raw.jsonl
+**/derived.jsonl
+**/qualification/
+**/config-*/
+**/work/
+node_modules/
+*.log
+*.jsonl
+.env
+.env.*
+.claude/
+.claude.json
+credentials*
+*.pem
+*.key
+.DS_Store

@@ -1,0 +1,30 @@
+{
+  "synthetic": true,
+  "description": "API error ends the turn.",
+  "events": [
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "UserPromptSubmit",
+        "prompt_id": "pp-0001",
+        "prompt": "x"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "StopFailure",
+        "prompt_id": "pp-0001",
+        "error": "rate_limit",
+        "error_details": "429",
+        "last_assistant_message": "API Error: Rate limit reached"
+      }
+    }
+  ]
+}

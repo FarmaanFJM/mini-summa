@@ -1,0 +1,37 @@
+{
+  "synthetic": true,
+  "description": "Marker present but a background task is still running: not a finished task.",
+  "events": [
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "UserPromptSubmit",
+        "prompt_id": "pp-0001",
+        "prompt": "x"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "Stop",
+        "prompt_id": "pp-0001",
+        "last_assistant_message": "Implemented the storage layer.\n\n## Implementation Report\n- Added store.ts\n- Ran 42 tests: 41 passed, 1 failed (flaky clock test)\n- Risk: migration untested on Windows\n\n<!-- mini-summa:report status=complete task=\"Premature\" -->\n",
+        "background_tasks": [
+          {
+            "id": "b1",
+            "type": "shell",
+            "status": "running",
+            "description": "tests"
+          }
+        ],
+        "session_crons": []
+      }
+    }
+  ]
+}
