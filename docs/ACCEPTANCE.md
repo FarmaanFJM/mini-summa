@@ -8,12 +8,12 @@
 
 | | |
 | --- | --- |
-| Date | 2026-10-30 17:52 UTC |
+| Date | 2026-10-30 17:54 UTC |
 | Platform | Linux 6.18.44-fc-v185 x64 under Xvfb :99 (1280x1024x24), as root (Electron is started with --no-sandbox, which Playwright adds for root) |
 | Electron | 45.1.0 (Chromium inside it; Node v22.22.0 runs the tests; Playwright 1.64.1 drives the window) |
 | Source | commit aaae0be plus uncommitted changes (the run tested the working tree, not the commit alone) |
 | App build | built for this run: `electron-vite build` into a private temporary directory, plus the hook bundle; the run launches that build, never `apps/desktop/out` |
-| Duration | 2 min 23 s for the whole run (build, tests, clean-up); the tests themselves took 2 min 15 s added together |
+| Duration | 2 min 21 s for the whole run (build, tests, clean-up); the tests themselves took 2 min 14 s added together |
 | Behaviours (26: A01 to A25 and the critical scenario) | **25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED** |
 | Extra checks (not among the 25) | 3 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED |
 | Tests executed | 32 in all: 31 passed, 0 failed, 1 not tested |
@@ -71,11 +71,11 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A02. A new project can be registered (PASS)
 
-- empty form refused ("Give the project a name."), nothing created; "Alpha" created through the dialog, selected in the sidebar, stored with id prj_0a68fdf076655d77 and root /tmp/ms-e2e-0YAibd/repos/Alpha
+- empty form refused ("Give the project a name."), nothing created; "Alpha" created through the dialog, selected in the sidebar, stored with id prj_9fd92f2553ffb709 and root /tmp/ms-e2e-rqA8Dv/repos/Alpha
 
 ### A03. Its repository directory can be selected (PASS)
 
-- Browse asked the native picker ("Choose the repository folder", openDirectory+createDirectory); a cancelled pick changed nothing; the picked folder /tmp/ms-e2e-X7JdLU/repos/Picked was listed, a duplicate was refused, and the project was stored with exactly that root
+- Browse asked the native picker ("Choose the repository folder", openDirectory+createDirectory); a cancelled pick changed nothing; the picked folder /tmp/ms-e2e-2WkjqN/repos/Picked was listed, a duplicate was refused, and the project was stored with exactly that root
 
 ### A04. Its ChatGPT conversation URL can be configured (PASS)
 
@@ -87,7 +87,7 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A06. Claude Code launches in the correct directory (PASS)
 
-- project folder "/tmp/ms-e2e-bHvYTw/repos/My App (v2)" (space and brackets); core cwd, /proc/30109/cwd, the process's own registration and the banner on screen all name that folder; session eb46e9eb is managed and bound to the project
+- project folder "/tmp/ms-e2e-zopmUA/repos/My App (v2)" (space and brackets); core cwd, /proc/4815/cwd, the process's own registration and the banner on screen all name that folder; session d5524dd2 is managed and bound to the project
 
 ### A07. Terminal input and output work (PASS)
 
@@ -99,15 +99,15 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A09. Switching projects does not terminate unrelated sessions (PASS)
 
-- Alpha's session (pid 30600) stayed live, same pid and generation, while Beta was selected and used; output typed into Alpha during that time arrived; switching back showed one terminal with both the earlier and the background text; Beta's screen never showed Alpha's text
+- Alpha's session (pid 5311) stayed live, same pid and generation, while Beta was selected and used; output typed into Alpha during that time arrived; switching back showed one terminal with both the earlier and the background text; Beta's screen never showed Alpha's text
 
 ### A10. Multiple projects can be active (PASS)
 
-- three projects, three live managed sessions (pids 30835, 30855, 30875) in three folders at once; the sidebar showed "1 live session" on each; each project showed its own terminal and received only its own typed message
+- three projects, three live managed sessions (pids 5541, 5561, 5582) in three folders at once; the sidebar showed "1 live session" on each; each project showed its own terminal and received only its own typed message
 
 ### A11. Multiple sessions can belong to one project (PASS)
 
-- two managed sessions of one project (pids 31082 and 31102) in the same folder, two tabs; typed text reached only the selected tab's process; each tab showed its own session id; closing a tab left its process running
+- two managed sessions of one project (pids 5782 and 5802) in the same folder, two tabs; typed text reached only the selected tab's process; each tab showed its own session id; closing a tab left its process running
 
 ### A12. Portrait layout works (PASS)
 
@@ -123,15 +123,15 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A15. Claude activity appears in the feed (PASS)
 
-- with the Activity view open: "Claude session started", "Needs permission", "Needs your input", "Error in" and "Report ready: Ship the importer" appeared for Alpha / 012bfb2a as Claude did each thing (kinds report_ready, error, turn_ended, needs_input, needs_permission, session_started); unread count shown in the sidebar; clicking the report entry opened the report
+- with the Activity view open: "Claude session started", "Needs permission", "Needs your input", "Error in" and "Report ready: Ship the importer" appeared for Alpha / d98ce4eb as Claude did each thing (kinds report_ready, error, turn_ended, needs_input, needs_permission, session_started); unread count shown in the sidebar; clicking the report entry opened the report
 
 ### A16. A completion report can be captured (PASS)
 
-- typing "Wrap up the storage layer ..." in the terminal produced one report (marker, declared complete, session de77a3bb); a turn without the marker made no report but was kept as an "other message"; partial and blocked were captured as declared; the queue row and the report page show the declaration, the project and the full text
+- typing "Wrap up the storage layer ..." in the terminal produced one report (marker, declared complete, session 2868944d); a turn without the marker made no report but was kept as an "other message"; partial and blocked were captured as declared; the queue row and the report page show the declaration, the project and the full text
 
 ### A17. The report remains linked to the correct project (PASS)
 
-- Alpha's Claude finished while Beta was selected: the report is stored under Alpha (project id prj_6f70ceb5) and Alpha's session; Beta has none; the sidebar counted it on Alpha's row only; the report page's project and session links lead to Alpha; filtering by Beta shows nothing; after renaming Alpha the report still belongs to it (same project id) and its project button leads there (the report keeps the name it was captured under: "Alpha")
+- Alpha's Claude finished while Beta was selected: the report is stored under Alpha (project id prj_b9b8d0bc) and Alpha's session; Beta has none; the sidebar counted it on Alpha's row only; the report page's project and session links lead to Alpha; filtering by Beta shows nothing; after renaming Alpha the report still belongs to it (same project id) and its project button leads there (the report keeps the name it was captured under: "Alpha")
 
 ### A18. The report can be copied in full (PASS)
 
@@ -163,7 +163,7 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A24. Hook installation is permission-gated (PASS)
 
-- the dialog named /tmp/ms-e2e-VJbMuW/home/.claude/settings.json and listed 95 added lines, identical to the core's plan, with no line removed; before agreement the button was disabled and the file, byte for byte, and the backups folder were untouched (also after Cancel); a file edited while the dialog was open produced "nothing was written" and withdrew the agreement; after reading and agreeing again, hooks were added next to the person's own Stop and PreToolUse hooks, theme, permissions and model, with a backup equal to the old file; removal asked the same way and restored the file byte for byte
+- the dialog named /tmp/ms-e2e-U8hAoA/home/.claude/settings.json and listed 95 added lines, identical to the core's plan, with no line removed; before agreement the button was disabled and the file, byte for byte, and the backups folder were untouched (also after Cancel); a file edited while the dialog was open produced "nothing was written" and withdrew the agreement; after reading and agreeing again, hooks were added next to the person's own Stop and PreToolUse hooks, theme, permissions and model, with a backup equal to the old file; removal asked the same way and restored the file byte for byte
 
 ### A25. Runtime secrets remain outside the repository (PASS)
 
@@ -225,3 +225,12 @@ npm run e2e:report           # rebuild this file from the last run's results
 ```
 
 A failed test keeps a screenshot, the app's output and its logs under `apps/desktop/e2e/results/artifacts/`. `e2e/results/` is not committed.
+
+## Recent complete runs on the machine that produced this report
+
+One line per `npm run e2e` that ran every test. Runs are recorded by `e2e/run.mjs` in `apps/desktop/e2e/results/runs.jsonl` (not committed).
+
+| Started | Duration (build included) | Behaviours (25 + CRIT) | Extra checks | Exit code | |
+| --- | --- | --- | --- | --- | --- |
+| 2026-10-30 17:52 UTC | 2 min 23 s | 25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED | 3 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED | 0 | |
+| 2026-10-30 17:54 UTC | 2 min 21 s | 25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED | 3 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED | 0 | this report |
