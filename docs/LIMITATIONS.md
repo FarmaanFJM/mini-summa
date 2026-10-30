@@ -19,7 +19,7 @@ Windows, no WSL2, no phone and no ChatGPT login. Until you have done them, treat
 | **An Android device or emulator** | 216 Jest tests, a script that pairs and connects the phone's own code to the real headless core, and a bundling check | Screens have never been seen on a screen. |
 | **Real push delivery** (Firebase Cloud Messaging) | Payload building, token registration, minimal payloads and failure handling against a local stand-in | Needs your own Firebase project and a device. |
 | **Real Tailscale** | The status parser and Serve management against recorded and simulated output | `tailscale serve` flags can differ by version. |
-| **An Android APK** | <!-- TODO(verify) APK outcome --> | |
+| **An Android APK** | The build passes its prerequisite check and `expo prebuild`, and Gradle got through 94 tasks and 2.3 GB of downloads before Maven Central's HTTP 429 stopped it on the same Fresco libraries three runs in a row (see [ANDROID.md](ANDROID.md), "Build outcome") | No APK exists. Nothing in the app is known to be wrong; run `npm run build:apk` on a normal network. |
 
 ## 2. External limitations (not Mini-Summa's to fix)
 
@@ -40,7 +40,26 @@ Windows, no WSL2, no phone and no ChatGPT login. Until you have done them, treat
 
 ## 3. Known defects and imperfections
 
-<!-- TODO(verify) fill from the final acceptance results and review -->
+These are things Mini-Summa gets wrong or does clumsily today. None blocks the core workflow.
+
+* **After "Copy and open" the report card is out of sight.** The handoff takes you to the workspace so that ChatGPT is in front.
+  After you paste and press Send there, you go back to Reports to press **I sent it**; nothing in the workspace offers that
+  button. A short "waiting for you to send" strip in the ChatGPT pane would remove a click. The state itself is recorded
+  correctly and shown in the queue, the feed and the counters.
+* **If the preferred port 47811 is busy at start, the window forgets its own saved state.** The core then takes another port and
+  the window's saved choices (selected project, setup dismissal) belong to the old address. Your projects, sessions and reports
+  are unaffected. The acceptance check for this reports NOT TESTED rather than PASS in that case.
+* **After a graceful "Stop session" the notice says "The terminal process exited with code 0."** instead of "You stopped the
+  session." A forced stop and a quit are worded correctly.
+* **Quitting adds one unread "Session ended" feed entry per running terminal.**
+* **After a restart the previous terminal output is not shown** ("No terminal output is available for this session") until
+  the session is resumed; the transcript lives in Claude Code, not in Mini-Summa.
+* **A report keeps the project name it was captured under after the project is renamed.** It stays linked by project id, so it still belongs to the right project.
+* **An API client with the desktop token can re-point a delivery to another project's conversation.** The window never offers
+  this and the change is recorded as an explicit, audited step ("destination changed", marked as another project's). It is
+  the owner's decision, not an accident, and nothing routes this way by itself.
+* **Under Xvfb the acceptance suite parks the window out of the pointer's reach during drag tests**, a test-environment
+  artefact and not a product defect.
 
 * **Redaction is pattern based.** It catches the usual shapes of keys, tokens, private keys, passwords in URLs and command
   lines, but it cannot know a secret that looks like ordinary text. It does not cover lower-case or dotted names
