@@ -12,8 +12,10 @@ export const BACKOFF_MAX_MS = 15_000;
 /** The service worker sleeps after 30 s without events; traffic on an open WebSocket counts, so ping inside that. */
 export const PING_EVERY_MS = 25_000;
 export const STALE_AFTER_MS = 70_000;
-/** Close code the core uses when the device behind this token was revoked. */
+/** Close code the core uses when the device behind this token was revoked (or may not use the extension channel). */
 export const CLOSE_REVOKED = 4003;
+/** Close code the core uses when the token in hello is not known at all. Like a revocation, it never gets better by retrying. */
+export const CLOSE_UNAUTHORIZED = 4401;
 export const CLOSE_STALE = 4000;
 const SOCKET_OPEN = 1;
 
@@ -209,7 +211,7 @@ export class CoreConnection {
     const wasOpen = this.opened;
     this.opened = false;
     this.ready = false;
-    if (code === CLOSE_REVOKED) { void this.onRevoked(creds); return; }
+    if (code === CLOSE_REVOKED || code === CLOSE_UNAUTHORIZED) { void this.onRevoked(creds); return; }
     this.scheduleRetry(this.lastServerError ?? (wasOpen ? 'The connection to Mini-Summa was closed.' : null));
   }
 

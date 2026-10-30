@@ -419,8 +419,9 @@ async function main() {
       const reply = await core.focusOrOpen(convUrl(2));
 
       assert.equal(reply.ok, true, JSON.stringify(reply));
-      assert.deepEqual(Object.keys(reply.data).sort(), ['mode', 'tabId', 'title', 'url', 'urlMatches', 'windowFocused', 'windowId']);
+      assert.deepEqual(Object.keys(reply.data).sort(), ['focused', 'mode', 'opened', 'tabId', 'title', 'url', 'urlMatches', 'verified', 'windowFocused', 'windowId']);
       assert.equal(reply.data.mode, 'focused');
+      assert.deepEqual([reply.data.focused, reply.data.opened, reply.data.verified], [true, false, true], 'the names packages/core reads');
       assert.equal(reply.data.tabId, tabB.id);
       assert.equal(reply.data.windowId, tabB.windowId);
       assert.equal(reply.data.url, convUrl(2));
@@ -465,6 +466,7 @@ async function main() {
       assert.equal(reply.data.title, 'Conversation 4');
       assert.equal(reply.data.urlMatches, true);
       assert.equal(reply.data.windowFocused, true);
+      assert.deepEqual([reply.data.focused, reply.data.opened, reply.data.verified], [true, true, true]);
       assert.equal(reply.data.windowId, w1);
       assert.ok(elapsed >= 500, `waited for the page to settle (${elapsed} ms)`);
       openedTabId = reply.data.tabId;
@@ -500,6 +502,7 @@ async function main() {
       assert.equal(reply.data.mode, 'opened');
       assert.equal(reply.data.url, 'https://chatgpt.com/auth/login');
       assert.equal(reply.data.urlMatches, false);
+      assert.equal(reply.data.verified, false);
       assert.match(reply.data.note, /different address/);
     });
 
@@ -569,6 +572,7 @@ async function main() {
       assert.equal(reply.data.mode, 'opened');
       assert.equal(reply.data.urlMatches, false);
       assert.match(reply.data.note, /15 seconds/);
+      assert.equal(reply.data.verified, null);
       assert.ok(elapsed >= 15_000 && elapsed < 17_500, `answered after ${elapsed} ms`);
       await inWorker((id) => chrome.tabs.remove(id), reply.data.tabId);
     });

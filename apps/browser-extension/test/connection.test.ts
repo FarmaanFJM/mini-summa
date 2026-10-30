@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BridgeOutcome } from '../src/bridge.ts';
 import {
-  BACKOFF_MAX_MS, BACKOFF_START_MS, CLOSE_REVOKED, CLOSE_STALE, CoreConnection, PING_EVERY_MS, STALE_AFTER_MS,
+  BACKOFF_MAX_MS, BACKOFF_START_MS, CLOSE_REVOKED, CLOSE_STALE, CLOSE_UNAUTHORIZED, CoreConnection, PING_EVERY_MS, STALE_AFTER_MS,
 } from '../src/connection.ts';
 import type { Clock } from '../src/connection.ts';
 import { DEFAULT_CORE_URL } from '../src/core-address.ts';
@@ -193,6 +193,21 @@ describe('a revoked token', () => {
     await conn.reload();
     expect(conn.status().state).toBe('revoked');
     expect(sockets).toHaveLength(1);
+  });
+
+  it('treats close code 4401 (token not known to the core) the same way: the token is dropped and no retry follows', async () => {
+    expect(CLOSE_UNAUTHORIZED).toBe(4401);
+    const s = setup();
+    await s.pair();
+    await s.conn.start();
+    s.sockets[0].open();
+    s.sockets[0].receive({ t: 'error', code: 'unauthorized', message: 'The token was not accepted.', fatal: true });
+    s.sockets[0].serverClose(CLOSE_UNAUTHORIZED, 'unauthorized');
+    await s.clock.flush();
+    expect(s.conn.status().state).toBe('revoked');
+    expect((await loadState(s.area)).token).toBeNull();
+    await s.clock.advance(60_000);
+    expect(s.sockets).toHaveLength(1);
   });
 
   it('also stops when the core rejects the token during the hello', async () => {

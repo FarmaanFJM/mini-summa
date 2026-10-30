@@ -59,8 +59,9 @@ export interface BridgeDeps {
   loadTimeoutMs?: number;
 }
 
-/** `data` of a successful focus_or_open. The first six fields are the contract; the last two are additive. */
+/** `data` of a successful focus_or_open. */
 export interface FocusOrOpenData {
+  // The agreed contract.
   mode: 'focused' | 'opened';
   tabId: number;
   windowId: number;
@@ -69,10 +70,17 @@ export interface FocusOrOpenData {
   title: string;
   /** True only when the final tab address is the same ChatGPT page as requested. An address check, not a content check. */
   urlMatches: boolean;
+  // Additive: what the browser said about the window, and a plain explanation when something is not as requested.
   /** What the browser reported for the window after the focus request. False means it was not confirmed. */
   windowFocused: boolean;
-  /** Plain explanation when something is not as requested (redirect, slow load, window not focused). */
   note?: string;
+  // Additive: the same facts under the names packages/core/src/http/bridge.ts reads into ChatGptOpenResult.
+  /** The tab is the active tab and the browser confirmed its window is in front (same as windowFocused). */
+  focused: boolean;
+  /** A new tab was opened (mode is "opened"). */
+  opened: boolean;
+  /** The address check as a ChatGptOpenResult.verified: urlMatches, or null when the page had not finished loading. */
+  verified: boolean | null;
 }
 
 export type BridgeOutcome =
@@ -175,6 +183,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
       data: {
         mode: 'focused', tabId: tab.id, windowId: fresh.windowId ?? tab.windowId, url, title: fresh.title ?? '',
         urlMatches, windowFocused: win.focused, ...(note ? { note } : {}),
+        focused: win.focused, opened: false, verified: urlMatches,
       },
     };
   };
@@ -208,6 +217,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
       data: {
         mode: 'opened', tabId: created.id, windowId: loaded.tab.windowId ?? created.windowId ?? -1, url, title: loaded.tab.title ?? '',
         urlMatches, windowFocused: win.focused, ...(note ? { note } : {}),
+        focused: win.focused, opened: true, verified: loaded.settled ? urlMatches : null,
       },
     };
   };

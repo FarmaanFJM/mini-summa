@@ -112,6 +112,7 @@ export function createFakeCore(seed: Partial<CoreData> = {}): FakeCore {
     },
     'POST /activity/read': () => json(data.snapshot.counts),
     'POST /devices/self/push-token': () => json({ ok: true }),
+    'POST /pairing/redeem': () => json({ device: data.device, token: 'bearer-from-pairing', server: { name: "Farmaan's PC", apiVersion: 1 } }),
     'POST /actions': (req) => {
       const key = req.headers['idempotency-key'];
       if (key && idempotent.has(key)) return json(idempotent.get(key));

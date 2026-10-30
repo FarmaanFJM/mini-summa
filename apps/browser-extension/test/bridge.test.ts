@@ -35,6 +35,7 @@ describe('focus_or_open with an existing tab', () => {
     const d = data(await focus(U2));
 
     expect(d).toMatchObject({ mode: 'focused', tabId: b, windowId: w, url: U2, title: 'Conversation two', urlMatches: true, windowFocused: true });
+    expect(d).toMatchObject({ focused: true, opened: false, verified: true }); // the names the core reads
     expect(d.note).toBeUndefined();
     expect(browser.tab(b).active).toBe(true);
     expect(browser.tab(a).active).toBe(false);
@@ -169,6 +170,7 @@ describe('focus_or_open without a tab', () => {
 
     expect(browser.callsTo('tabs.create')).toEqual([[{ url: U1 }]]);
     expect(d).toMatchObject({ mode: 'opened', windowId: w, url: U1, title: 'Conversation one', urlMatches: true, windowFocused: true });
+    expect(d).toMatchObject({ focused: true, opened: true, verified: true });
     expect(d.tabId).toBe(browser.tabs[0].id);
     expect(d.note).toBeUndefined();
     expect(browser.callsTo('windows.update')).toEqual([[w, { focused: true, drawAttention: false }]]);
@@ -203,6 +205,7 @@ describe('focus_or_open without a tab', () => {
     expect(d.mode).toBe('opened');
     expect(d.url).toBe(LOGIN);
     expect(d.urlMatches).toBe(false);
+    expect(d.verified).toBe(false);
     expect(d.note).toMatch(/different address/);
   });
 
@@ -253,6 +256,8 @@ describe('focus_or_open without a tab', () => {
     expect(d.urlMatches).toBe(false);
     expect(d.url).toBe('');
     expect(d.note).toMatch(/15 seconds/);
+    expect(d.verified).toBeNull(); // not checked: the page never finished loading
+    expect(d.opened).toBe(true);
     expect(clock.now()).toBeGreaterThanOrEqual(15_000);
     expect(clock.now()).toBeLessThan(15_200);
   });
@@ -304,6 +309,7 @@ describe('honest reporting when the browser does not cooperate', () => {
     const d = data(await focus(U1));
     expect(d.mode).toBe('focused');
     expect(d.windowFocused).toBe(false);
+    expect(d.focused).toBe(false); // never claimed when the browser did not confirm it
     expect(d.note).toMatch(/could not be brought to the front/);
     expect(d.urlMatches).toBe(true);
   });
@@ -317,6 +323,7 @@ describe('honest reporting when the browser does not cooperate', () => {
     browser.windowRefusesFocus = true;
     const d = data(await focus(U1));
     expect(d.windowFocused).toBe(false);
+    expect(d.focused).toBe(false);
     expect(d.note).toMatch(/did not confirm/);
     expect(browser.focusedWindow()?.id).toBe(w1);
   });
