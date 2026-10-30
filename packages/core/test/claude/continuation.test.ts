@@ -91,6 +91,15 @@ describe('the process id decides wherever it can', () => {
     expect(unrelated.adopt).toEqual([]);
   });
 
+  it('a session of a process the terminal started deeper down (a tool\'s `claude -p`) is never taken for the terminal\'s own', () => {
+    // the terminal's own process is listed: only exact matches count, whatever else descends from it
+    const exact = decide([endedTerminal()], [announced(S1), announced(S2)], env([row(S1, 4321), row(S2, 5555)]), () => true);
+    expect(exact.adopt.map((a) => a.toSessionId)).toEqual([S1]);
+    // the terminal's own process is not listed (yet) and only a deeper process is: that cannot be told, so nothing is adopted by pid
+    const deeper = decide([endedTerminal()], [announced(S2)], env([row(S2, 5555)]), () => null);
+    expect(deeper.adopt.every((a) => a.via === 'hooks')).toBe(true);
+  });
+
   it('says it is ambiguous (and adopts nothing) when Claude lists several sessions for one process', () => {
     const d = decide([endedTerminal()], [announced(S1), announced(S2)], env([row(S1, 4321), row(S2, 4321)]));
     expect(d.adopt).toEqual([]);
@@ -263,5 +272,10 @@ describe('isSameOrBelow (parent links)', () => {
     expect(isSameOrBelow(6666, 4321, parentOf)).toBe(true);
     expect(isSameOrBelow(7000, 4321, parentOf)).toBe(false);
     expect(isSameOrBelow(8888, 4321, parentOf)).toBeNull();
+    // with a limit on the matching depth, a direct child counts, a deeper descendant cannot be told, somebody else's process is a definite no
+    expect(isSameOrBelow(5555, 4321, parentOf, 1)).toBe(true);
+    expect(isSameOrBelow(6666, 4321, parentOf, 1)).toBeNull();
+    expect(isSameOrBelow(7000, 4321, parentOf, 1)).toBe(false);
+    expect(isSameOrBelow(4321, 4321, parentOf, 0)).toBe(true);
   });
 });

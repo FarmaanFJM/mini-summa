@@ -181,13 +181,17 @@ function pidEvidence(t: TerminalFact, ev: EnvEvidence | undefined, ancestry: Con
   if (!ev || !ev.comparable) return { kind: 'unavailable', why: 'the process ids of this environment cannot be compared with the terminal\'s' };
   if (t.pid === null || !(t.pid > 0)) return { kind: 'unavailable', why: 'the terminal\'s process id is not known' };
   if (!ev.listing) return { kind: 'unavailable', why: 'no usable listing of Claude\'s sessions' };
-  const mine: ListedProcess[] = [];
+  // A listed process that IS the terminal's process settles it. Only when none is, processes the terminal started count (a
+  // launcher script that did not exec): otherwise a `claude -p` that a tool of the session started would be mistaken for it.
+  const alive = ev.listing.filter((row) => row.pid !== null && row.pidAlive !== false);
+  const mine: ListedProcess[] = alive.filter((row) => row.pid === t.pid);
   let unknown = false;
-  for (const row of ev.listing) {
-    if (row.pid === null || row.pidAlive === false) continue;
-    const related = row.pid === t.pid ? true : ancestry(row.pid, t.pid);
-    if (related === true) mine.push(row);
-    else if (related === null) unknown = true;
+  if (mine.length === 0) {
+    for (const row of alive) {
+      const related = ancestry(row.pid as number, t.pid);
+      if (related === true) mine.push(row);
+      else if (related === null) unknown = true;
+    }
   }
   if (mine.length === 0) {
     if (unknown) return { kind: 'unavailable', why: 'the listed process ids cannot be traced back to the terminal' };

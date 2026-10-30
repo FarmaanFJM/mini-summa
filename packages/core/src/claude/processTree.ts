@@ -36,10 +36,15 @@ export function defaultParentPid(platform: NodeJS.Platform = process.platform): 
   return () => undefined;
 }
 
-export function isSameOrBelow(pid: number, ancestor: number, parentOf: ParentPid): boolean | null {
+/**
+ * Is `pid` the ancestor itself or a process it started? The whole chain is followed (so a process of somebody else is a definite
+ * false), but only a match within `maxMatchDepth` parent links counts as true: a deeper descendant is "cannot be told" (null), because
+ * it may be a program a tool of the session started rather than what the terminal runs.
+ */
+export function isSameOrBelow(pid: number, ancestor: number, parentOf: ParentPid, maxMatchDepth: number = MAX_DEPTH): boolean | null {
   let current = pid;
-  for (let depth = 0; depth < MAX_DEPTH; depth++) {
-    if (current === ancestor) return true;
+  for (let depth = 0; depth <= MAX_DEPTH; depth++) {
+    if (current === ancestor) return depth <= maxMatchDepth ? true : null;
     const parent = parentOf(current);
     if (parent === undefined) return null;
     if (parent <= 1) return false;

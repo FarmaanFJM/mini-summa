@@ -246,7 +246,8 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
 
   const extras = managed as ManagedManager & Partial<ManagedManagerExtras>;
   const retryDelays = deps.continuation?.retryDelaysMs ?? [0, 600, 1500, 3000, 6000];
-  const ancestry = (pid: number, of: number): boolean | null => isSameOrBelow(pid, of, deps.continuation?.parentPid ?? defaultParentPid());
+  // only the process itself or one it started directly (a launcher): a deeper descendant may be a `claude -p` that a tool started
+  const ancestry = (pid: number, of: number): boolean | null => isSameOrBelow(pid, of, deps.continuation?.parentPid ?? defaultParentPid(), 1);
   /** Terminals whose session was replaced and whose successor is not settled: pending (a fresh listing is on its way) or unresolved. */
   const continuations = new Map<SessionKey, { status: 'pending' | 'unresolved'; text: string }>();
   /** Old key -> the key its terminal went on as, in this run. Lets a client that was attached to the old key keep typing. */

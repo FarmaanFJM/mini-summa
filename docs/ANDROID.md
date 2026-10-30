@@ -295,7 +295,7 @@ library downloads at all. Every file therefore got Gradle's defaults: 3 tries, 1
 switches the whole repository off for the build ("Repository MavenRepo is disabled due to earlier error"). Progress between runs came only from
 what Gradle had cached by then, and the last three runs stalled on `com.facebook.fresco:*:3.7.0` AARs that each had only 3 tries.
 
-**What produced the APK**, in this order (times are the sandbox clock):
+**What produced the APK**, in this order:
 
 1. The settings were corrected to 10 tries per file and a wait that starts at 1.5 s and doubles, so the last try comes about 13 minutes
    after the first. This is ordinary patience, not a way around the limit. The first run with them downloaded the Fresco AARs on the first

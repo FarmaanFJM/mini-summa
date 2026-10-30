@@ -75,6 +75,7 @@ describe('/clear inside a managed terminal', () => {
     expect(next.sessionId).not.toBe(old.sessionId);
     expect(next).toMatchObject({ origin: 'managed', availability: 'live', env: old.env, projectId: a.project.id, projectResolution: 'managed', name: 'work', cwd: old.cwd });
     expect(next.pid).toBe(old.pid);                                         // the very same process
+    expect((await get(h, old.key)).startedAt).toBe(next.startedAt);          // and the same run: the start time is what ties a client's old tab to the new session
     expect(next.isProjectDefault).toBe(true);                               // the default flag moved with the terminal
     expect(next.terminal).toMatchObject({ exited: false });
     const live = (await h.client.call('sessions.list', { query: { projectId: a.project.id } })).filter((s) => s.availability === 'live');
