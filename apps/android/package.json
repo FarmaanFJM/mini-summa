@@ -11,7 +11,8 @@
     "doctor": "npx --yes expo-doctor",
     "export": "expo export --platform android",
     "prebuild": "expo prebuild --platform android",
-    "build:apk": "node scripts/build-apk.mjs"
+    "build:apk": "node scripts/build-apk.mjs",
+    "check:core": "../../node_modules/.bin/tsx --tsconfig tsconfig.json scripts/core-check.ts"
   },
   "dependencies": {
     "expo": "~58.0.21",

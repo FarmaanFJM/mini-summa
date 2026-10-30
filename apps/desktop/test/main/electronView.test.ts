@@ -49,7 +49,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-const { CHATGPT_PARTITION, chatGptSession, createChatGptViewHandle, hardenChatGptSession } = await import('../../src/main/electronView.ts');
+const { CHATGPT_ALLOWED_PERMISSIONS, CHATGPT_PARTITION, chatGptSession, createChatGptViewHandle, hardenChatGptSession } = await import('../../src/main/electronView.ts');
 
 beforeEach(() => { created.length = 0; sessions.clear(); });
 
@@ -100,17 +100,27 @@ describe('the embedded ChatGPT view', () => {
     expect(created[0].view.webContents.navigationHistory.goBack).toHaveBeenCalled();
   });
 
-  it('refuses every permission, including clipboard-read, media and notifications', () => {
+  it('allows exactly one permission, sanitized clipboard writes (any change is a deliberate product decision and must change this test)', () => {
+    expect(CHATGPT_ALLOWED_PERMISSIONS).toEqual(['clipboard-sanitized-write']);
+  });
+
+  it('refuses every permission except sanitized clipboard writes, including clipboard-read, media and notifications', () => {
     createChatGptViewHandle(makeWin() as never);
     const ses = chatGptSession() as any;
     expect(ses.name).toBe('persist:chatgpt');
     const request = ses.setPermissionRequestHandler.mock.calls[0][0] as (c: unknown, p: string, cb: (ok: boolean) => void) => void;
-    for (const permission of ['clipboard-read', 'clipboard-sanitized-write', 'media', 'geolocation', 'notifications', 'midi', 'fullscreen', 'openExternal', 'display-capture', 'hid', 'serial', 'usb']) {
+    for (const permission of ['clipboard-read', 'media', 'geolocation', 'notifications', 'midi', 'fullscreen', 'openExternal', 'display-capture', 'hid', 'serial', 'usb']) {
       const cb = vi.fn();
       request({}, permission, cb);
       expect(cb).toHaveBeenCalledWith(false);
     }
-    expect((ses.setPermissionCheckHandler.mock.calls[0][0] as () => boolean)()).toBe(false);
+    const allowedCb = vi.fn();
+    request({}, 'clipboard-sanitized-write', allowedCb);
+    expect(allowedCb).toHaveBeenCalledWith(true);
+    const check = ses.setPermissionCheckHandler.mock.calls[0][0] as (c: unknown, p: string) => boolean;
+    expect(check({}, 'clipboard-sanitized-write')).toBe(true);
+    expect(check({}, 'clipboard-read')).toBe(false);
+    expect(check({}, 'notifications')).toBe(false);
     expect((ses.setDevicePermissionHandler.mock.calls[0][0] as () => boolean)()).toBe(false);
     const display = ses.setDisplayMediaRequestHandler.mock.calls[0][0] as (r: unknown, cb: (s: object) => void) => void;
     const dcb = vi.fn();

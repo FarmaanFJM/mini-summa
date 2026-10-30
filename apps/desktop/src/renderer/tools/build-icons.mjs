@@ -12,7 +12,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const bundle = join(here, '../../../../../third_party/summa-ui-guidance/icons');
 const catalog = JSON.parse(readFileSync(join(bundle, 'catalog.json'), 'utf8'));
 
-const ATTR = /([a-zA-Z:-]+)="([^"]*)"/g;
+const ATTR = /([a-zA-Z][a-zA-Z0-9:-]*)="([^"]*)"/g; // names such as x1 and y2 contain digits
 const CHILD = /<(path|circle|rect|line|polyline|polygon|ellipse)\b([^>]*?)\/?>/g;
 
 function parseShapes(svg, name) {

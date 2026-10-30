@@ -63,10 +63,12 @@ export function describeInputTarget(session: SessionView, projectName: string | 
     return { kind: 'observed', text: `No input: ${where} (${how}) is observed. Mini-Summa cannot type into it.` };
   }
   if (session.availability !== 'live') {
-    return { kind: 'not_running', text: `No input: ${where} (${how}) is not running.` };
+    // A lost terminal is not the same as an ended one: its process may still be running, just out of reach.
+    const why = session.availability === 'disconnected' ? 'is not connected to Mini-Summa' : 'is not running';
+    return { kind: 'not_running', text: `No input: ${where} (${how}) ${why}.` };
   }
   if (!live) {
-    return { kind: 'paused', text: `Input is paused: the connection to Mini-Summa was lost. It would go to ${where} (${how}).` };
+    return { kind: 'paused', text: `Input is paused while reconnecting. It would go to ${where} (${how}).` };
   }
   return { kind: 'managed', text: `Input goes to: ${where} (${how})` };
 }

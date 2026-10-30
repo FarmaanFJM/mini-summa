@@ -61,9 +61,9 @@ win:
   icon: build/icon.ico
   # No administrator rights, ever.
   requestedExecutionLevel: asInvoker
-  # Building from Linux without wine: the executable is not edited or signed (see the report: icon and version info of
-  # the .exe itself need a Windows or wine build).
-  signAndEditExecutable: false
+  # The executable gets the app icon and version metadata (rcedit, which needs a Windows host or wine on Linux). It is
+  # NOT code-signed: no certificate is configured, so Windows SmartScreen will warn about an unknown publisher until one is.
+  signAndEditExecutable: true
   # The Windows pty is fetched by scripts/fetch-win-natives.mjs (the beforePack hook runs it) and added to the app as an
   # ordinary node_modules package, so @lydell/node-pty finds it with its usual require(`...-${process.platform}-${process.arch}`).
   files:

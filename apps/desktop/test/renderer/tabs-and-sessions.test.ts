@@ -43,11 +43,17 @@ describe('the "Input goes to" statement', () => {
   });
 
   it('says a managed session that is not running takes no input', () => {
-    for (const key of [IDS.s.atlasResumable, IDS.s.docsDisconnected, IDS.s.dashFailed]) {
+    for (const key of [IDS.s.atlasResumable, IDS.s.dashFailed]) {
       const t = describeInputTarget(find(key), 'Project', true);
       expect(t.kind).toBe('not_running');
       expect(t.text).toContain('is not running');
     }
+  });
+
+  it('does not call a lost terminal ended: its process may still be running, out of reach', () => {
+    const t = describeInputTarget(find(IDS.s.docsDisconnected), 'Docs site', true);
+    expect(t.kind).toBe('not_running');
+    expect(t.text).toBe('No input: Docs site / Session c9d8e7f6 (managed, Windows) is not connected to Mini-Summa.');
   });
 
   it('says input is paused, and where it would go, while the connection is down', () => {

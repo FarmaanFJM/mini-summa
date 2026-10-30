@@ -7,6 +7,7 @@ import {
   Button, Checkbox, ConfirmDialog, CopyButton, Dialog, EmptyState, Field, IconButton, Menu, Select, SplitPane, Switch, Tabs, TextInput, toast, Toaster,
 } from '../../src/renderer/src/ui';
 import type { MenuEntry } from '../../src/renderer/src/ui';
+import { ICONS } from '../../src/renderer/src/ui/icons.generated';
 import { createFakeNative, stubRect } from './helpers';
 
 describe('Button and IconButton', () => {
@@ -626,5 +627,29 @@ describe('CopyButton', () => {
     render(<NativeProvider native={fake.native}><Toaster /><CopyButton text="x">Copy</CopyButton></NativeProvider>);
     await userEvent.setup().click(screen.getByRole('button', { name: 'Copy' }));
     expect(await screen.findByText('Clipboard is blocked')).toBeTruthy();
+  });
+});
+
+describe('the icon catalog', () => {
+  // A line without x1, y1, x2, y2 draws nothing. The generator once dropped attributes whose names contain digits.
+  const NEEDS: Record<string, string[]> = {
+    path: ['d'], circle: ['cx', 'cy', 'r'], rect: ['width', 'height'], line: ['x1', 'y1', 'x2', 'y2'], polyline: ['points'], polygon: ['points'], ellipse: ['cx', 'cy', 'rx', 'ry'],
+  };
+
+  it('gives every shape the attributes its element needs to be seen', () => {
+    const broken: string[] = [];
+    for (const [name, shapes] of Object.entries(ICONS)) {
+      for (const [tag, attrs] of shapes as readonly (readonly [string, Record<string, string>])[]) {
+        const missing = (NEEDS[tag] ?? []).filter((a) => !(a in attrs));
+        if (missing.length) broken.push(`${name}: <${tag}> lacks ${missing.join(', ')}`);
+      }
+    }
+    expect(broken).toEqual([]);
+  });
+
+  it('draws the exclamation mark of the alert icon', () => {
+    render(<Button icon="circle-alert">Check</Button>);
+    expect(document.querySelectorAll('svg line')).toHaveLength(2);
+    expect(document.querySelector('svg line')?.getAttribute('y2')).toBe('12');
   });
 });

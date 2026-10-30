@@ -72,3 +72,13 @@ export function useRunner(): Runner {
 
   return { busy, error, run, setError };
 }
+
+/** The current time, refreshed on an interval, for text like "Expires in 12 min" that must not go stale on screen. */
+export function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}

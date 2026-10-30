@@ -25,6 +25,8 @@ export function ProjectList() {
   const sessions = useApp((s) => s.sessions);
   const reports = useApp((s) => s.reports);
   const loaded = useApp((s) => s.loaded);
+  const loadError = useApp((s) => s.loadError);
+  const unreachable = useApp((s) => s.connection === 'reconnecting' || s.connection === 'closed');
   const route = useRoute();
   const openProjectDialog = useUi((s) => s.openProjectDialog);
   const [confirm, setConfirm] = useState<Confirm>(null);
@@ -33,6 +35,9 @@ export function ProjectList() {
   const stats = useMemo(() => statsByProject(active, sessions, reports), [active, sessions, reports]);
   const selectedId = resolveProject(projects, route.projectId)?.id ?? null;
 
+  // Placeholders mean "on its way". When nothing is on its way, say what is wrong instead of looking busy.
+  if (!loaded && loadError) return <p className="ms-sidebar__empty">Could not load projects.</p>;
+  if (!loaded && unreachable) return <p className="ms-sidebar__empty">Waiting for Mini-Summa.</p>;
   if (!loaded) {
     return (
       <div className="ms-skeleton-list" aria-busy="true" aria-label="Loading projects">

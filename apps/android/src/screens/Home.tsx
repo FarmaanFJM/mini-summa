@@ -25,7 +25,7 @@ export function HomeScreen() {
             {needs.length ? (
               <Group>
                 {needs.map((item) => (
-                  <Row key={item.id} title={item.title} subtitle={item.subtitle} marker="attention" onPress={() => nav.push(item.target)} />
+                  <Row key={item.id} title={item.title} subtitle={item.subtitle} onPress={() => nav.push(item.target)} />
                 ))}
               </Group>
             ) : (

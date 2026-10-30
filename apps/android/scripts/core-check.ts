@@ -39,8 +39,13 @@ async function until(what: string, cond: () => boolean, ms = 8000): Promise<void
   while (!cond()) { if (Date.now() - t0 > ms) throw new Error(`timed out waiting for ${what}`); await sleep(25); }
 }
 
+/** tsx starts the core as a child process: kill the whole process group, or the core keeps running. */
+function killCore(child: ChildProcess): void {
+  try { if (child.pid) process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ }
+}
+
 async function startCore(dataDir: string): Promise<{ baseUrl: string; desktopToken: string; child: ChildProcess }> {
-  const child = spawn(join(repoRoot, 'node_modules/.bin/tsx'), ['packages/core/src/cli.ts', '--data-dir', dataDir, '--port', '0', '--print-connection'], { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(join(repoRoot, 'node_modules/.bin/tsx'), ['packages/core/src/cli.ts', '--data-dir', dataDir, '--port', '0', '--print-connection'], { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   let out = '';
   const line = await new Promise<string>((res, rej) => {
     const timer = setTimeout(() => rej(new Error(`the core did not print its address in time. stderr: ${err}`)), 30_000);
@@ -75,8 +80,23 @@ async function main(): Promise<void> {
   };
 
   try {
+    // The core allows 10 pairing attempts per minute (rate_limited), so the phones this script needs are paired up front
+    // and the checks that burn attempts on purpose run after the window has passed.
+    const t0 = Date.now();
+    const first = await pair();
+    const phones = {
+      connect: (await pair('Connect')).result.credentials,
+      live: (await pair('Live events')).result.credentials,
+      send: (await pair('Send guard')).result.credentials,
+      removedConnected: (await pair('Removed while connected')).result.credentials,
+      removedAway: (await pair('Removed while away')).result.credentials,
+      watcher: (await pair('Watcher')).result.credentials,
+    };
+    const readOnlyOffer = await desktop.call('pairing.createOffer', { body: { scopes: ['read'], kind: 'phone' } });
+    const readOnly = (await pairWithDesktop(parseScannedCode(readOnlyOffer.qrPayload)!, { deviceName: 'Read only' })).credentials;
+
     await check('pairing: the QR link from the real core is read, the address answers /health, the code is redeemed', async () => {
-      const { offer, result } = await pair();
+      const { offer, result } = first;
       expect(offer.qrPayload.startsWith('minisumma://pair?'), 'unexpected qrPayload');
       expect(result.attempts[0].outcome === 'ok', `first address outcome was ${result.attempts[0].outcome}`);
       expect(result.credentials.token.startsWith('msv_'), 'no device token');
@@ -85,45 +105,21 @@ async function main(): Promise<void> {
       expect(result.device.platform === 'android' && result.device.name === 'Pixel 8', 'device record');
     });
 
-    await check('pairing errors in words: a used code, a wrong code, an unknown offer', async () => {
-      const first = await newOffer();
-      const payload = parseScannedCode(first.qrPayload)!;
-      await pairWithDesktop(payload, { deviceName: 'One' });
-      const used = await pairWithDesktop(payload, { deviceName: 'Two' }).catch((e) => e as PairingError);
-      expect(used instanceof PairingError && used.kind === 'code_used', `used code gave ${used instanceof PairingError ? used.kind : String(used)}`);
-
-      const second = await newOffer();
-      const wrong = await pairWithDesktop({ ...parseScannedCode(second.qrPayload)!, code: 'definitely-not-the-code' }, { deviceName: 'Three' }).catch((e) => e as PairingError);
-      expect(wrong instanceof PairingError && wrong.kind === 'code_invalid', `wrong code gave ${wrong instanceof PairingError ? wrong.kind : String(wrong)}`);
-
-      const unknown = await pairWithDesktop({ ...parseScannedCode(second.qrPayload)!, offerId: 'off_does_not_exist' }, { deviceName: 'Four' }).catch((e) => e as PairingError);
-      expect(unknown instanceof PairingError && unknown.kind === 'code_invalid', `unknown offer gave ${unknown instanceof PairingError ? unknown.kind : String(unknown)}`);
-
-      // Five wrong codes cancel the offer: the phone must say so and not suggest waiting.
-      const burn = await newOffer();
-      let last: PairingError | undefined;
-      for (let i = 0; i < 6; i++) last = await pairWithDesktop({ ...parseScannedCode(burn.qrPayload)!, code: `wrong-code-${i}-xxxxxxxx` }, { deviceName: 'Burn' }).catch((e) => e as PairingError);
-      expect(last instanceof PairingError && last.kind === 'too_many_attempts', `burned offer gave ${last?.kind}`);
-      expect(last!.message.includes('cancelled'), `message was: ${last!.message}`);
-    });
-
     await check('connect: the real core accepts the token, the snapshots load in order and the scopes are known', async () => {
-      const { result } = await pair();
-      const { manager } = await connect(result.credentials);
+      const { manager } = await connect(phones.connect);
       manager.start();
       await until('connected', () => manager.getSnapshot().status === 'connected');
       const snap = manager.getSnapshot();
       expect(snap.state.loaded, 'state not loaded');
-      expect(snap.device?.id === result.credentials.deviceId, 'device record is not this phone');
-      expect(['read', 'notify', 'prompt', 'approve'].every((s) => snap.scopes.includes(s as never)), `scopes ${snap.scopes.join(',')}`);
+      expect(snap.device?.id === phones.connect.deviceId, 'device record is not this phone');
+      expect(['read', 'notify', 'prompt', 'approve'].every((sc) => snap.scopes.includes(sc as never)), `scopes ${snap.scopes.join(',')}`);
       expect(snap.state.system?.apiVersion === 1, 'system info missing');
       expect(describeConnection(snap).visible === false, 'banner shown while live');
       manager.dispose();
     });
 
     await check('live events: a project created on the desktop appears on the phone through the stream', async () => {
-      const { result } = await pair();
-      const { manager } = await connect(result.credentials);
+      const { manager } = await connect(phones.live);
       manager.start();
       await until('connected', () => manager.getSnapshot().status === 'connected');
       const before = manager.getSnapshot().state.projects.length;
@@ -133,22 +129,19 @@ async function main(): Promise<void> {
       manager.dispose();
     });
 
-    await check('send guard on the server side: a prompt for a session that does not exist is refused, not retried', async () => {
-      const { result } = await pair();
-      const { manager } = await connect(result.credentials);
+    await check('send: a prompt for a session that does not exist is refused by the desktop, not executed and not retried', async () => {
+      const { manager } = await connect(phones.send);
       manager.start();
       await until('connected', () => manager.getSnapshot().status === 'connected');
       const attempt = nextAttempt(null, { sessionKey: 'win|00000000-0000-4000-8000-000000000000', text: 'hello', generation: 1 });
       const outcome = await sendPrompt(manager.call, attempt);
-      expect(outcome.kind === 'refused' || outcome.kind === 'action', `unexpected ${outcome.kind}`);
-      if (outcome.kind === 'action') expect(outcome.action.status !== 'executed', 'a prompt for a missing session must not execute');
+      console.log(`      desktop answered: ${outcome.kind}${outcome.kind === 'refused' ? ` (${outcome.status}) ${outcome.message}` : outcome.kind === 'action' ? ` status=${outcome.action.status} failure=${outcome.action.failure}` : ''}`);
+      expect(outcome.kind === 'refused' || (outcome.kind === 'action' && outcome.action.status !== 'executed'), `unexpected ${outcome.kind}`);
       manager.dispose();
     });
 
     await check('a phone that lacks a scope cannot approve: the 403 is a permission error, the phone stays paired', async () => {
-      const readOnlyOffer = await desktop.call('pairing.createOffer', { body: { scopes: ['read'], kind: 'phone' } });
-      const res = await pairWithDesktop(parseScannedCode(readOnlyOffer.qrPayload)!, { deviceName: 'Read only' });
-      const { manager, revokedCount } = await connect(res.credentials);
+      const { manager, revokedCount } = await connect(readOnly);
       manager.start();
       await until('connected', () => manager.getSnapshot().status === 'connected');
       const err = await manager.call('actions.approve', { params: { id: 'act_missing' } }).catch((e) => e as { status?: number });
@@ -159,11 +152,10 @@ async function main(): Promise<void> {
     });
 
     await check('removal while connected: the desktop revokes the device, the stream closes with 4003, the app wipes its token', async () => {
-      const { result } = await pair('To be removed');
-      const { manager, revokedCount } = await connect(result.credentials);
+      const { manager, revokedCount } = await connect(phones.removedConnected);
       manager.start();
       await until('connected', () => manager.getSnapshot().status === 'connected');
-      await desktop.call('devices.revoke', { params: { id: result.credentials.deviceId } });
+      await desktop.call('devices.revoke', { params: { id: phones.removedConnected.deviceId } });
       await until('revoked', () => manager.getSnapshot().status === 'revoked');
       expect(revokedCount() === 1, `onRevoked called ${revokedCount()} times`);
       expect(describeConnection(manager.getSnapshot()).title === 'This phone was removed in Mini-Summa. Pair again.', 'banner wording');
@@ -171,23 +163,56 @@ async function main(): Promise<void> {
     });
 
     await check('removal while away: the token is refused at hello (error unauthorized, close 4401) and the app wipes it', async () => {
-      const { result } = await pair('Removed offline');
-      await desktop.call('devices.revoke', { params: { id: result.credentials.deviceId } });
-      const { manager, revokedCount } = await connect(result.credentials);
+      await desktop.call('devices.revoke', { params: { id: phones.removedAway.deviceId } });
+      const { manager, revokedCount } = await connect(phones.removedAway);
       manager.start();
       await until('revoked', () => manager.getSnapshot().status === 'revoked');
       expect(revokedCount() === 1, `onRevoked called ${revokedCount()} times`);
       manager.dispose();
     });
 
+    // The pairing limiter is a sliding window of 60 s over every redeem attempt; wait it out before spending attempts.
+    const wait = 61_000 - (Date.now() - t0);
+    if (wait > 0) { console.log(`      (waiting ${Math.ceil(wait / 1000)} s for the core's pairing rate limit window)`); await sleep(wait); }
+
+    await check('pairing errors in words: a used code, a wrong code, an unknown offer, a cancelled code', async () => {
+      const used = await newOffer();
+      const usedPayload = parseScannedCode(used.qrPayload)!;
+      await pairWithDesktop(usedPayload, { deviceName: 'One' });
+      const again = await pairWithDesktop(usedPayload, { deviceName: 'Two' }).catch((e) => e as PairingError);
+      expect(again instanceof PairingError && again.kind === 'code_used', `used code gave ${again instanceof PairingError ? again.kind : String(again)}`);
+
+      const second = await newOffer();
+      const wrong = await pairWithDesktop({ ...parseScannedCode(second.qrPayload)!, code: 'definitely-not-the-code' }, { deviceName: 'Three' }).catch((e) => e as PairingError);
+      expect(wrong instanceof PairingError && wrong.kind === 'code_invalid', `wrong code gave ${wrong instanceof PairingError ? wrong.kind : String(wrong)}`);
+
+      const unknown = await pairWithDesktop({ ...parseScannedCode(second.qrPayload)!, offerId: 'off_does_not_exist' }, { deviceName: 'Four' }).catch((e) => e as PairingError);
+      expect(unknown instanceof PairingError && unknown.kind === 'code_invalid', `unknown offer gave ${unknown instanceof PairingError ? unknown.kind : String(unknown)}`);
+
+      // Five wrong codes cancel an offer: the phone must say so and not suggest waiting.
+      const burn = await newOffer();
+      let last: PairingError | undefined;
+      for (let i = 0; i < 5; i++) last = await pairWithDesktop({ ...parseScannedCode(burn.qrPayload)!, code: `wrong-code-${i}-xxxxxxxx` }, { deviceName: 'Burn' }).catch((e) => e as PairingError);
+      expect(last instanceof PairingError && last.kind === 'too_many_attempts', `burned offer gave ${last?.kind}: ${last?.message}`);
+      expect(last!.message.includes('cancelled'), `message was: ${last!.message}`);
+    });
+
+    await check('pairing rate limit: after ten attempts in a minute the phone says to wait, and how long', async () => {
+      const offer = await newOffer();
+      let last: PairingError | undefined;
+      // The previous check used 9 of the 10 attempts this minute; two more cross the limit.
+      for (let i = 0; i < 3; i++) last = await pairWithDesktop({ ...parseScannedCode(offer.qrPayload)!, code: `probe-${i}-xxxxxxxxxxxx` }, { deviceName: 'Limit' }).catch((e) => e as PairingError);
+      expect(last instanceof PairingError && last.kind === 'rate_limited', `rate limit gave ${last?.kind}: ${last?.message}`);
+      expect(/Wait \d+ seconds/.test(last!.message), `message was: ${last!.message}`);
+    });
+
     await check('a PC that stops answering: reconnecting, then desktop_unreachable with the honest wording and the last update time', async () => {
-      const { result } = await pair('Watcher');
-      const { manager } = await connect(result.credentials, { unreachableAfterMs: 1500 });
+      const { manager } = await connect(phones.watcher, { unreachableAfterMs: 1500 });
       const seen: ConnectionStatus[] = [];
-      manager.subscribe(() => { const s = manager.getSnapshot().status; if (seen[seen.length - 1] !== s) seen.push(s); });
+      manager.subscribe(() => { const st = manager.getSnapshot().status; if (seen[seen.length - 1] !== st) seen.push(st); });
       manager.start();
       await until('connected', () => manager.getSnapshot().status === 'connected');
-      core.child.kill('SIGKILL'); // the PC goes away without saying goodbye
+      killCore(core.child); // the PC goes away without saying goodbye
       await until('unreachable', () => manager.getSnapshot().status === 'desktop_unreachable', 20_000);
       const banner = describeConnection(manager.getSnapshot());
       expect(seen.includes('reconnecting'), `statuses: ${seen.join(' > ')}`);
@@ -198,7 +223,7 @@ async function main(): Promise<void> {
     });
   } finally {
     for (const m of managers) m.dispose();
-    core.child.kill('SIGKILL');
+    killCore(core.child);
     rmSync(dataDir, { recursive: true, force: true });
   }
 

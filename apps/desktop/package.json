@@ -7,14 +7,18 @@
   "author": "Mini-Summa",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "npm run build:hook -w @minisumma/claude-integration && electron-vite build && electron-vite preview",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "test": "vitest run",
+    "test": "vitest run test",
     "typecheck": "tsc -p tsconfig.json",
     "e2e": "vitest run --config vitest.e2e.config.ts",
-    "dist:win": "electron-vite build && electron-builder --win nsis --x64 --config electron-builder.yml",
-    "dist:dir": "electron-vite build && electron-builder --linux dir --config electron-builder.yml"
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:core": "node scripts/smoke-real-core.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "dist:win": "npm run build:hook -w @minisumma/claude-integration && electron-vite build && electron-builder --win nsis --x64 --config electron-builder.yml",
+    "dist:win:zip": "npm run build:hook -w @minisumma/claude-integration && electron-vite build && electron-builder --win zip --x64 --config electron-builder.yml",
+    "dist:dir": "npm run build:hook -w @minisumma/claude-integration && electron-vite build && electron-builder --linux dir --config electron-builder.yml"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.5",

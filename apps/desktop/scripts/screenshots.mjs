@@ -128,10 +128,11 @@ const shots = [
     },
   },
   {
+    // The settings view belongs to the feature worker; what is checked here is the shell's part: the sidebar is replaced.
     name: '17-settings-replaces-sidebar', size: LANDSCAPE,
     async run(page) {
       await page.getByRole('button', { name: 'Settings', exact: true }).click();
-      await page.getByRole('heading', { name: 'Settings', level: 1 }).waitFor();
+      await page.getByRole('button', { name: 'Back', exact: true }).waitFor();
       await settle(page, 250);
     },
   },
@@ -160,6 +161,36 @@ const shots = [
       await dialog.getByLabel('Add a folder').fill('/home/me/billing');
       await dialog.getByLabel('Add a conversation').fill('https://chatgpt.com/g/g-p-6720aa11/project');
       await settle(page, 400);
+    },
+  },
+  {
+    // A new session whose terminal sits on Claude's "Do you trust the files in this folder?" screen. After six seconds of
+    // "Starting" the pane points the person to the terminal. Nothing types for them.
+    name: '21-starting-trust-hint', size: LANDSCAPE, query: '?demo=1&trust=1',
+    async run(page) {
+      await projectButton(page, 'Atlas API').click();
+      await page.getByRole('button', { name: 'New or resumed session' }).click();
+      await menuItem(page, 'New session').click();
+      await page.waitForFunction(() => document.querySelector('.xterm-rows')?.textContent?.includes('Do you trust the files'), null, { timeout: 10_000 });
+      await page.getByText('Claude may be waiting for you to answer a question in the terminal').waitFor({ timeout: 12_000 });
+      await settle(page, 300);
+    },
+  },
+  {
+    name: '22-remove-project-with-terminals', size: LANDSCAPE,
+    async run(page) {
+      await openProjectMenu(page, 'GitManager');
+      await menuItem(page, 'Archive project').click();
+      await page.getByRole('dialog', { name: /Archive GitManager/ }).waitFor();
+      await settle(page);
+    },
+  },
+  {
+    name: '23-lost-terminal', size: LANDSCAPE,
+    async run(page) {
+      await projectButton(page, 'Docs site').click();
+      await page.getByText(/lost its connection to this terminal/).waitFor();
+      await settle(page, 300);
     },
   },
 ];

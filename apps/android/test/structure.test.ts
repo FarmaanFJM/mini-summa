@@ -50,6 +50,7 @@ describe('Expo config', () => {
     expect(config.android.allowBackup).toBe(false);
     expect(config.android.blockedPermissions).toEqual(expect.arrayContaining([
       'android.permission.READ_EXTERNAL_STORAGE', 'android.permission.WRITE_EXTERNAL_STORAGE', 'android.permission.SYSTEM_ALERT_WINDOW', 'android.permission.RECORD_AUDIO',
+      'android.permission.RECEIVE_BOOT_COMPLETED',
     ]));
     const camera = config.plugins.find((p: unknown) => Array.isArray(p) && p[0] === 'expo-camera');
     expect(camera[1]).toMatchObject({ microphonePermission: false, recordAudioAndroid: false });

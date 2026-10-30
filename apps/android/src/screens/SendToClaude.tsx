@@ -151,6 +151,7 @@ export function SendToClaudeScreen() {
           {step === 'result' ? (
             <>
               <Text variant="caption">{target}</Text>
+              {sending ? <Text variant="body" tone="muted" accessibilityLiveRegion="polite">Sending the same request again</Text> : null}
               {problem?.kind === 'unconfirmed' ? (
                 <>
                   <Text variant="title" accessibilityRole="header">Could not confirm it was sent</Text>

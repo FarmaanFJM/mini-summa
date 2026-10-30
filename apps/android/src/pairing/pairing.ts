@@ -10,7 +10,7 @@ import { classifyNetworkError, UNREACHABLE_HINT, UNREACHABLE_TEXT } from '../lib
 
 export type PairingErrorKind =
   | 'invalid_input' | 'unreachable' | 'tls' | 'cleartext' | 'not_mini_summa' | 'desktop_error'
-  | 'code_expired' | 'code_used' | 'code_invalid' | 'too_many_attempts' | 'refused';
+  | 'code_expired' | 'code_used' | 'code_invalid' | 'too_many_attempts' | 'rate_limited' | 'refused';
 
 export interface UrlAttempt {
   url: string;
@@ -36,6 +36,7 @@ const MESSAGES: Record<PairingErrorKind, string> = {
   code_expired: 'This pairing code has expired. In Mini-Summa on your PC, create a new pairing code and scan it.',
   code_used: 'This pairing code was already used. Each code works once. Create a new one in Mini-Summa on your PC.',
   code_invalid: 'Your PC did not recognise this code. Check the code, or create a new pairing code in Mini-Summa on your PC.',
+  rate_limited: 'Too many pairing attempts in a short time. Wait a minute, then scan the code again.',
   too_many_attempts: 'Too many wrong codes. This pairing code is cancelled. Create a new one in Mini-Summa on your PC and scan it.',
   refused: 'Your PC refused this pairing. Create a new pairing code in Mini-Summa on your PC and try again.',
 };
@@ -121,7 +122,13 @@ export function redeemError(err: unknown, attempts: UrlAttempt[] = []): PairingE
   if (err instanceof ApiError) {
     if (err.status === 0) return new PairingError('unreachable', MESSAGES.unreachable, attempts);
     const text = `${err.code} ${err.message}`.toLowerCase();
-    if (err.status === 429 || /too.?many|rate/.test(text)) return new PairingError('too_many_attempts', MESSAGES.too_many_attempts, attempts);
+    // The desktop limits how fast codes can be tried (429 rate_limited, "Wait N seconds"). That is different from a code
+    // that was cancelled after too many wrong guesses (410 offer_burned, 429 too_many_attempts), which needs a new code.
+    if (err.code === 'rate_limited') {
+      const seconds = /wait (\d+) seconds?/i.exec(err.message)?.[1];
+      return new PairingError('rate_limited', seconds ? `Too many pairing attempts in a short time. Wait ${seconds} seconds, then scan the code again.` : MESSAGES.rate_limited, attempts);
+    }
+    if (err.status === 429 || /too.?many|cancelled/.test(text)) return new PairingError('too_many_attempts', MESSAGES.too_many_attempts, attempts);
     if (/expire/.test(text)) return new PairingError('code_expired', MESSAGES.code_expired, attempts);
     if (/already|\bused\b|redeemed|consumed/.test(text)) return new PairingError('code_used', MESSAGES.code_used, attempts);
     if (err.status === 404 || err.status === 400 || err.status === 401 || /invalid|not.?found|unknown|no such|mismatch/.test(text)) return new PairingError('code_invalid', MESSAGES.code_invalid, attempts);

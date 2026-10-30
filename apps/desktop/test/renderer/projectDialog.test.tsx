@@ -223,10 +223,8 @@ describe('editing a saved project', () => {
   });
 
   it('shows a sign-in requirement as one', async () => {
-    const { user, app, dialog } = await openEdit('Trading dashboard');
-    void app;
+    const { dialog } = await openEdit('Trading dashboard');
     await waitFor(() => expect(within(dialog).getByText('Sign in to ChatGPT, then verify again')).toBeTruthy());
-    void user;
   });
 
   it('opens a conversation through the core', async () => {

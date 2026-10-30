@@ -116,8 +116,8 @@ export interface HandoffPlan {
   secondary: HandoffButton[];
   /** Low-emphasis decisions. */
   quiet: HandoffButton[];
-  /** "Copy the whole message", "Save as file" and, where valid, "I sent it another way". */
-  alternatives: { wholeMessage: boolean; saveFile: boolean; sentAnotherWay: boolean };
+  /** "Copy the whole message" and, where valid, "I sent it another way". ("Save as file" sits with the report's own actions.) */
+  alternatives: { wholeMessage: boolean; sentAnotherWay: boolean };
   /** "Change destination" is offered next to the destination. */
   changeDestination: boolean;
   /** The next uncopied part, when the message has several. */
@@ -150,12 +150,12 @@ export function handoffPlan(delivery: Delivery, ctx: HandoffContext): HandoffPla
     secondary: [] as HandoffButton[], quiet: [] as HandoffButton[], nextPart, partCount: total,
     changeDestination: DESTINATION_CHANGE.includes(delivery.state) && hasDestination,
   };
-  const alternatives = (sentAnotherWay: boolean) => ({ wholeMessage: hasDestination, saveFile: hasDestination, sentAnotherWay });
+  const alternatives = (sentAnotherWay: boolean) => ({ wholeMessage: hasDestination, sentAnotherWay });
   const discard: HandoffButton = { id: 'discard', label: 'Discard' };
 
   switch (delivery.state) {
     case 'report_captured':
-      return { ...base, headline: STATE_LABEL.report_captured, body: ['Mini-Summa is still setting this handoff up.'], primary: null, quiet: [discard], alternatives: alternatives(false) };
+      return { ...base, headline: STATE_LABEL.report_captured, body: ['Mini-Summa is still setting this handoff up.'], primary: null, quiet: [discard], alternatives: { wholeMessage: false, sentAnotherWay: false } };
 
     case 'destination_missing': {
       const choose: HandoffButton = { id: 'chooseDestination', label: 'Choose a conversation' };
@@ -218,7 +218,7 @@ export function handoffPlan(delivery: Delivery, ctx: HandoffContext): HandoffPla
     case 'user_discarded':
       return {
         ...base, headline: STATE_LABEL.user_discarded, body: ['You discarded this handoff. It is not recorded as sent.'],
-        primary: null, secondary: [{ id: 'reopen', label: 'Reopen' }], alternatives: { wholeMessage: false, saveFile: hasDestination, sentAnotherWay: false },
+        primary: null, secondary: [{ id: 'reopen', label: 'Reopen' }], alternatives: { wholeMessage: false, sentAnotherWay: false },
       };
   }
 }
@@ -228,7 +228,6 @@ export function offeredLabels(plan: HandoffPlan): string[] {
   const labels = [plan.primary, ...plan.secondary, ...plan.quiet].filter((b): b is HandoffButton => b !== null).map((b) => b.label);
   if (plan.changeDestination) labels.push('Change destination');
   if (plan.alternatives.wholeMessage) labels.push('Copy the whole message');
-  if (plan.alternatives.saveFile) labels.push('Save as file');
   if (plan.alternatives.sentAnotherWay) labels.push('I sent it another way');
   return labels;
 }

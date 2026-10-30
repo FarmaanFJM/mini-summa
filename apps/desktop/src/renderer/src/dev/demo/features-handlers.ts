@@ -572,7 +572,7 @@ export function createFeatureHandlers(server: DemoServer): HandlerMap {
     'notifications.list': guarded('notifications.list', (i) => [...data().notifications].sort((a, b) => b.at.localeCompare(a.at)).slice(0, Number(i.query?.limit ?? 50))),
 
     // ----- hooks -----
-    'hooks.plan': guarded('hooks.plan', (i) => planHooks(i.body.env, i.body.action)),
+    'hooks.plan': guarded('hooks.plan', (i) => { const body = i.body as { env: EnvId; action: 'install' | 'uninstall' }; return planHooks(body.env, body.action); }),
     'hooks.apply': guarded('hooks.apply', (i) => {
       const body = i.body as { env: EnvId; action: 'install' | 'uninstall'; planHash: string };
       if (st().hookDrift.delete(body.env)) {

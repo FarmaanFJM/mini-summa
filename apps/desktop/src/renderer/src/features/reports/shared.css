@@ -1,0 +1,58 @@
+/*
+  Small pieces the four feature areas (reports, activity, settings, onboarding) share. Everything is built on the
+  palette tokens: surfaces step from --s0 to --s5, text from --text to --text-3, one hairline colour, and emerald only
+  for the primary action of a view. Class names carry the ms-x- prefix.
+*/
+.ms-x-note { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.5; }
+.ms-x-error { margin: 0; color: var(--danger); font-size: var(--fs-sm); line-height: 1.5; overflow-wrap: anywhere; }
+.ms-x-label { display: block; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+.ms-x-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
+.ms-x-head-actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-1); flex: none; }
+.ms-x-stack { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.ms-x-stack--tight { gap: var(--sp-2); }
+
+/* A short list of facts: the label column is as wide as its longest label, values start at the same left edge. */
+.ms-x-kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px var(--sp-4); margin: 0; font-size: var(--fs-md); }
+.ms-x-kv dt { color: var(--text-3); }
+.ms-x-kv dd { margin: 0; color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+
+/* A button that reads as a link: a name that leads somewhere. */
+.ms-x-linkbtn {
+  padding: 0; border: 0; border-radius: var(--r-sm); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  text-decoration: underline; text-decoration-color: var(--text-3); text-underline-offset: 3px;
+}
+.ms-x-linkbtn:hover { text-decoration-color: var(--text); }
+
+/* What just happened, in one calm line. The words carry the meaning; the colour only backs them up. */
+.ms-x-result { margin: 0; padding: 8px 12px; border-radius: var(--r); background: var(--s2); color: var(--text); font-size: var(--fs-sm); line-height: 1.5; overflow-wrap: anywhere; }
+.ms-x-result[data-tone="warning"] { color: var(--warn); }
+.ms-x-result[data-tone="error"] { color: var(--danger); }
+.ms-x-result > p { margin: 0 0 8px; }
+
+/* A disclosure that opens a little more of a card. */
+.ms-x-toggle {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 6px 0 2px; border: 0; border-radius: var(--r-sm); background: none;
+  color: var(--text-2); font: 500 var(--fs-sm)/1 var(--font); cursor: pointer;
+}
+.ms-x-toggle:hover { color: var(--text); background: var(--s2); }
+
+/* A panel of one subject: the surface steps up from the page, rows inside it are filled, nothing inside is outlined. */
+.ms-x-panel { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); border-radius: var(--r-lg); background: var(--s1); min-width: 0; }
+.ms-x-panel__title { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; }
+.ms-x-panel .ms-row-item { background: var(--s2); }
+
+/* A code-like block of untrusted or exact text. Selectable, wraps long lines, never interpreted. */
+.ms-x-text {
+  margin: 0; padding: 10px 12px; border-radius: var(--r); background: var(--s2); color: var(--text); font-size: var(--fs-sm); line-height: 1.55;
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; user-select: text;
+}
+
+/* Settings-style rows: a label and what it does on the left, the control on the right. */
+.ms-x-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); min-height: 40px; min-width: 0; }
+.ms-x-row__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ms-x-row__label { color: var(--text); }
+.ms-x-row__hint { color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; }
+.ms-x-row__control { flex: none; display: flex; align-items: center; gap: var(--sp-2); }
+
+.ms-x-saving { display: inline-flex; align-items: center; gap: 6px; min-height: 20px; color: var(--text-2); font-size: var(--fs-sm); }
+.ms-x-saving[data-state="failed"] { color: var(--danger); }

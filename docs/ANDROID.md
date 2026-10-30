@@ -17,11 +17,11 @@ On the PC:
 
 On the phone:
 
-* Android 7.0 or newer, 64-bit ARM (arm64). Nearly every phone since 2017 is. See "Other CPUs" below for x86 or 32-bit.
+* Android 7.0 or newer, 64-bit ARM (arm64). Nearly every phone since 2017 is. See "Build notes" below for x86 or 32-bit.
 * The Tailscale app, signed in to the **same tailnet** as the PC, with the VPN switched on while you use Mini-Summa.
 
 In your tailnet (admin console, DNS page): MagicDNS on and **HTTPS Certificates** enabled. Without them `tailscale serve`
-cannot give the PC an `https` address, and Android refuses plain `http` addresses to other devices.
+cannot give the PC an `https` address, and the release app refuses plain `http` addresses to other devices.
 
 ## Tailscale on the phone
 
@@ -94,16 +94,18 @@ Keep that keystore out of the repository. Do not add a `google-services.json` un
   `MINISUMMA_ARCHS=arm64-v8a,armeabi-v7a,x86_64` (a much longer build).
 * **Gradle** is downloaded by the wrapper (9.4.1), and Android Gradle Plugin 9.2.1 and the React Native artifacts come from
   Google Maven, Maven Central, the Gradle Plugin Portal and JitPack. A first build downloads about 2 GB.
-* **HTTP 429 from Maven Central.** On a shared network address Maven Central may answer `429 Too Many Requests`. Gradle then
-  retries three times and gives up with "Plugin ... was not found" (the real cause, HTTP 429, shows with `--info`). Make Gradle
-  more patient in `~/.gradle/gradle.properties` (outside the repository):
+* **HTTP 429 from Maven Central.** Some networks (shared addresses, cloud sandboxes) get `429 Too Many Requests` from
+  `repo.maven.apache.org`, and then Gradle stops with "Could not GET ... Received status code 429" or, for plugins, "Plugin ... was not
+  found" (the real cause shows with `--info`). If it is occasional, more patience in `~/.gradle/gradle.properties` (outside the
+  repository) can be enough:
   ```
   systemProp.org.gradle.internal.repository.max.tentatives=8
   systemProp.org.gradle.internal.repository.initial.backoff=1000
   org.gradle.workers.max=2
-  org.gradle.parallel=false
   ```
-  The first build is then slow (it waits out the 429s); later builds use Gradle's cache.
+  If every request is refused (as it was in the sandbox this was written in, see "Build outcome" below), run the build from another
+  network, or use a Maven mirror that you trust through a Gradle init script in `~/.gradle/init.d/`. This repository does not
+  configure a mirror for you.
 * R8 shrinking is switched off (`expo-build-properties`), so an APK that could not be run on a device while it was built does
   not also depend on untested keep rules. Turn it on in `app.config.ts` if you want a smaller APK.
 
@@ -128,8 +130,8 @@ another app fills the screen too. The app stores only the address, the device to
 Android's encrypted storage. Nothing else is written to disk.
 
 To remove a phone, press **Unpair this phone** in Settings (this wipes the token from the phone) and remove it in Mini-Summa on
-the PC. If you remove the phone on the PC first, the app notices (HTTP 401, or the live connection closing with code 4003), wipes
-its token and shows "This phone was removed in Mini-Summa. Pair again."
+the PC. If you remove the phone on the PC first, the app notices (HTTP 401, the live connection closing with code 4003, or the token being refused at connect with code 4401),
+wipes its token and shows "This phone was removed in Mini-Summa. Pair again."
 
 ## What the app does
 
@@ -183,7 +185,8 @@ If the PC is asleep, off or not on the tailnet, nothing can be pushed (the PC is
 
 ## Privacy and permissions
 
-Permissions: network, camera (QR scan), notifications. Storage, overlay and microphone permissions are blocked. Android cloud
+Permissions: network, camera (QR scan), notifications (and vibration for the alert pattern). Storage, overlay, microphone and
+start-at-boot permissions are blocked. Android cloud
 backup is off so the token cannot leave the phone that way. The phone never caches report bodies, and no source file imports a
 storage library other than the secure credential store (a test enforces that). Two things leave the app on your request: **Copy**
 puts the report on the Android clipboard (other apps may be able to read the clipboard, so copy something else afterwards if the
@@ -191,37 +194,72 @@ report is sensitive) and **Share** hands the text to the app you pick.
 
 ## Verified and NOT TESTED
 
-Verified here (commands run from `apps/android`):
+Verified here (Linux, Node 22.22; commands run from `apps/android` unless noted):
 
 | What | Result |
 | --- | --- |
-| `npx tsc --noEmit` (app, tests, and the shared SDK source) and `-p tsconfig.config.json` | clean |
-| `npx jest` (jest-expo and React Native Testing Library) | 13 suites, 186 tests pass |
+| `npx tsc --noEmit` (app, tests and the shared SDK source) and `npx tsc --noEmit -p tsconfig.config.json` | clean |
+| `npx jest` (jest-expo, React Native Testing Library, a fake desktop that speaks the real route table) | 15 suites, 216 tests pass |
+| `npm run check:core` (from the repo root install: the app's own pairing, connection and send code against the **real** headless core in `packages/core`) | 10 of 10 checks pass |
 | `npx expo-doctor` | 20 of 20 checks pass |
-| `npx expo export --platform android` (Metro, Hermes bytecode) | bundles 1,408 modules |
-| `npx expo install --check` | dependencies match SDK 58 |
+| `npx expo install --check` | dependencies match Expo SDK 58 |
+| `npx expo export --platform android` (Metro with the shared source and zod, Hermes bytecode) | bundles 1,408 modules into a 3.5 MB `.hbc` |
+| `npx expo prebuild --platform android` | generates the project; the manifest has CAMERA, INTERNET, VIBRATE and POST_NOTIFICATIONS, removes storage, overlay, audio and boot permissions, `allowBackup=false`, `usesCleartextTraffic=false`, the `minisumma` link scheme and FCM default channel `needs-you` |
+| Android SDK packages from the table above installed with `sdkmanager` | done |
+| Gradle wrapper (9.4.1) downloads and starts | done |
 
-BUILD_OUTCOME_PLACEHOLDER
+What `check:core` covers against the real core: pairing from the core's own QR link, the answers for a used, wrong, unknown and
+cancelled code and for the 10-per-minute pairing limit, the snapshot reload and scopes, a live event from the desktop, the
+refusal of a prompt for an unknown session, a 403 for a missing scope that does not unpair the phone, removal while connected
+(close 4003) and while away (refused at connect, close 4401), and a PC that stops answering (reconnecting, then
+`desktop_unreachable`, with the honest wording and the last update time).
 
-**Not tested, because there is no phone, emulator, Firebase project or Tailscale network here:**
+### Build outcome: no APK was produced here
+
+`npm run build:apk` got as far as `./gradlew assembleRelease` and stopped while Gradle was configuring the build, before any code
+was compiled:
+
+```
+$ ./gradlew assembleRelease --no-daemon --console=plain       (in apps/android/android)
+* What went wrong:
+Error resolving plugin [id: 'expo-autolinking-settings']
+> Could not resolve org.jetbrains.kotlin:kotlin-native-utils:1.9.24.
+   > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-native-utils/1.9.24/kotlin-native-utils-1.9.24.pom'.
+     Received status code 429 from server: Too Many Requests
+```
+
+Cause: from this sandbox's shared network address Maven Central refused JVM clients. A plain `java.net.http.HttpClient` request for
+that file got 429 on 8 of 8 tries, while `curl` got 200 on about 5 of 6. Gradle's own retries (eight tries with doubling waits, three
+build attempts over twenty minutes) did not change that. Nothing in the app or in the generated project is known to be wrong:
+the same Gradle run had already resolved the first plugin after retries and then stopped on the next artifact. A mirror of Maven Central was
+deliberately not configured here.
+
+What you need to do: run `npm run build:apk` from a network where Maven Central answers Gradle (a home or office connection), with the
+Android SDK packages from the table above. Everything else is already in place and checked by the script's prerequisite step. If
+your network throttles Maven Central too, use a mirror you trust (see Build notes).
+
+No APK exists, so no APK path, size or signature is claimed. The signing step in `scripts/build-apk.mjs` (throwaway local key,
+`apksigner sign`, `apksigner verify`) has therefore **not been run either**.
+
+### Not tested
+
+There is no phone, emulator, Firebase project or Tailscale network here, so none of this was exercised:
 
 * installing and starting the app on a real device or emulator, and how it looks and feels (layout, fonts, touch targets, the
-  keyboard over the compose screen, edge to edge insets, the bottom tab bar, sheets and the toast position)
+  keyboard over the compose screen with edge to edge insets, the bottom tab bar, sheets and the toast position)
 * scanning a QR code with the camera, and the Android permission prompts
-* push delivery, FCM token registration, channel behavior, and what a tap from a notification does on a cold start
-* a real Tailscale connection, a real `tailscale serve` address and its certificate, and TLS error wording on a real device
-  (React Native reports most connection failures as the same error, so the app's "certificate or HTTPS" message is a best effort)
-* a real desktop core: the tests run against a fake core that speaks the shared route table, not the real server. The
-  WebSocket close code 4003 and the error codes used for expired or used pairing codes are matched loosely because the real
-  server did not exist yet when this was written
-* R8/ProGuard, other CPU types, and Android versions other than the ones the build targets (minSdk 24, target 36)
+* push delivery, FCM token registration, notification channel behavior, and what a tap on a notification does on a cold start
+* a real Tailscale connection, a real `tailscale serve` address and its certificate, and the TLS error wording on a real device
+  (React Native reports most connection failures as the same error, so the "certificate or HTTPS" message is a best effort)
+* the real desktop UI (the Electron app): only its headless core was used
+* R8/ProGuard (off), other CPU types (arm64 only), and Android versions other than the ones the build targets (minSdk 24, target 36)
 
-Known gaps:
+### Known gaps
 
 * A connection that dies silently (for example when the phone switches from Wi-Fi to mobile data) is noticed by the SDK's ping
   check within about 70 seconds. Until then the app can still look live. A clean close is noticed at once.
 * The manual pairing form needs the **offer ID** as well as the code, because `pairing.redeem` requires both. The desktop should
   show all three (address, offer id, code), or a copyable `minisumma://pair?...` link.
 * The app keeps one address per pairing (the first one that answered). If the PC is reachable by another address later, pair again.
-* Reports and activity are loaded as the newest 100 each, with "Load older" for more. Search is not included.
+* Reports and activity are loaded as the newest 100 each, with "Load older" for more. There is no search.
 * There is no terminal view and no way to start or stop sessions from the phone: those need the desktop scope, which phones do not get.

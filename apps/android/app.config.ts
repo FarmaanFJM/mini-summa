@@ -31,6 +31,8 @@ const config: ExpoConfig = {
       'android.permission.WRITE_EXTERNAL_STORAGE',
       'android.permission.SYSTEM_ALERT_WINDOW',
       'android.permission.RECORD_AUDIO',
+      // Only needed to reschedule notifications after a reboot; the app schedules none.
+      'android.permission.RECEIVE_BOOT_COMPLETED',
     ],
     ...(googleServicesFile ? { googleServicesFile } : {}),
   },

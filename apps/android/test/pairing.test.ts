@@ -115,7 +115,7 @@ describe('what the desktop says about the code', () => {
     [409, 'offer_used', 'This pairing offer was already used.', 'code_used', 'already used'],
     [404, 'not_found', 'Pairing offer was not found.', 'code_invalid', 'did not recognise'],
     [400, 'bad_request', 'The code does not match.', 'code_invalid', 'did not recognise'],
-    [429, 'rate_limited', 'Too many attempts.', 'too_many_attempts', 'Too many wrong codes'],
+    [429, 'rate_limited', 'Too many pairing attempts. Wait 37 seconds, then scan the code again.', 'rate_limited', 'Wait 37 seconds'],
     [403, 'forbidden', 'No.', 'refused', 'refused'],
     // The messages and codes the real core uses (packages/core/src/infra/devices.ts).
     [404, 'offer_not_found', 'This pairing code is not known to this PC. Create a new one on the PC and scan it again.', 'code_invalid', 'did not recognise'],
@@ -136,7 +136,7 @@ describe('what the desktop says about the code', () => {
   });
 
   it('every message says what to do next and has no em dash', () => {
-    for (const kind of ['invalid_input', 'unreachable', 'tls', 'cleartext', 'not_mini_summa', 'desktop_error', 'code_expired', 'code_used', 'code_invalid', 'too_many_attempts', 'refused'] as const) {
+    for (const kind of ['invalid_input', 'unreachable', 'tls', 'cleartext', 'not_mini_summa', 'desktop_error', 'code_expired', 'code_used', 'code_invalid', 'too_many_attempts', 'rate_limited', 'refused'] as const) {
       expect(pairingMessage(kind)).not.toContain('—');
       expect(pairingMessage(kind).length).toBeGreaterThan(30);
     }
