@@ -45,6 +45,19 @@ the 30-minute checklist for the phone.
 These are things Mini-Summa gets wrong or does clumsily today. None blocks the core workflow.
 
 * **Quitting adds one unread "Session ended" feed entry per running terminal.**
+* **`/clear` and `/resume` inside a managed terminal are followed, within limits.** The core moves the terminal's record to the
+  new session id when `claude agents --json` shows the same process running it (verified with the real CLI for `/clear` and
+  `/resume`, and in the real Electron app for `/clear` with a stand-in CLI), and the window moves the tab, the remembered choice
+  and the keyboard along; the old session stays in the Sessions menu as ended history ("Replaced inside their terminal"). Not
+  exercised: `/clear` while Claude is working or a dialog is open (then Mini-Summa may announce "A Claude session ended" for the
+  old session although the terminal went on), and `/resume` in the Electron app. While Claude has not told Mini-Summa which
+  session the terminal runs now, the pane says so and Mini-Summa does not type into that terminal (you still can). A phone prompt
+  that was waiting for the old session cannot be approved afterwards ("not running") and stays until it expires or you reject it.
+* **The window's remembered state is saved about 0.6 seconds after the last change.** A normal close sends it at once (a request
+  that outlives the page); a process that is killed can lose the last 0.6 seconds of changes.
+* **The strip at the bottom of the workspace shows the waiting report of the selected project only**, the one you are in the
+  middle of first, then the newest, with "+N more" linking to the Reports queue. Discard, changing the destination and the
+  alternatives for long messages stay in Reports.
 * **After a restart the previous terminal output is not shown** ("No terminal output is available for this session") until
   the session is resumed; the transcript lives in Claude Code, not in Mini-Summa.
 * **A report keeps the project name it was captured under after the project is renamed.** It stays linked by project id, so it still belongs to the right project.
