@@ -53,7 +53,7 @@ export function nextStartingMarks(previous: Record<string, StartingMark>, sessio
   return same && Object.keys(next).length === Object.keys(previous).length ? previous : next;
 }
 
-export function createUiStore(now: () => number = Date.now): UiStore {
+export function createUiStore(now: () => number = () => Date.now()): UiStore { // read the clock at call time, so a test clock is honoured
   return createStore<UiState & UiActions>((set, get) => ({
     ...emptyTabs(),
     focusedPane: null,
