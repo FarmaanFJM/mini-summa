@@ -243,7 +243,7 @@ describe('composing, confirming and sending', () => {
 
 describe('Remote Control for external sessions', () => {
   it('explains what to type and opens claude.ai/code', async () => {
-    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
     setParams({ key: SESSION_KEY });
     await mount(<RemoteControlScreen />, { seed: { snapshot: makeSnapshot({ sessions: [makeSession({ origin: 'external' })] }) } });
     expect(screen.getByText('Mini-Summa observes external sessions but cannot type into them.')).toBeOnTheScreen();

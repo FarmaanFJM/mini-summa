@@ -17,8 +17,8 @@ export interface SplitPaneProps {
   defaultRatio?: number;
   first: ReactNode;
   second: ReactNode;
-  /** Show one pane at full size and hide the divider. The hidden pane stays mounted. */
-  collapsed?: 'first' | 'second' | null;
+  /** Show only this pane, at full size, and hide the divider. The other pane stays mounted, just not displayed. */
+  only?: 'first' | 'second' | null;
   /** Accessible name of the divider. */
   label: string;
   /** Names used in the divider's spoken value, for example ["ChatGPT", "Claude"]. */
@@ -27,7 +27,7 @@ export interface SplitPaneProps {
 }
 
 /** Two panes and a divider that can be dragged, moved with the arrow keys and reset with a double click. */
-export function SplitPane({ direction, ratio, onRatioChange, onRatioCommit, defaultRatio = DEFAULT_RATIO, first, second, collapsed = null, label, names = ['First', 'Second'], className }: SplitPaneProps) {
+export function SplitPane({ direction, ratio, onRatioChange, onRatioCommit, defaultRatio = DEFAULT_RATIO, first, second, only = null, label, names = ['First', 'Second'], className }: SplitPaneProps) {
   const container = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   // The ref answers "is a drag running" synchronously; the state only drives rendering.
@@ -39,7 +39,7 @@ export function SplitPane({ direction, ratio, onRatioChange, onRatioCommit, defa
   useNativeOverlay(dragging);
 
   const r = clampRatio(ratio);
-  const template = collapsed ? 'minmax(0, 1fr)' : `minmax(0, ${r}fr) ${DIVIDER_PX}px minmax(0, ${1 - r}fr)`;
+  const template = only ? 'minmax(0, 1fr)' : `minmax(0, ${r}fr) ${DIVIDER_PX}px minmax(0, ${1 - r}fr)`;
   const style: CSSProperties = direction === 'horizontal' ? { gridTemplateColumns: template } : { gridTemplateRows: template };
 
   const set = (next: number, commit: boolean) => {
@@ -81,8 +81,8 @@ export function SplitPane({ direction, ratio, onRatioChange, onRatioCommit, defa
   const percent = Math.round(r * 100);
   return (
     <div ref={container} className={cx('ms-split', `ms-split--${direction}`, className)} style={style}>
-      <div className="ms-split__pane" hidden={collapsed === 'second'}>{first}</div>
-      {collapsed ? null : (
+      <div className="ms-split__pane" hidden={only === 'second'}>{first}</div>
+      {only ? null : (
         <div
           role="separator"
           aria-orientation={direction === 'horizontal' ? 'vertical' : 'horizontal'}
@@ -102,7 +102,7 @@ export function SplitPane({ direction, ratio, onRatioChange, onRatioCommit, defa
           onKeyDown={onKeyDown}
         />
       )}
-      <div className="ms-split__pane" hidden={collapsed === 'first'}>{second}</div>
+      <div className="ms-split__pane" hidden={only === 'first'}>{second}</div>
     </div>
   );
 }

@@ -287,8 +287,14 @@ function startTray(running: Core): void {
 async function failStartup(error: unknown): Promise<void> {
   log.error('startup failed', { error });
   const message = error instanceof Error ? error.message : String(error);
-  try { dialog.showErrorBox('Mini-Summa could not start', `${message}\n\nDetails are in ${log.file}`); } catch { /* no display */ }
   try { await core?.stop(); } catch { /* already failed */ }
+  try {
+    // Not showErrorBox: that blocks the whole main process until someone clicks it.
+    await dialog.showMessageBox({
+      type: 'error', title: 'Mini-Summa', message: 'Mini-Summa could not start', detail: `${message}\n\nDetails are in ${log.file}`,
+      buttons: ['Quit'], defaultId: 0, noLink: true,
+    });
+  } catch { /* no display: the log has it */ }
   app.exit(1);
 }
 

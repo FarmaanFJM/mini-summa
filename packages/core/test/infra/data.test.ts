@@ -1,10 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { unavailableBridge } from '@minisumma/shared';
 import type { RetentionSettings } from '@minisumma/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDataService } from '../../src/infra/data.ts';
 import type { DataDeps } from '../../src/infra/data.ts';
+import { createDevicesService } from '../../src/infra/devices.ts';
+import { createProjectsService } from '../../src/infra/projects.ts';
 import { createSettingsService } from '../../src/infra/settings.ts';
+import { createActivityService, createDeliveriesService, createNotificationsService, createReportsService } from '../../src/workflow/index.ts';
 import { cleanupTempDirs, makeBase, tempDir } from './part1-fixtures.ts';
 import type { TestBase } from './part1-fixtures.ts';
 
@@ -149,13 +153,55 @@ describe('prune: what is deleted', () => {
       const open = ['report_captured', 'destination_missing', 'destination_unverified', 'ready_for_handoff', 'copied', 'awaiting_user_send', 'delivery_uncertain'];
       const { data } = setup({ reportsDays: 60 });
       for (const state of open) { addReport(`r-${state}`, daysAgo(100)); addDelivery(`d-${state}`, `r-${state}`, state, daysAgo(100)); }
-      // one closed delivery next to an open one does not release the report
-      addReport('mixed', daysAgo(100));
-      addDelivery('d-mixed-closed', 'mixed', 'user_confirmed_sent', daysAgo(100));
-      addDelivery('d-mixed-open', 'mixed', 'copied', daysAgo(100));
       expect(data.prune({}).removed).toMatchObject({ reports: 0, deliveries: 0 });
-      expect(ids('reports')).toHaveLength(open.length + 1);
-      expect(ids('deliveries')).toHaveLength(open.length + 2);
+      expect(ids('reports')).toHaveLength(open.length);
+      expect(ids('deliveries')).toHaveLength(open.length);
+    });
+
+    it('removes a closed old delivery even when its report has to stay because another delivery is open', () => {
+      const { data } = setup({ reportsDays: 60 });
+      addReport('mixed', daysAgo(100));
+      addDelivery('d-closed', 'mixed', 'user_confirmed_sent', daysAgo(100));
+      addDelivery('d-discarded', 'mixed', 'user_discarded', daysAgo(100));
+      addDelivery('d-open', 'mixed', 'copied', daysAgo(100));
+      expect(data.prune({}).removed).toMatchObject({ reports: 0, deliveries: 2 });
+      expect(ids('reports')).toEqual(['mixed']);
+      expect(ids('deliveries')).toEqual(['d-open']);
+      expect(ids('delivery_events')).toEqual(['ev-d-open']);
+    });
+
+    it('lets the report go once the delivery that held it is closed and old', () => {
+      const { data } = setup({ reportsDays: 60 });
+      addReport('r', daysAgo(100));
+      addDelivery('d', 'r', 'copied', daysAgo(100));
+      expect(data.prune({}).removed).toMatchObject({ reports: 0, deliveries: 0 });
+      base.db.run("UPDATE deliveries SET state = 'user_confirmed_sent' WHERE id = 'd'");
+      expect(data.prune({}).removed).toMatchObject({ reports: 1, deliveries: 1 });
+      expect(ids('reports')).toEqual([]);
+    });
+
+    it('removes report candidates older than the cutoff with the reports, without counting them', () => {
+      const { data } = setup({ reportsDays: 60 });
+      const addCandidate = (id: string, at: string): void => {
+        base.db.run(
+          `INSERT INTO report_candidates (id, session_key, env, session_id, generation, reason, body, body_sha256, captured_at)
+           VALUES (?, 'win|s', 'win', 's', 1, 'no marker', 'b', 'sha', ?)`,
+          [id, at],
+        );
+      };
+      addCandidate('cand-old', daysAgo(100)); addCandidate('cand-edge', daysAgo(60)); addCandidate('cand-new', daysAgo(5));
+      const dry = data.prune({ dryRun: true });
+      expect(dry.removed).toEqual({ rawEvents: 0, activity: 0, notifications: 0, reports: 0, deliveries: 0 });
+      expect(ids('report_candidates')).toEqual(['cand-edge', 'cand-new', 'cand-old']);
+      expect(data.prune({}).removed.reports).toBe(0);
+      expect(ids('report_candidates')).toEqual(['cand-edge', 'cand-new']);
+    });
+
+    it('keeps candidates when reports are kept (retention 0)', () => {
+      const { data } = setup({ reportsDays: 0 });
+      base.db.run("INSERT INTO report_candidates (id, session_key, env, session_id, generation, reason, body, body_sha256, captured_at) VALUES ('c', 'win|s', 'win', 's', 1, 'r', 'b', 's', ?)", [daysAgo(900)]);
+      data.prune({});
+      expect(ids('report_candidates')).toEqual(['c']);
     });
 
     it('keeps an old report whose delivery was touched after the cutoff', () => {
@@ -273,6 +319,41 @@ describe('prune: workflow services do their own deleting', () => {
     expect(data.usage()).toMatchObject({ activity: 1, notifications: 1, reports: 1 });
   });
 
+  it('asks the deliveries service before the reports service, so a report is no longer held by deliveries that just went', () => {
+    const calls: string[] = [];
+    const deliveries = { prune: vi.fn(() => { calls.push('deliveries'); return 0; }) };
+    const reports = { prune: vi.fn(() => { calls.push('reports'); return 0; }) };
+    const { data } = setup({ reportsDays: 30 }, { reports, deliveries });
+    data.prune({});
+    expect(calls).toEqual(['deliveries', 'reports']);
+  });
+
+  it('does the SQL step for the one service that was not handed in, in the same order', () => {
+    // only reports is a hook: closed old deliveries still go (by SQL) before it runs, so it sees them gone
+    const seenByReports: string[] = [];
+    const reports = { prune: vi.fn(() => { seenByReports.push(...ids('deliveries')); return 0; }) };
+    const { data } = setup({ reportsDays: 30 }, { reports });
+    addReport('r', daysAgo(100)); addDelivery('closed', 'r', 'user_discarded', daysAgo(100)); addDelivery('open', 'r', 'copied', daysAgo(100));
+    expect(data.prune({}).removed).toMatchObject({ reports: 0, deliveries: 1 });
+    expect(seenByReports).toEqual(['open']);
+    // only deliveries is a hook: the reports step is SQL and runs after it
+    base.close();
+    const deliveries = { prune: vi.fn(() => { base.db.run("DELETE FROM deliveries WHERE id = 'closed2'"); return 1; }) };
+    const second = setup({ reportsDays: 30 }, { deliveries });
+    addReport('r2', daysAgo(100)); addDelivery('closed2', 'r2', 'user_confirmed_sent', daysAgo(100));
+    expect(second.data.prune({}).removed).toMatchObject({ reports: 1, deliveries: 1 });
+    expect(ids('reports')).toEqual([]);
+  });
+
+  it('is one unit: when the reports step fails, the deliveries that went before it come back', () => {
+    const reports = { prune: vi.fn((): number => { throw new Error('reports service failed'); }) };
+    const { data } = setup({ reportsDays: 30 }, { reports });
+    addReport('r', daysAgo(100)); addDelivery('d', 'r', 'user_discarded', daysAgo(100));
+    expect(() => data.prune({})).toThrow(/reports service failed/);
+    expect(ids('deliveries')).toEqual(['d']);
+    expect(base.db.inTransaction).toBe(false);
+  });
+
   it('counts deliveries by what actually disappeared, whoever removed them', () => {
     const deliveries = { prune: vi.fn(() => { base.db.run("DELETE FROM deliveries WHERE id = 'd1'"); return 1; }) };
     const reports = { prune: vi.fn(() => { base.db.run("DELETE FROM reports WHERE id = 'r1'"); return 1; }) };
@@ -313,5 +394,109 @@ describe('prune on a database file', () => {
     expect(data.prune({}).removed.rawEvents).toBe(200);
     expect(data.usage().rawEvents).toBe(1);
     expect(fs.existsSync(`${file}-wal`) ? fs.statSync(`${file}-wal`).size : 0).toBe(0);
+  });
+});
+
+describe('prune: the real workflow services and the SQL fallback do the same', () => {
+  const RETENTION = { rawEventsDays: 90, activityDays: 180, notificationsDays: 90, reportsDays: 60 };
+
+  /** One data set with a case for every rule: ages, read state, action state, delivery states, candidates. */
+  function seedWorld(): void {
+    counter = 0; // both worlds get the same transport ids
+    for (const age of [0, 50, 89, 91, 200]) addRaw(daysAgo(age));
+    for (const age of [10, 179, 181, 400]) {
+      for (const read of [true, false]) for (const [requiresAction, resolved] of [[false, false], [true, false], [true, true]] as const) {
+        addActivity(`a-${age}-${read ? 'read' : 'unread'}-${requiresAction ? (resolved ? 'resolved' : 'open') : 'plain'}`, daysAgo(age), { read, requiresAction, resolved });
+      }
+    }
+    for (const age of [10, 89, 91, 400]) { addNotification(`n-${age}-r`, daysAgo(age), true); addNotification(`n-${age}-u`, daysAgo(age), false); }
+    const deliveryStates = ['report_captured', 'destination_missing', 'destination_unverified', 'ready_for_handoff', 'copied', 'awaiting_user_send', 'user_confirmed_sent', 'delivery_uncertain', 'user_discarded'];
+    for (const reportAge of [5, 59, 61, 100, 400]) {
+      addReport(`r${reportAge}`, daysAgo(reportAge));
+      addReport(`r${reportAge}-solo`, daysAgo(reportAge));
+      deliveryStates.forEach((state, i) => {
+        for (const deliveryAge of [reportAge, 10]) {
+          if (deliveryAge > reportAge) continue;
+          addDelivery(`d-${reportAge}-${i}-${deliveryAge}`, `r${reportAge}`, state, daysAgo(deliveryAge));
+        }
+      });
+    }
+    // reports with exactly one delivery, in each state, old
+    deliveryStates.forEach((state, i) => { addReport(`one-${i}`, daysAgo(200)); addDelivery(`one-d-${i}`, `one-${i}`, state, daysAgo(200)); });
+    for (const age of [5, 59, 61, 400]) {
+      base.db.run(
+        "INSERT INTO report_candidates (id, session_key, env, session_id, generation, reason, body, body_sha256, captured_at) VALUES (?, 'win|s', 'win', 's', 1, 'r', 'b', 's', ?)",
+        [`cand-${age}`, daysAgo(age)],
+      );
+    }
+  }
+
+  function world(withHooks: boolean) {
+    const data = setup(RETENTION).data;
+    const settings = createSettingsService({ base });
+    const projects = createProjectsService({ base, settings, hostPlatform: 'linux', hostEnv: 'posix' });
+    const devices = createDevicesService({ base });
+    const activity = createActivityService({ base, fullCounts: () => ({ unreadActivity: 0, actionsNeeded: 0, pendingActions: 0, reportsAwaitingHandoff: 0, liveSessions: 0 }) });
+    const notifications = createNotificationsService({ base, settings, projects, devices, native: unavailableBridge(), push: null });
+    const reports = createReportsService({ base });
+    const deliveries = createDeliveriesService({ base, settings, projects, reports, sessions: { get: () => null, conversationBinding: () => null }, native: unavailableBridge() });
+    return withHooks ? createDataService({ base, settings, activity, notifications, reports, deliveries }) : data;
+  }
+
+  const tables = ['raw_events', 'activity', 'notifications', 'reports', 'deliveries', 'delivery_events', 'report_candidates'];
+  const dump = (): Record<string, unknown[]> => Object.fromEntries(tables.map((t) => [t, base.db.all(`SELECT * FROM ${t} ORDER BY rowid`)]));
+
+  it('remove the same records and report the same numbers, on a data set with a case for every rule', () => {
+    const withHooks = world(true);
+    seedWorld();
+    const before = dump();
+    const dryWithHooks = withHooks.prune({ dryRun: true });
+    expect(dump()).toEqual(before);
+    const realWithHooks = withHooks.prune({});
+    const afterHooks = dump();
+    base.close();
+
+    const sqlOnly = world(false);
+    seedWorld();
+    const dryWithSql = sqlOnly.prune({ dryRun: true });
+    const realWithSql = sqlOnly.prune({});
+    const afterSql = dump();
+
+    expect(realWithHooks).toEqual({ dryRun: false, removed: realWithSql.removed });
+    expect(dryWithHooks.removed).toEqual(dryWithSql.removed);
+    expect(dryWithSql.removed).toEqual(realWithSql.removed);
+    expect(afterHooks).toEqual(afterSql);
+    // and the data set really exercised every table
+    for (const key of ['rawEvents', 'activity', 'notifications', 'reports', 'deliveries'] as const) expect(realWithSql.removed[key], key).toBeGreaterThan(0);
+    expect(afterSql.report_candidates.length).toBeLessThan(before.report_candidates.length);
+  });
+
+  it('leave nothing behind that is open, unread or newer than the cutoff, and nothing old that may go', () => {
+    const data = world(true);
+    seedWorld();
+    const n = (sql: string): number => base.db.get<{ n: number }>(sql)?.n ?? 0;
+    const at = (days: number): string => `'${daysAgo(days)}'`;
+    const mustStay = {
+      openDeliveries: `SELECT COUNT(*) AS n FROM deliveries WHERE state NOT IN ('user_confirmed_sent','user_discarded')`,
+      recentDeliveries: `SELECT COUNT(*) AS n FROM deliveries WHERE updated_at >= ${at(60)}`,
+      unreadActivity: 'SELECT COUNT(*) AS n FROM activity WHERE read_at IS NULL',
+      openActivity: 'SELECT COUNT(*) AS n FROM activity WHERE requires_action = 1 AND resolved_at IS NULL',
+      recentActivity: `SELECT COUNT(*) AS n FROM activity WHERE at >= ${at(180)}`,
+      recentNotifications: `SELECT COUNT(*) AS n FROM notifications WHERE at >= ${at(90)}`,
+      recentRawEvents: `SELECT COUNT(*) AS n FROM raw_events WHERE ingested_at >= ${at(90)}`,
+      recentReports: `SELECT COUNT(*) AS n FROM reports WHERE captured_at >= ${at(60)}`,
+      recentCandidates: `SELECT COUNT(*) AS n FROM report_candidates WHERE captured_at >= ${at(60)}`,
+    };
+    const before = Object.fromEntries(Object.entries(mustStay).map(([k, sql]) => [k, n(sql)]));
+    for (const [k, v] of Object.entries(before)) expect(v, `${k} is part of the data set`).toBeGreaterThan(0);
+
+    data.prune({});
+
+    expect(Object.fromEntries(Object.entries(mustStay).map(([k, sql]) => [k, n(sql)]))).toEqual(before);
+    expect(n(`SELECT COUNT(*) AS n FROM raw_events WHERE ingested_at < ${at(90)}`)).toBe(0);
+    expect(n(`SELECT COUNT(*) AS n FROM notifications WHERE at < ${at(90)}`)).toBe(0);
+    expect(n(`SELECT COUNT(*) AS n FROM activity WHERE at < ${at(180)} AND read_at IS NOT NULL AND (requires_action = 0 OR resolved_at IS NOT NULL)`)).toBe(0);
+    expect(n(`SELECT COUNT(*) AS n FROM deliveries WHERE state IN ('user_confirmed_sent','user_discarded') AND updated_at < ${at(60)}`)).toBe(0);
+    expect(n(`SELECT COUNT(*) AS n FROM report_candidates WHERE captured_at < ${at(60)}`)).toBe(0);
   });
 });

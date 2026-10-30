@@ -3,7 +3,7 @@
 Date 2026-10-30. Claude Code **2.1.314** (`claude --version` prints `2.1.314 (Claude Code)`), Linux container (x64), model alias
 `haiku` (Haiku 5.5) with `--effort low`. Driven through Mini-Summa's own code: `createManagedManager` + the real
 `createNodePtySpawner` (@lydell/node-pty) + `writeManagedSettings` + the real `capture.mjs` hook. Nothing was typed by a script
-that bypasses the manager except the first-run onboarding keys, which are listed below.
+that bypasses the manager except the first-run onboarding keys and the Shift+Tab presses that switched to manual mode (both listed below).
 
 **Not run on Windows (ConPTY), in WSL2, or with a `.cmd` shim. Those paths are unit-tested as strings only: NOT TESTED.**
 
@@ -41,8 +41,8 @@ that bypasses the manager except the first-run onboarding keys, which are listed
 
 ## Findings
 
-1. **Hooks from `--settings` work.** No user-level `settings.json` hook was involved: the isolated config dir only contained
-   `{"theme":"dark"}`. Every hook ran the managed command (`... --env posix --handler ms-managed <Event>`).
+1. **Hooks from `--settings` work.** No user-level hook was involved: the isolated config dir's `settings.json` only contained
+   `{"theme":"dark"}` (written by the theme picker). Every hook ran the managed command (`... --env posix --handler ms-managed <Event>`).
 2. **The report protocol reaches the model through a `--settings` SessionStart hook.** For a real task prompt the final message
    ended with the exact marker line. For a prompt that said "a harness check, nothing else is needed" the model answered
    "This was a harness check, not an implementation task, so there is no implementation report", which it could only say
@@ -71,7 +71,7 @@ that bypasses the manager except the first-run onboarding keys, which are listed
    Esc to cancel · Tab to amend
    ```
 
-   * Enter (`sendKeys('approve')`): the first option, tool ran. Done twice (a `Write`-like redirect and an append).
+   * Enter (`sendKeys('approve')`): the first option, tool ran. Done twice (two different Bash commands).
    * Escape (`sendKeys('reject')`): terminal shows `● Interrupted · What should Claude do instead?`, `rejected.txt` was not
      created, **no further hook fired at all** (no PostToolUse, no Stop; consistent with the PoC note "Esc fires no Stop"), the
      input box came back (`manual mode on · ? for shortcuts`) and the session stayed usable. A later answer in the same
@@ -115,7 +115,7 @@ that bypasses the manager except the first-run onboarding keys, which are listed
 ## Raw evidence (spool, run 2; paths shortened to `<scratch>`; times are the hook's `received_at`)
 
 ```
-14:58:59.346 SessionStart      handler=ms-managed env=posix {"source":"startup","model":"claude-haiku-5-5","session_title":"mini-summa-real-run"}
+14:57:59.346 SessionStart      handler=ms-managed env=posix {"source":"startup","model":"claude-haiku-5-5","session_title":"mini-summa-real-run"}
 14:58:57.300 UserPromptSubmit  permission_mode=default prompt="\n\n<pasted_content id=\"4098\">\nTask for this session (a harness check, nothing else is needed):\n1. Create a file named mini-summa-check.txt in the current directory.\n2. Its content must be exactly the word hi.\nThen finish the task.\n</pasted_content id=\"4098\">\n"
 14:58:59.786 PreToolUse        tool_name=Bash tool_input={"command":"printf 'hi' > \"<cwd>/mini-summa-check.txt\" && cat \"<cwd>/mini-summa-check.txt\"", ...}
 14:58:59.871 PermissionRequest tool_name=Bash (same tool_input)

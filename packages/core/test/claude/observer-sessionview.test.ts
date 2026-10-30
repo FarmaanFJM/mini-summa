@@ -36,7 +36,7 @@ const managed = (o: Partial<ManagedSessionRecord> = {}): ManagedSessionRecord =>
 });
 
 const facts = (o: Partial<SessionFacts> = {}): SessionFacts => ({
-  firstAt: null, lastHookAt: null, startedAtHook: null, name: null, sessionEndReason: null, stateSince: null, abnormalEnd: false, endedAt: null, ...o,
+  firstAt: null, lastHookAt: null, hookCount: 0, startedAtHook: null, name: null, sessionEndReason: null, stateSince: null, abnormalEnd: false, endedAt: null, ...o,
 });
 
 const attribution = (o: Partial<Attribution> = {}): Attribution => ({ projectId: 'p1', projectName: 'Proj', resolution: 'matched', ...o });

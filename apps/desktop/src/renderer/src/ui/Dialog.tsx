@@ -10,10 +10,11 @@ import { useNativeOverlay } from './nativeOverlay';
 // Stack of open dialogs: only the top one reacts to Esc and Tab, the ones below it are inert.
 
 const stack: string[] = [];
+let version = 0;
 const listeners = new Set<() => void>();
-const emit = () => { for (const l of listeners) l(); };
+const emit = () => { version += 1; for (const l of listeners) l(); };
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
-const topId = () => stack[stack.length - 1] ?? null;
+const getVersion = () => version;
 
 function setAppInert(on: boolean): void {
   if (typeof document === 'undefined') return;
@@ -22,9 +23,11 @@ function setAppInert(on: boolean): void {
   if (on) root.setAttribute('inert', ''); else root.removeAttribute('inert');
 }
 
-function useIsTop(id: string, open: boolean): boolean {
-  const top = useSyncExternalStore(subscribe, topId, topId);
-  return open && top === id;
+/** Where this dialog sits among the open ones. Before it has registered itself it is neither on top nor covered. */
+function useStackPosition(id: string): { isTop: boolean; covered: boolean } {
+  useSyncExternalStore(subscribe, getVersion, getVersion);
+  const index = stack.indexOf(id);
+  return { isTop: index >= 0 && index === stack.length - 1, covered: index >= 0 && index < stack.length - 1 };
 }
 
 const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -63,7 +66,7 @@ export function Dialog({ open, onClose, title, description, size = 'md', role = 
   const titleId = `${id}-title`;
   const descId = `${id}-desc`;
   const surface = useRef<HTMLDivElement>(null);
-  const isTop = useIsTop(id, open);
+  const { isTop, covered } = useStackPosition(id);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const busyRef = useRef(busy);
@@ -123,7 +126,7 @@ export function Dialog({ open, onClose, title, description, size = 'md', role = 
     <div
       className="sm-backdrop"
       data-ms-layer="dialog"
-      inert={!isTop}
+      inert={covered}
       onMouseDown={(e) => { if (e.target === e.currentTarget && dismissible && !busy) onClose(); }}
     >
       <div

@@ -16,11 +16,12 @@ import { shortSessionId } from '@minisumma/shared';
 import type { ActivityEvent, Delivery, LinkTarget, PendingAction, ReportSummary, SessionKey, SessionView } from '@minisumma/shared';
 import type {
   ActionsService, ActivityService, CapturedCandidate, CapturedReport, ClaudeDerivedEvent, CoreBase, DeliveriesService,
-  NotificationsService, NotifyHint, ReportsService, SessionsService,
+  NotificationsService, NotifyHint, ReportsService, SessionsService, SettingsService,
 } from './contracts.ts';
 
 export interface OrchestratorDeps {
   base: CoreBase;
+  settings: Pick<SettingsService, 'get'>;
   sessions: Pick<SessionsService, 'subscribe' | 'get'>;
   reports: Pick<ReportsService, 'capture' | 'captureCandidate' | 'list' | 'summary'>;
   deliveries: Pick<DeliveriesService, 'onReportCaptured' | 'list'>;
@@ -41,8 +42,15 @@ export interface Orchestrator {
 const ATTENTION_STATES = ['needs_permission', 'needs_input', 'waiting_for_you'] as const;
 
 export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
-  const { base, sessions, reports, deliveries, activity, notifications, actions } = deps;
+  const { base, settings, sessions, reports, deliveries, activity, notifications, actions } = deps;
   const log = base.log;
+
+  // History older than the feed's retention was pruned on purpose. Rebuilding state from the raw log (a restart
+  // replay, or the startup repair) must not bring those entries back as new, unread items.
+  const prunedByRetention = (iso: string | undefined): boolean => {
+    const days = settings.get().retention.activityDays;
+    return days > 0 && iso !== undefined && Date.parse(iso) < base.clock.now().getTime() - days * 86_400_000;
+  };
   const lastDeliveryState = new Map<string, string>();
   const lastDeliverySignature = new Map<string, string>();
 
@@ -69,6 +77,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
   }
 
   function recordReportEntry(report: ReportSummary, delivery: Delivery, canNotify: boolean): void {
+    if (!canNotify && prunedByRetention(report.capturedAt)) return;
     const links: LinkTarget[] = [...sessionLinks(report.projectId, report.sessionKey), { kind: 'report', id: report.id }, { kind: 'delivery', id: delivery.id }];
     const { activity: entry, created } = activity.record({
       id: `rep_${report.id}`, at: report.capturedAt, projectId: report.projectId, projectName: report.projectName, source: 'claude',
@@ -112,6 +121,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
 
   // ---- Claude events -------------------------------------------------------------------------------------------
   function onDerived(event: ClaudeDerivedEvent, view: SessionView): void {
+    if (event.replay && prunedByRetention(event.at)) return;
     try {
       if (event.kind === 'transition') onTransition(event, view);
       else if (event.kind === 'session_discovered' && view.origin !== 'managed') {
@@ -264,6 +274,11 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
         void view;
       } else if (action.status !== 'pending') {
         activity.resolve({ link: { kind: 'action', id: action.id } }, action.decidedAt ?? undefined);
+        // Answering a permission dialog with Escape fires no hook in Claude Code, so the session would keep saying
+        // "needs permission" until something else happens. The person has answered it: close the entry now.
+        if (action.kind === 'permission' && (action.status === 'executed' || action.status === 'rejected')) {
+          activity.resolve({ sessionKey: action.sessionKey, types: ['needs_permission'] }, action.decidedAt ?? undefined);
+        }
       }
     } catch (err) {
       log.error('could not record an action change', { error: String(err), action: action.id });

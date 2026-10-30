@@ -15,6 +15,7 @@
 /* ---------------------------------------------------------------- Panes */
 .ms-pane { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--s0); }
 .ms-pane__head {
+  container-type: inline-size; container-name: pane-head;
   flex: none; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 6px 0 12px; background: var(--s1);
   transition: background var(--dur) var(--ease);
 }
@@ -39,10 +40,16 @@
 .ms-pane--claude .ms-pane__head .ms-tabs { flex: 0 1 auto; min-width: 0; }
 .ms-tab__origin { color: var(--text-3); font-weight: 400; }
 .ms-tab[data-selected] .ms-tab__origin { color: var(--text-2); }
+/* A narrow pane keeps the origin only on the selected tab; the others still say it in their tooltip and accessible name. */
+@container pane-head (max-width: 700px) { .ms-tab:not([data-selected]) .ms-tab__origin { display: none; } }
 
 .ms-input { flex: none; display: flex; align-items: center; gap: var(--sp-3); min-height: 32px; padding: 2px 6px 4px 12px; background: var(--s1); font-size: var(--fs-sm); color: var(--text-2); }
 .ms-pane[data-focused] .ms-input { background: var(--s2); }
-.ms-input__text { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-input__text {
+  flex: 1; min-width: 0; margin: 0; line-height: 1.4; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+.ms-input__icon { vertical-align: -2px; color: var(--text-3); margin-right: 2px; }
 .ms-input__lead { color: var(--text-2); }
 .ms-input__target { color: var(--text); font-weight: 500; }
 .ms-input[data-kind="observed"] .ms-input__target, .ms-input[data-kind="not_running"] .ms-input__target, .ms-input[data-kind="paused"] .ms-input__target { color: var(--text-2); font-weight: 400; }

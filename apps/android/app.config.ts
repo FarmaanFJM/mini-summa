@@ -44,7 +44,8 @@ const config: ExpoConfig = {
     }],
     ['expo-notifications', { icon: './assets/notification-icon.png', color: '#10b981', defaultChannel: 'updates' }],
     ['expo-build-properties', {
-      android: { usesCleartextTraffic: false, buildArchs },
+      // R8 shrinking is off: a build that cannot be run on a device here should not also depend on untested keep rules.
+      android: { usesCleartextTraffic: false, enableMinifyInReleaseBuilds: false, buildArchs },
     }],
   ],
 };

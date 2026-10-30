@@ -97,24 +97,35 @@ function describeFailure(r: CommandResult): string {
   return line !== '' ? sentence(line.slice(0, 200)) : `It exited with code ${r.code}.`;
 }
 
+/**
+ * Where the hook processes find the capture script: the built bundle (the package's "./hook" export), else the source script
+ * ("./hook-source", development), else the same files by their place in the workspace for a package that does not declare
+ * the exports. When nothing exists the bundle's path is returned, because that is where `npm run build:hook` writes it.
+ */
+export function resolveCaptureScript(io: { resolve(specifier: string): string; exists(file: string): boolean; packageRoot: string }): string {
+  for (const spec of ['@minisumma/claude-integration/hook', '@minisumma/claude-integration/hook-source']) {
+    try {
+      const resolved = io.resolve(spec);
+      if (io.exists(resolved)) return resolved;
+    } catch { /* the export is not declared, or the file was not built */ }
+  }
+  for (const rel of ['dist/capture.mjs', 'src/hook/capture.mjs']) {
+    const candidate = path.join(io.packageRoot, rel);
+    if (io.exists(candidate)) return candidate;
+  }
+  return path.join(io.packageRoot, 'dist', 'capture.mjs');
+}
+
 let cachedCaptureScript: string | null = null;
 
-/** dist/capture.mjs when it was built, else the source script (development). See the package's "./hook" exports. */
 function defaultCaptureScript(): string {
   if (cachedCaptureScript) return cachedCaptureScript;
   const require = createRequire(import.meta.url);
-  for (const spec of ['@minisumma/claude-integration/hook', '@minisumma/claude-integration/hook-source']) {
-    try {
-      const resolved = require.resolve(spec);
-      if (fs.existsSync(resolved)) return (cachedCaptureScript = resolved);
-    } catch { /* the export is not declared, or the file was not built */ }
-  }
-  const root = fileURLToPath(new URL('../../../claude-integration/', import.meta.url));
-  for (const rel of ['dist/capture.mjs', 'src/hook/capture.mjs']) {
-    const candidate = path.join(root, rel);
-    if (fs.existsSync(candidate)) return (cachedCaptureScript = candidate);
-  }
-  return path.join(root, 'dist', 'capture.mjs'); // not built yet: the path `npm run build:hook` produces
+  cachedCaptureScript = resolveCaptureScript({
+    resolve: (spec) => require.resolve(spec), exists: (f) => fs.existsSync(f),
+    packageRoot: fileURLToPath(new URL('../../../claude-integration/', import.meta.url)),
+  });
+  return cachedCaptureScript;
 }
 
 export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsService & { dispose(): void } {

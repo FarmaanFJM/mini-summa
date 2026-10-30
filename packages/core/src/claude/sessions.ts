@@ -96,6 +96,12 @@ export interface ObserverSessionsService extends SessionsService {
 }
 
 const DEFAULT_SPOOL_POLL_MS = 700;
+/**
+ * After text or an answer was sent to a terminal, Claude needs a moment to react, and its hooks arrive later still. Until a
+ * new hook for that session is seen (or this long has passed) a second send is refused: a double click must not type the
+ * text twice, and a second "approve" must not land on the next dialog.
+ */
+const SETTLE_WINDOW_MS = 4000;
 /** How long a user action waits for a fresh look at the spool before it goes on with what it knows. */
 const FRESHEN_MAX_WAIT_MS = 1500;
 const SHUTDOWN_WAIT_MS = 3000;
@@ -131,6 +137,24 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
   let initialized = false;
   let shuttingDown = false;
   let rebuildQueued = false;
+
+  const inFlight = new Map<SessionKey, { hooks: number; at: number; what: 'text' | 'answer' }>();
+  const hooksSeen = (key: SessionKey): number => projection.facts(key)?.hookCount ?? 0;
+
+  /** The session has been sent something and has not reacted yet. */
+  function unsettled(key: SessionKey): 'text' | 'answer' | null {
+    const pending = inFlight.get(key);
+    if (!pending) return null;
+    if (hooksSeen(key) > pending.hooks || clock.now().getTime() - pending.at > SETTLE_WINDOW_MS) {
+      inFlight.delete(key);
+      return null;
+    }
+    return pending.what;
+  }
+
+  const markSent = (key: SessionKey, what: 'text' | 'answer'): void => {
+    inFlight.set(key, { hooks: hooksSeen(key), at: clock.now().getTime(), what });
+  };
 
   const discoveryIntervalMs = (): number => overrides.discoveryIntervalMs ?? settings.get().sessions.discoveryIntervalSec * 1000;
 
@@ -459,8 +483,18 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
       if (!req.allowedStates.includes(check.state as SessionState)) {
         return { ok: false, code: 'state_not_allowed', problem: `Claude is "${labelOf(check.state as SessionState)}" right now. Text can only be sent when it is: ${stateWords(req.allowedStates)}.` };
       }
+      const pending = unsettled(key);
+      if (pending) {
+        return { ok: false, code: 'state_not_allowed', problem: pending === 'text'
+          ? 'Text was sent to this session a moment ago and Claude has not picked it up yet. Wait until it starts working, then try again.'
+          : 'An answer was sent to this session a moment ago and Claude has not reacted yet. Wait a moment, then try again.' };
+      }
+      if (req.submit) markSent(key, 'text'); // before the first await: two calls at once cannot both pass the check above
       const typed = await managed.typeText(key, req.text, { submit: req.submit });
-      if (!typed) return { ok: false, code: 'no_terminal', problem: 'The terminal for this session is not available any more, so nothing was typed.' };
+      if (!typed) {
+        inFlight.delete(key);
+        return { ok: false, code: 'no_terminal', problem: 'The terminal for this session is not available any more, so nothing was typed.' };
+      }
       return { ok: true, submitted: req.submit };
     },
 
@@ -472,8 +506,16 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
       if (check.state !== 'needs_permission') {
         return { ok: false, code: 'state_not_allowed', problem: 'Claude is not waiting for a permission answer right now, so nothing was sent.' };
       }
+      const pending = unsettled(key);
+      if (pending) {
+        return { ok: false, code: 'state_not_allowed', problem: 'An answer was sent to this session a moment ago and Claude has not reacted yet, so a second one was not sent.' };
+      }
+      markSent(key, 'answer');
       const sent = await managed.sendKeys(key, decision);
-      if (!sent) return { ok: false, code: 'no_terminal', problem: 'The terminal for this session is not available any more, so nothing was sent.' };
+      if (!sent) {
+        inFlight.delete(key);
+        return { ok: false, code: 'no_terminal', problem: 'The terminal for this session is not available any more, so nothing was sent.' };
+      }
       return { ok: true, submitted: true };
     },
 

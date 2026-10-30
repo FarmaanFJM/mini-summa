@@ -31,7 +31,7 @@ const desktop = { kind: 'desktop' } as const;
 const ACCEPTS_INPUT = ['idle', 'turn_ended', 'waiting_for_you', 'report_ready'] as const;
 
 interface Stack {
-  root: string; stateDir: string; work: string; db: Db; projects: FakeProjects; layout: EnvLayout;
+  root: string; stateDir: string; work: string; db: Db; projects: FakeProjects; layout: EnvLayout; environments: ReturnType<typeof createStubEnvironments>;
   sessions: ObserverSessionsService; collected: Collected; log: ReturnType<typeof collectingLogger>;
   waitState(key: string, state: string, ms?: number): Promise<SessionView>;
   /** A second app run on the same database, data directory and fake Claude state. */
@@ -71,10 +71,15 @@ async function stack(prev?: Stack): Promise<Stack> {
   await sessions.init();
   cleanups.push(async () => {
     await sessions.shutdown();
-    if (!prev) { db.close(); fs.rmSync(root, { recursive: true, force: true }); }
+    if (prev) return;
+    db.close();
+    // A hook process of a session that has just exited can still be writing into the spool: remove, wait, remove again.
+    fs.rmSync(root, { recursive: true, force: true });
+    await new Promise((r) => setTimeout(r, 500));
+    fs.rmSync(root, { recursive: true, force: true });
   });
   const s: Stack = {
-    root, stateDir, work, db, projects, layout, sessions, collected, log,
+    root, stateDir, work, db, projects, layout, environments, sessions, collected, log,
     waitState: (key, state, ms = 15_000) => waitFor(() => { const v = sessions.get(key as never); return v?.state === state ? v : undefined; }, `${key} to be ${state}`, ms),
     next: () => stack(s),
   };
@@ -97,8 +102,8 @@ describe('a managed session, from start to report to stop, through real terminal
     // type a prompt that makes the fake ask for a permission
     const prompt = `Run it ${directive.permission('bash', 'echo hello-from-fake')}`;
     expect(await s.sessions.typeInto(key, { text: prompt, submit: true, expectGeneration: 1, allowedStates: [...ACCEPTS_INPUT] })).toEqual({ ok: true, submitted: true });
+    await waitFor(() => readReceived(s.stateDir, sessionId).length === 1, 'the fake CLI to receive the prompt');
     expect(readReceived(s.stateDir, sessionId).map((r) => r.text)).toEqual([prompt]);
-    expect(s.sessions.get(key)?.state).not.toBe('idle'); // never typed into an idle-looking view twice by accident
     const waiting = await s.waitState(key, 'needs_permission');
     expect(waiting.attention).toMatchObject({ kind: 'permission' });
     const permission = s.collected.derived.find((d) => d.to === 'needs_permission' && d.sessionKey === key)!;
@@ -159,11 +164,17 @@ describe('a managed session, from start to report to stop, through real terminal
     const s = await stack();
     const key = (await s.sessions.start('p1', { mode: 'new' }, desktop)).key;
     await s.waitState(key, 'idle');
-    expect(await s.sessions.typeInto(key, { text: `long job ${directive.sleep(1500)}`, submit: true, expectGeneration: 1, allowedStates: [...ACCEPTS_INPUT] })).toMatchObject({ ok: true });
-    // no waiting for the poll: the very next call must already know the session is working
-    const second = await s.sessions.typeInto(key, { text: 'and another', submit: true, expectGeneration: 1, allowedStates: [...ACCEPTS_INPUT] });
-    expect(second).toMatchObject({ ok: false, code: 'state_not_allowed', problem: expect.stringContaining('Working') });
+    const send = (text: string) => s.sessions.typeInto(key, { text, submit: true, expectGeneration: 1, allowedStates: [...ACCEPTS_INPUT] });
+    expect(await send(`long job ${directive.sleep(1500)}`)).toMatchObject({ ok: true });
+    // the very next call (a double click) is refused: Claude has either not picked the first one up yet, or is already working
+    // (which of the two depends on how fast the hook process was; both are a refusal, and nothing is typed)
+    expect(await send('and another')).toMatchObject({ ok: false, code: 'state_not_allowed', problem: expect.stringMatching(/has not picked it up yet|"Working"/) });
+    // once the hooks show it working, the refusal is about the state, from what the spool says right now
+    await s.waitState(key, 'working');
+    expect(await send('and a third')).toMatchObject({ ok: false, code: 'state_not_allowed', problem: expect.stringContaining('"Working"') });
     await s.waitState(key, 'turn_ended');
+    expect(readReceived(s.stateDir, parseSessionKey(key)!.sessionId)).toHaveLength(1); // only the first one ever reached Claude
+    expect(await send('after it finished')).toMatchObject({ ok: true });
     await s.sessions.stop(key, { force: true });
   }, 60_000);
 });
@@ -196,15 +207,15 @@ describe('discovery against the fake CLI\'s `agents --json`', () => {
     const key = (await s.sessions.start('p1', { mode: 'new' }, desktop)).key;
     await s.waitState(key, 'idle');
     await s.sessions.refreshDiscovery();
-    // break the fake: the state directory vanishes, so `agents --json` fails
-    const broken = path.join(s.root, 'fake-state-gone');
-    fs.renameSync(s.stateDir, broken);
-    cleanups.push(() => { try { fs.renameSync(broken, s.stateDir); } catch { /* already restored */ } });
+    // the Claude executable stops working (moved, broken): `agents --json` fails to run
+    s.environments.commands.set('posix', { file: path.join(s.root, 'no-such-claude'), prefixArgs: [], wslDistro: null });
     const result = await s.sessions.refreshDiscovery();
-    fs.renameSync(broken, s.stateDir);
-    expect(result.ran.length + result.errors.length).toBe(1);
+    expect(result.ran).toEqual([]);
+    expect(result.errors).toEqual([{ env: 'posix', message: expect.stringMatching(/^Claude Code could not list its sessions:/) }]);
+    expect(s.sessions.discoveryStatus()).toEqual([expect.objectContaining({ env: 'posix', ok: false, error: expect.stringContaining('could not list') })]);
     expect(s.sessions.get(key)).toMatchObject({ availability: 'live', state: 'idle' });
     expect(s.collected.derived.some((d) => d.to === 'presence_lost')).toBe(false);
+    expect(s.db.all<{ kind: string }>('SELECT kind FROM raw_events ORDER BY seq').map((r) => r.kind)).toContain('discovery_error');
     await s.sessions.stop(key, { force: true });
   }, 60_000);
 });

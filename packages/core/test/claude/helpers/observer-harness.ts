@@ -9,7 +9,7 @@ import { openDatabase } from '@minisumma/storage';
 import type { Db } from '@minisumma/storage';
 import { createEventBus } from '../../../src/bus.ts';
 import type {
-  CapturedCandidate, CapturedReport, ClaudeDerivedEvent, CoreBase, EnvLayout, EnvironmentsService, EventBus, Logger,
+  CapturedCandidate, CapturedReport, ClaudeDerivedEvent, Clock, CoreBase, EnvLayout, EnvironmentsService, EventBus, Logger,
 } from '../../../src/contracts.ts';
 import { systemClock } from '../../../src/contracts.ts';
 import { createEnvironmentsService } from '../../../src/claude/environments.ts';
@@ -37,6 +37,7 @@ export function collectingLogger(): CollectingLogger {
 
 export interface HarnessOptions {
   hostEnv?: EnvId;
+  clock?: Clock;
   dir?: string;
   db?: Db;
   bus?: EventBus;
@@ -45,7 +46,8 @@ export interface HarnessOptions {
   settings?: FakeSettings;
   /** Use the real EnvironmentsService (with a fake command runner and a fake claude file) instead of a stub. */
   realEnvironments?: boolean;
-  environments?: EnvironmentsService;
+  /** A ready environments service, or a function that builds one around the harness's own layout. */
+  environments?: EnvironmentsService | ((layout: EnvLayout) => EnvironmentsService);
   run?: AgentsRunner;
   /** 0 (default) = no automatic polling; tests call flush(). */
   spoolPollMs?: number;
@@ -99,7 +101,7 @@ export async function makeHarness(opts: HarnessOptions = {}): Promise<Harness> {
   const dataDir = path.join(dir, 'data');
   const db = opts.db ?? openDatabase(':memory:').db;
   const bus = opts.bus ?? createEventBus();
-  const clock = systemClock;
+  const clock = opts.clock ?? systemClock;
   const log = collectingLogger();
   const base: CoreBase = { db, bus, clock, log, version: 'test', mode: 'headless', dataDir };
   const projects = opts.projects ?? createFakeProjects({ bus, db, defaultEnv: hostEnv === 'win' ? 'win' : 'posix' });
@@ -115,7 +117,8 @@ export async function makeHarness(opts: HarnessOptions = {}): Promise<Harness> {
   };
 
   let environments: EnvironmentsService;
-  if (opts.environments) environments = opts.environments;
+  if (typeof opts.environments === 'function') environments = opts.environments(layout);
+  else if (opts.environments) environments = opts.environments;
   else if (opts.realEnvironments) {
     const bin = path.join(dir, 'bin');
     fs.mkdirSync(bin, { recursive: true });

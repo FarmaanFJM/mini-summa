@@ -11,18 +11,18 @@ import { needsYouKind, parseNotificationData, routeNotification } from './payloa
 import { registerPush } from './push.ts';
 import { pushStatusStore } from './pushStatus.ts';
 
+/** Shown while the app is open too (the user may be on another screen); only "needs you" items make a sound. */
+export async function handleForegroundNotification(n: Pick<Notifications.Notification, 'request'>): Promise<Notifications.NotificationBehavior> {
+  const t = parseNotificationData(n.request.content.data);
+  return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: t ? needsYouKind(t.kind) : false, shouldSetBadge: false };
+}
+
 let handlerInstalled = false;
 
 function installHandler(): void {
   if (handlerInstalled) return;
   handlerInstalled = true;
-  Notifications.setNotificationHandler({
-    handleNotification: async (n) => {
-      const t = parseNotificationData(n.request.content.data);
-      // Shown while the app is open too (the user may be on another screen); only "needs you" items make a sound.
-      return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: t ? needsYouKind(t.kind) : false, shouldSetBadge: false };
-    },
-  });
+  Notifications.setNotificationHandler({ handleNotification: handleForegroundNotification });
 }
 
 export function NotificationBridge() {

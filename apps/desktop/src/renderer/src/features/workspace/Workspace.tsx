@@ -7,7 +7,7 @@ import { useLayout } from '../shell/LayoutContext';
 import { ChatGptPane } from './ChatGptPane';
 import { ClaudePane } from './ClaudePane';
 import { useElementSize, useSelectedProject } from './hooks';
-import { collapsedFor, decideOrientation, ORIENTATION_LABEL, toggleMaximized } from './layout';
+import { decideOrientation, onlyPane, ORIENTATION_LABEL, toggleMaximized } from './layout';
 import type { PaneName } from './layout';
 
 /** The core screen: ChatGPT and Claude side by side (or stacked) for one project. Stays mounted while other views show. */
@@ -57,7 +57,7 @@ function NoProjects() {
       <EmptyState center action={<Button variant="primary" icon="plus" onClick={() => openProjectDialog({ mode: 'create' })}>Create project</Button>}>
         {archived
           ? 'Every project is archived. Restore one from Archived in the sidebar, or create a new one.'
-          : 'No projects yet. A project connects a folder, the ChatGPT conversations you use for it, and its Claude sessions.'}
+          : 'Create your first project. A project connects a folder, the ChatGPT conversations you use for it, and its Claude sessions.'}
       </EmptyState>
     </div>
   );
@@ -82,7 +82,7 @@ function WorkspaceBody({ project, visible }: { project: Project; visible: boolea
           direction={horizontal ? 'horizontal' : 'vertical'}
           ratio={ratio}
           onRatioChange={(r) => update(horizontal ? { landscapeRatio: r } : { portraitRatio: r })}
-          collapsed={collapsedFor(layout.maximized)}
+          only={onlyPane(layout.maximized)}
           label="Resize the ChatGPT and Claude panes"
           names={['ChatGPT', 'Claude']}
           first={<ChatGptPane project={project} visible={visible && layout.maximized !== 'claude'} maximized={layout.maximized === 'chatgpt'} onToggleMaximize={() => toggle('chatgpt')} />}

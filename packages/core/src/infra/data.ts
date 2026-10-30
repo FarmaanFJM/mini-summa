@@ -5,13 +5,18 @@
 //   activity        older than activityDays, but only read items that no longer need the user (an item that requires
 //                   action stays until it is resolved, an unread item stays until it is read).
 //   notifications   older than notificationsDays.
-//   reports         captured before the cutoff (reportsDays) AND with no delivery that is still open (the user has
-//                   something left to do) or was touched after the cutoff. Their deliveries go with them (FK cascade).
+//   deliveries      closed ones (confirmed sent, or discarded) not touched since the reportsDays cutoff. A delivery that
+//                   is still open, or was touched after the cutoff, is never deleted.
+//   reports         captured before the reportsDays cutoff AND with no delivery that is open or was touched after it.
+//                   Because deliveries are pruned first, "all its deliveries are closed and old" is what lets a report go.
+//                   Report candidates (final messages that missed the report protocol) older than the cutoff go with
+//                   them. Candidates are not part of the returned counts.
 // Anything newer than a cutoff is never deleted. A dry run counts with the same predicates and deletes nothing.
 //
 // The workflow services own caches of their tables, so when they are handed in (`activity`, `notifications`,
-// `reports`, `deliveries`) their prune(olderThanIso) does the deleting; their rules must match the ones above. A dry
-// run always counts with SQL because those hooks have no dry-run mode. Without a hook the SQL here deletes directly.
+// `reports`, `deliveries`) their prune(olderThanIso) does the deleting, deliveries before reports. Their rules are the
+// ones above, and the SQL here is the same rule for when a service is not handed in. A dry run always counts with SQL
+// because those hooks have no dry-run mode.
 import type { DataUsage } from '@minisumma/shared';
 import type { CoreBase, DataService, SettingsService } from '../contracts.ts';
 
@@ -31,7 +36,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /** Delivery states in which the user has nothing left to do. Every other state counts as open. */
 const CLOSED_DELIVERY_STATES = "('user_confirmed_sent', 'user_discarded')";
 
-/** Reports that may be pruned: old enough, and every delivery of theirs is closed and not touched since the cutoff. */
+/** Deliveries that may be pruned: closed, and not touched since the cutoff. */
+const PRUNABLE_DELIVERIES = `FROM deliveries WHERE state IN ${CLOSED_DELIVERY_STATES} AND updated_at < ?`;
+
+/** Reports that may be pruned: old enough, and no delivery of theirs is open or was touched since the cutoff. */
 const PRUNABLE_REPORTS = `
   FROM reports r
   WHERE r.captured_at < ?
@@ -91,15 +99,23 @@ export function createDataService(deps: DataDeps): DataService {
       const at = cutoff(r.reportsDays);
       if (dryRun) {
         removed.reports = count(PRUNABLE_REPORTS, [at, at]);
-        removed.deliveries = count(`FROM deliveries WHERE report_id IN (SELECT r.id ${PRUNABLE_REPORTS})`, [at, at]);
+        // A report only goes when all its deliveries are closed and old, which the first step already removed, so the
+        // deliveries of pruned reports add nothing to the closed-and-old ones counted here.
+        removed.deliveries = count(PRUNABLE_DELIVERIES, [at]);
       } else {
-        // The number of deliveries that disappeared is measured, not predicted: a hook may remove some on its own and
-        // the rest go with their report.
-        const deliveriesBefore = count('FROM deliveries');
-        if (deps.deliveries) deps.deliveries.prune(at);
-        if (deps.reports) removed.reports = deps.reports.prune(at);
-        else removed.reports = db.run(`DELETE FROM reports WHERE id IN (SELECT r.id ${PRUNABLE_REPORTS})`, [at, at]).changes;
-        removed.deliveries = Math.max(0, deliveriesBefore - count('FROM deliveries'));
+        // One unit: closed deliveries first, then the reports that nothing holds any more. The number of deliveries
+        // that disappeared is measured, not predicted, so it is right whichever side did the deleting.
+        db.tx(() => {
+          const deliveriesBefore = count('FROM deliveries');
+          if (deps.deliveries) deps.deliveries.prune(at);
+          else db.run(`DELETE ${PRUNABLE_DELIVERIES}`, [at]);
+          if (deps.reports) removed.reports = deps.reports.prune(at);
+          else {
+            removed.reports = db.run(`DELETE FROM reports WHERE id IN (SELECT r.id ${PRUNABLE_REPORTS})`, [at, at]).changes;
+            db.run('DELETE FROM report_candidates WHERE captured_at < ?', [at]);
+          }
+          removed.deliveries = Math.max(0, deliveriesBefore - count('FROM deliveries'));
+        });
       }
     }
 

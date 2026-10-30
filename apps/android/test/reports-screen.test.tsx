@@ -74,7 +74,7 @@ describe('report detail', () => {
   });
 
   it('shares exactly the full body', async () => {
-    const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' });
+    const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction', activityType: undefined });
     await open();
     await fireEvent.press(await screen.findByText('More'));
     await fireEvent.press(await screen.findByText('Share'));
@@ -83,7 +83,7 @@ describe('report detail', () => {
   });
 
   it('never writes the report to storage', async () => {
-    jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction' });
+    jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction', activityType: undefined });
     await open();
     await fireEvent.press(await screen.findByText('Copy report'));
     await fireEvent.press(await screen.findByText('More'));
@@ -102,7 +102,7 @@ describe('report detail', () => {
   });
 
   it('opens the conversation frozen into the delivery, not the project default', async () => {
-    const open$ = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const open$ = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
     const frozen = 'https://chatgpt.com/c/99999999-8888-4777-8666-555555555555';
     const core = createFakeCore({
       reportBodies: { rep_1: long },
@@ -115,7 +115,7 @@ describe('report detail', () => {
   });
 
   it("falls back to the project's preferred conversation when no destination was frozen", async () => {
-    const open$ = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const open$ = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
     const core = createFakeCore({ reportBodies: { rep_1: long }, deliveries: [makeDelivery({ destination: null })] });
     await open(core);
     await fireEvent.press(await screen.findByText('Open linked ChatGPT conversation'));
@@ -124,7 +124,7 @@ describe('report detail', () => {
   });
 
   it('refuses to open an address that is not a ChatGPT conversation', async () => {
-    const open$ = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
+    const open$ = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
     const core = createFakeCore({
       reportBodies: { rep_1: long },
       deliveries: [makeDelivery({ destination: { ...makeDelivery().destination!, url: 'intent://evil#Intent;scheme=http;end' } })],

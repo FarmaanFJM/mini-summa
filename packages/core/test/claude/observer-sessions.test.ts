@@ -230,7 +230,7 @@ describe('start', () => {
   });
 
   it('uses the first root in the requested environment, or the one asked for by id', async () => {
-    const h = await harness({ environments: createStubEnvironments('posix', [{ ...(await makeLayout()), env: 'posix' }]) });
+    const h = await harness();
     h.projects.add({ id: 'p2', name: 'Two', roots: [{ path: '/w/two-a' }, { path: '/w/two-b' }] });
     await h.sessions.flush();
     await h.sessions.start('p2', { mode: 'new' }, actor);
@@ -262,7 +262,7 @@ describe('start', () => {
     await expect(h.sessions.start('old', { mode: 'new' }, actor)).rejects.toMatchObject({ code: 'project_archived' });
     await expect(h.sessions.start('missing', { mode: 'new' }, actor)).rejects.toMatchObject({ status: 404 });
 
-    const down = await harness({ environments: createStubEnvironments('posix', [await makeLayout()], false) });
+    const down = await harness({ environments: (layout) => createStubEnvironments('posix', [layout], false) });
     await addProject(down);
     await expect(down.sessions.start('p1', { mode: 'new' }, actor)).rejects.toMatchObject({ code: 'environment_unavailable', message: 'Claude Code was not found.' });
   });
@@ -330,13 +330,6 @@ describe('start', () => {
     });
   });
 });
-
-async function makeLayout() {
-  const h = await makeHarness({ init: false });
-  const layout = h.layout;
-  await h.cleanup();
-  return layout;
-}
 
 describe('stop', () => {
   it('stops a managed session and returns its view', async () => {
@@ -529,8 +522,69 @@ describe('typeInto', () => {
     const h = await harness();
     await liveManaged(h);
     expect(await h.sessions.typeInto(K1, req())).toEqual({ ok: true, submitted: true });
+    expect(h.managed.typed).toEqual([{ key: K1, text: 'Please continue', submit: true }]);
+  });
+
+  it('leaves text in the input box without submitting when asked, and that can be repeated', async () => {
+    const h = await harness();
+    await liveManaged(h);
     expect(await h.sessions.typeInto(K1, req({ submit: false, text: 'line 1\nline 2' }))).toEqual({ ok: true, submitted: false });
-    expect(h.managed.typed).toEqual([{ key: K1, text: 'Please continue', submit: true }, { key: K1, text: 'line 1\nline 2', submit: false }]);
+    expect(await h.sessions.typeInto(K1, req({ submit: false, text: 'line 3' }))).toEqual({ ok: true, submitted: false });
+    expect(h.managed.typed.map((t) => [t.text, t.submit])).toEqual([['line 1\nline 2', false], ['line 3', false]]);
+  });
+
+  describe('a second send before Claude has reacted (a double click)', () => {
+    it('is refused, and allowed again once a hook shows Claude picked the first one up', async () => {
+      const h = await harness();
+      await liveManaged(h);
+      expect(await h.sessions.typeInto(K1, req())).toMatchObject({ ok: true });
+      const again = await h.sessions.typeInto(K1, req({ text: 'Please continue' }));
+      expect(again).toEqual({ ok: false, code: 'state_not_allowed', problem: 'Text was sent to this session a moment ago and Claude has not picked it up yet. Wait until it starts working, then try again.' });
+      expect(h.managed.typed).toHaveLength(1);
+      await h.feed([ev(2, 'UserPromptSubmit', { prompt_id: 'p' }), ev(3, 'Stop', { prompt_id: 'p', last_assistant_message: 'done' })]);
+      expect(h.view(K1).state).toBe('turn_ended');
+      expect(await h.sessions.typeInto(K1, req())).toMatchObject({ ok: true });
+      expect(h.managed.typed).toHaveLength(2);
+    });
+
+    it('is allowed again after the settle window even when no hook arrived', async () => {
+      const t = { ms: Date.parse('2026-03-01T10:00:00.000Z') };
+      const h = await harness({ clock: { now: () => new Date(t.ms) } });
+      await liveManaged(h);
+      expect(await h.sessions.typeInto(K1, req())).toMatchObject({ ok: true });
+      t.ms += 3000;
+      expect(await h.sessions.typeInto(K1, req())).toMatchObject({ ok: false, code: 'state_not_allowed' });
+      t.ms += 1500;
+      expect(await h.sessions.typeInto(K1, req())).toMatchObject({ ok: true });
+      expect(h.managed.typed).toHaveLength(2);
+    });
+
+    it('lets only one of two simultaneous calls through', async () => {
+      const h = await harness();
+      await liveManaged(h);
+      const results = await Promise.all([h.sessions.typeInto(K1, req()), h.sessions.typeInto(K1, req())]);
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      expect(results.filter((r) => !r.ok)).toEqual([expect.objectContaining({ code: 'state_not_allowed' })]);
+      expect(h.managed.typed).toHaveLength(1);
+    });
+
+    it('is forgotten when the terminal turned out to be gone, so the user can try again', async () => {
+      const h = await harness();
+      await liveManaged(h);
+      h.managed.terminalAvailable = false;
+      expect(await h.sessions.typeInto(K1, req())).toMatchObject({ ok: false, code: 'no_terminal' });
+      h.managed.terminalAvailable = true;
+      expect(await h.sessions.typeInto(K1, req())).toMatchObject({ ok: true });
+    });
+
+    it('does not apply to another session', async () => {
+      const h = await harness();
+      await liveManaged(h);
+      h.managed.seed({ key: K2, projectId: 'p1' }, true);
+      await h.feed([ev(5, 'SessionStart', { source: 'startup' }, S2)]);
+      expect(await h.sessions.typeInto(K1, req())).toMatchObject({ ok: true });
+      expect(await h.sessions.typeInto(K2, req())).toMatchObject({ ok: true });
+    });
   });
 
   it.each([
@@ -594,8 +648,30 @@ describe('answerPermission', () => {
     const h = await harness();
     await waiting(h);
     expect(await h.sessions.answerPermission(K1, 'approve', 1)).toEqual({ ok: true, submitted: true });
-    expect(await h.sessions.answerPermission(K1, 'reject', null)).toEqual({ ok: true, submitted: true });
+    expect(h.managed.keys).toEqual([{ key: K1, keys: 'approve' }]);
+  });
+
+  it('never answers twice before Claude has reacted: a second approve could land on the next dialog', async () => {
+    const h = await harness();
+    await waiting(h);
+    expect(await h.sessions.answerPermission(K1, 'approve', 1)).toMatchObject({ ok: true });
+    expect(await h.sessions.answerPermission(K1, 'approve', 1)).toEqual({
+      ok: false, code: 'state_not_allowed', problem: 'An answer was sent to this session a moment ago and Claude has not reacted yet, so a second one was not sent.',
+    });
+    expect(h.managed.keys).toEqual([{ key: K1, keys: 'approve' }]);
+    // Claude reacts (the tool ran) and asks about the next one: that is a new question, and it can be answered
+    await h.feed([ev(5, 'PostToolUse', { prompt_id: 'p', tool_use_id: 't9' }), ev(6, 'PermissionRequest', { prompt_id: 'p', tool_name: 'Write', tool_input: { file_path: '/w/proj/a.ts' } })]);
+    expect(h.view(K1).state).toBe('needs_permission');
+    expect(await h.sessions.answerPermission(K1, 'reject', 1)).toMatchObject({ ok: true });
     expect(h.managed.keys).toEqual([{ key: K1, keys: 'approve' }, { key: K1, keys: 'reject' }]);
+  });
+
+  it('answers once even when two clients answer at the same time', async () => {
+    const h = await harness();
+    await waiting(h);
+    const results = await Promise.all([h.sessions.answerPermission(K1, 'approve', 1), h.sessions.answerPermission(K1, 'reject', 1)]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(h.managed.keys).toHaveLength(1);
   });
 
   it('refuses when the session is not waiting, including when it moved on a moment ago', async () => {

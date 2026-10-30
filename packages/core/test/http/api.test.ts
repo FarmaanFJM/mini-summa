@@ -670,7 +670,7 @@ describe('wording of what the server says', () => {
     take(await api(hh, 'POST', '/projects', { token: hh.tokens.desktop, body: { name: 'x' }, headers: { 'idempotency-key': 'k2' } })); // 422
     expect(messages.length).toBe(17);
     for (const m of messages) {
-      expect(m, m).not.toMatch(/—|–/);
+      expect(m, m).not.toMatch(/\u2014|\u2013/);
       expect(m.trim().length).toBeGreaterThan(15);
       expect(m, m).toMatch(/[.!]$/);
     }

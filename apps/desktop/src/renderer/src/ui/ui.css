@@ -146,8 +146,12 @@
 /* ---------------------------------------------------------------- Empty states and loading rows */
 .sm-empty__text { line-height: 1.5; }
 .ms-skeleton-list { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
+.ms-skeleton-list--wide { width: min(760px, 100%); gap: 8px; }
+.ms-skeleton-list--wide .ms-skeleton-row { height: 44px; border-radius: var(--r); }
 .ms-skeleton-row { height: 28px; border-radius: var(--r-sm); background: linear-gradient(90deg, var(--s2), var(--s3), var(--s2)); background-size: 200% 100%; animation: sm-shimmer 1.4s linear infinite; opacity: 0.7; }
-@media (prefers-reduced-motion: reduce) { .ms-skeleton-row { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .ms-skeleton-list--wide { width: min(760px, 100%); gap: 8px; }
+.ms-skeleton-list--wide .ms-skeleton-row { height: 44px; border-radius: var(--r); }
+.ms-skeleton-row { animation: none; } }
 
 /* Toast region is portaled; keep it above dialogs and the floating menus. */
 .sm-toast-region { z-index: 140; }

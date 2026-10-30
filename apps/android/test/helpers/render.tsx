@@ -16,7 +16,7 @@ export function disposeAll(): void { while (managers.length) managers.pop()!.dis
 
 /** Let promises and zero delay timers run, inside act, with real timers. */
 export async function flush(rounds = 6): Promise<void> {
-  for (let i = 0; i < rounds; i++) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+  for (let i = 0; i < rounds; i++) await act(async () => { await new Promise<void>((r) => { setTimeout(() => r(), 0); }); });
 }
 
 export interface Mounted extends Awaited<ReturnType<typeof render>> {

@@ -46,7 +46,9 @@ Anything that is not an `https` address on `chatgpt.com`, `www.chatgpt.com` or `
 two tabs.
 
 A successful `focus_or_open` answers with `{ mode: "focused" | "opened", tabId, windowId, url, title, urlMatches }` plus
-two additive fields, `windowFocused` and `note`.
+additive fields: `windowFocused` and `note`, and `focused`, `opened`, `verified`, the same facts under the names that
+`packages/core/src/http/bridge.ts` reads into `ChatGptOpenResult` (`focused` = `windowFocused`, `opened` = mode is
+"opened", `verified` = `urlMatches`, or `null` when the page had not finished loading).
 
 * `urlMatches` is true only if the address the tab ended up at is the same ChatGPT page that was requested. After a
   redirect to a sign-in page it is false. **It is an address check, not a content check:** the extension never looks at
@@ -79,7 +81,11 @@ Chrome words these in its own way when you install: `tabs` appears as "Read your
 broader than what this extension does with it.
 
 Honest note: with `tabs` granted, the ChatGPT host patterns add no capability the code uses, and the other way round,
-the host patterns alone would be enough for ChatGPT tabs. Both are listed because the design asked for both.
+the host patterns alone are enough for ChatGPT tabs: the whole real-browser test also passed against a copy of the
+build with `tabs` removed from `permissions` (Chrome for Testing 153). Without `tabs` the browser shows the extension
+the address and title of ChatGPT tabs only, never those of other sites. Both are listed because the design asked for
+both; removing `tabs` is a one line change in `manifest.json` plus the expectations in `test/policy.test.ts` and
+`test/real-browser.mjs`.
 
 ### Chrome APIs used
 
@@ -98,6 +104,16 @@ fails if the code uses anything else, and `test/build.test.ts` checks the same o
   itself. The only network traffic is to `127.0.0.1` or `localhost`.
 * It does not run in incognito windows unless you allow that for the extension on `chrome://extensions`.
 
+## Limits worth knowing
+
+* The extension asks the browser to bring a window forward; the operating system decides whether to allow it (Windows
+  can refuse to let a background program take the foreground). The answer says `windowFocused: false` when the browser
+  did not confirm it. Whether a minimized window is restored is the browser's and the system's choice.
+* `urlMatches` and `verified` are address checks. A page that is signed out but still at the conversation address, or a
+  conversation that no longer exists, cannot be told apart without reading the page, which this extension never does.
+* New tabs open in the browser's last used window. If no browser window exists at all, what `chrome.tabs.create` does is
+  up to the browser (not tested).
+
 ## Staying connected
 
 The background worker opens `ws://<core address>/ws`, sends `hello` (`client: "browser-extension"`, no topics) and is
@@ -105,8 +121,8 @@ connected once the core answers `ready`. It pings every 25 seconds, which also k
 (traffic on an open WebSocket resets Chrome's 30 second idle timer), and drops a connection that has been silent for 70
 seconds. After a failure it retries after 0.5 s, 1 s, 2 s, ... up to 15 s, and starts at 0.5 s again after a success. The
 alarm is at most every 30 seconds because that is the shortest period Chrome allows; it only matters when the worker
-had been stopped. Close code 4003 means the device was revoked: the token is deleted and the extension does not retry
-until you pair again.
+had been stopped. Close code 4003 (device revoked, or a token without the extension scope) and 4401 (token not known to
+the core) both mean the token will never work: it is deleted and the extension does not retry until you pair again.
 
 | Status | Meaning |
 | --- | --- |
@@ -116,7 +132,11 @@ until you pair again.
 | Mini-Summa is not reachable | The app is not running or the address is wrong. The page shows when the next attempt happens. |
 | This browser was unpaired in Mini-Summa | The core revoked this device. Pair again with a new code. |
 
-The core must accept a WebSocket handshake whose `Origin` is `chrome-extension://<extension id>` on `/ws`.
+Notes for the core: it must accept a WebSocket handshake whose `Origin` is `chrome-extension://<extension id>` on `/ws`
+and a `pairing.redeem` POST with that origin (both are true today). A `focus_or_open` that has to open a new tab answers
+only after the page finished loading, which takes up to 15 seconds plus half a second of settling, so the core's bridge
+timeout needs to be longer than that (`bridgeTimeoutMs` is 5 seconds in `packages/core/src/http/types.ts` at the time of
+writing, so a slow page would be reported as "did not answer" although the tab was opened).
 
 ## Development
 
@@ -126,6 +146,8 @@ node apps/browser-extension/build.mjs --test-hosts     # test variant, labelled 
 npx tsc -p apps/browser-extension/tsconfig.json        # typecheck
 npx vitest run --root apps/browser-extension           # unit tests
 node apps/browser-extension/build.mjs --test-hosts && xvfb-run -a node apps/browser-extension/test/real-browser.mjs
+xvfb-run -a node apps/browser-extension/test/with-real-core.mjs   # real browser against the real headless core
+xvfb-run -a node apps/browser-extension/test/keepalive.mjs        # about two minutes: is the worker kept alive
 ```
 
 The unit tests run the bridge against a fake `chrome.tabs` / `chrome.windows`, the connection against a fake WebSocket
@@ -142,6 +164,17 @@ failures, the 15 second limit, `list_chatgpt_tabs`, reconnecting, revocation and
 ran (page DOM unchanged, no extension execution context in the page; a control extension that does inject a script is
 detected by the same checks). Set `MINISUMMA_SCREENSHOTS=<folder>` to keep pictures of the settings page,
 `MINISUMMA_CHROMIUM` to choose the browser binary and `MINISUMMA_EXT_DIR` to test another build.
+
+`test/with-real-core.mjs` runs the same browser against the real core (`packages/core/src/cli.ts`, started as a child
+process with a temporary data directory): the extension is paired by pasting the core's own pairing link, and the core's
+own `POST /conversations/:id/open` is used to open and focus tabs, so the answer checked is the `ChatGptOpenResult` the
+rest of Mini-Summa sees. Removing the device in the core must make the extension show the unpaired message.
+
+`test/keepalive.mjs` (about two minutes, run on its own) answers one question that the Playwright based test cannot,
+because DevTools keeps an attached service worker alive: does Chrome stop the worker while the extension is connected?
+It starts Chromium itself, attaches only to the settings page (closed again before the observation), and runs an
+unpaired control next to the paired extension. The control's worker must be stopped by the browser (it was, after about
+31 seconds); the paired worker must keep running with one unbroken connection and pings arriving at least every 27 seconds.
 
 The settings page follows the pinned Summa-UI guidance in `third_party/summa-ui-guidance` (its tokens and controls are
 included into `dist/options.css` at build time).

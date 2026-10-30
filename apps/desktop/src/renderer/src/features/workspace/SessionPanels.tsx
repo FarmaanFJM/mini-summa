@@ -52,7 +52,7 @@ export function ObservedPanel({ session, onResume, resuming }: { session: Sessio
         <dt>Project</dt>
         <dd>
           <span>{session.projectName ?? 'Not assigned to a project'}</span>
-          <span className="ms-facts__note"> {RESOLUTION_TEXT[session.projectResolution]}</span>
+          <span className="ms-facts__note"> ({RESOLUTION_TEXT[session.projectResolution]})</span>
         </dd>
         {session.cwd ? (<><dt>Folder</dt><dd className="ms-mono ms-break">{session.cwd}</dd></>) : null}
         <dt>Environment</dt>

@@ -13,13 +13,15 @@ export interface TabModel {
 
 export const emptyTabs = (): TabModel => ({ openTabs: {}, dismissed: [] });
 
-const isManagedLive = (s: SessionView): boolean => s.origin === 'managed' && s.availability === 'live';
+/** A managed session the person should see without asking: it is running, or it just ended badly. */
+const deservesTab = (s: SessionView): boolean =>
+  s.origin === 'managed' && (s.availability === 'live' || s.attention?.kind === 'abnormal_end' || s.attention?.kind === 'error');
 
-/** Open a tab for every managed live session of a project that has none yet and was not closed on purpose. */
+/** Open a tab for every managed session worth showing (live, or ended with an error) that has none yet and was not closed on purpose. */
 export function withAutoTabs(model: TabModel, sessions: readonly SessionView[]): TabModel {
   let next = model;
   for (const s of sessions) {
-    if (!s.projectId || !isManagedLive(s)) continue;
+    if (!s.projectId || !deservesTab(s)) continue;
     if (model.dismissed.includes(s.key)) continue;
     const list = next.openTabs[s.projectId] ?? [];
     if (list.includes(s.key)) continue;

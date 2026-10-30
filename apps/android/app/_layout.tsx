@@ -1,7 +1,7 @@
 import { StatusBar, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { SessionProvider, useSession } from '../src/app/SessionProvider.tsx';
+import { SessionProvider, useSession } from '../src/session/SessionProvider.tsx';
 import { NotificationBridge } from '../src/notifications/NotificationBridge.tsx';
 import { colors } from '../src/theme.ts';
 import { ToastProvider } from '../src/ui/overlays.tsx';

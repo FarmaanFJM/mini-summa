@@ -75,7 +75,7 @@ describe('trying addresses in order', () => {
 describe('when the desktop cannot be reached', () => {
   it('says the PC may be asleep, offline, or not on Tailscale', async () => {
     const { fetch } = hostFetch({});
-    const err = await pairWithDesktop(payload, { deviceName: 'Pixel 8', fetch }).catch((e) => e);
+    const err = (await pairWithDesktop(payload, { deviceName: 'Pixel 8', fetch }).catch((e) => e)) as PairingError;
     expect(err).toBeInstanceOf(PairingError);
     expect(err.kind).toBe('unreachable');
     expect(err.message).toContain('Your PC may be asleep, offline, or not signed in to Tailscale on this phone');
@@ -84,21 +84,21 @@ describe('when the desktop cannot be reached', () => {
 
   it('names a certificate or HTTPS problem when the error says so', async () => {
     const { fetch } = hostFetch({ 'pc.tail1234.ts.net': () => new TypeError('SSL handshake failed: certificate chain validation failed') });
-    const err = await pairWithDesktop({ ...payload, urls: [payload.urls[0]] }, { deviceName: 'x', fetch }).catch((e) => e);
+    const err = (await pairWithDesktop({ ...payload, urls: [payload.urls[0]] }, { deviceName: 'x', fetch }).catch((e) => e)) as PairingError;
     expect(err.kind).toBe('tls');
     expect(err.message).toContain('secure connection');
   });
 
   it('explains that Android blocks plain http to another device', async () => {
     const { fetch } = hostFetch({});
-    const err = await pairWithDesktop({ ...payload, urls: ['http://192.168.1.20:4317'] }, { deviceName: 'x', fetch }).catch((e) => e);
+    const err = (await pairWithDesktop({ ...payload, urls: ['http://192.168.1.20:4317'] }, { deviceName: 'x', fetch }).catch((e) => e)) as PairingError;
     expect(err.kind).toBe('cleartext');
     expect(err.message).toContain('https address');
   });
 
   it('reports an address that answers with an error as a desktop problem, not a network one', async () => {
     const { fetch } = hostFetch({ 'pc.tail1234.ts.net': () => ({ status: 502, body: { error: { code: 'bad_gateway', message: 'upstream' } } }) });
-    const err = await pairWithDesktop({ ...payload, urls: [payload.urls[0]] }, { deviceName: 'x', fetch }).catch((e) => e);
+    const err = (await pairWithDesktop({ ...payload, urls: [payload.urls[0]] }, { deviceName: 'x', fetch }).catch((e) => e)) as PairingError;
     expect(err.kind).toBe('desktop_error');
     expect(err.message).toContain('Make sure Mini-Summa is running');
   });
@@ -107,7 +107,7 @@ describe('when the desktop cannot be reached', () => {
 describe('what the desktop says about the code', () => {
   const redeemWith = async (status: number, code: string, message: string) => {
     const { fetch } = hostFetch({ 'pc.tail1234.ts.net': (_i, path) => (path === '/health' ? healthy(_i, path) : { status, body: { error: { code, message } } }) });
-    return pairWithDesktop({ ...payload, urls: [payload.urls[0]] }, { deviceName: 'x', fetch }).catch((e) => e as PairingError);
+    return (await pairWithDesktop({ ...payload, urls: [payload.urls[0]] }, { deviceName: 'x', fetch }).catch((e) => e)) as PairingError;
   };
 
   it.each([

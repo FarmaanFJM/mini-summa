@@ -90,7 +90,7 @@ export class CoreConnection {
 
   /** Re-read the stored credentials and (re)connect, disconnect or do nothing, whichever the change calls for. */
   reload(): Promise<void> {
-    this.queue = this.queue.then(() => this.applyStored());
+    this.queue = this.queue.then(() => this.applyStored()).catch(() => undefined);
     return this.queue;
   }
 
@@ -127,7 +127,8 @@ export class CoreConnection {
   }
 
   private setIdle(stored: StoredState): void {
-    const state = stored.revokedAt !== null ? 'revoked' : 'not_paired';
+    const revoked = stored.revokedAt !== null || (stored.token !== null && stored.token === this.revokedToken);
+    const state = revoked ? 'revoked' : 'not_paired';
     if (this.current.state === state && this.current.coreUrl === stored.coreUrl) return;
     this.setStatus({ state, since: this.clock.now(), coreUrl: stored.coreUrl });
   }

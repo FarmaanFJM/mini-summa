@@ -37,9 +37,11 @@ function harness() {
     stateChangedAt: '2026-10-30T10:00:00.000Z', createdAt: 'x', updatedAt: 'x', ...over,
   });
 
-  const base = { bus, log: { debug() {}, info() {}, warn() {}, error: vi.fn() } } as unknown as CoreBase;
+  const base = { bus, clock: { now: () => new Date('2026-10-30T12:00:00.000Z') }, log: { debug() {}, info() {}, warn() {}, error: vi.fn() } } as unknown as CoreBase;
+  const retention = { activityDays: 0 };
+  const settings = { get: () => ({ retention }) } as never;
   const orch = createOrchestrator({
-    base,
+    base, settings,
     sessions: { subscribe(h) { handlers.current = h; return () => { handlers.current = null; }; }, get: () => view() },
     reports: { capture: (r) => { captured.push(r.reportId); return { report: {} as ReportSummary, created: true }; }, captureCandidate: () => ({ created: true }), list: () => ({ items: [], nextBefore: null }), summary: (id) => summary(id) },
     deliveries: { onReportCaptured: (r) => { const d = deliveriesByReport.get(r.id) ?? delivery(r.id); deliveriesByReport.set(r.id, d); return d; }, list: ({ reportId }) => (reportId && deliveriesByReport.has(reportId) ? [deliveriesByReport.get(reportId)!] : []) },
@@ -61,7 +63,7 @@ function harness() {
     actions: { raisePermission: (i) => { permission.push(i); return null; }, supersedeOpenFor: (k) => { superseded.push(k); } },
   });
   const stop = orch.start();
-  return { orch, handlers: () => handlers.current!, entries, resolved, recorded, notified, permission, superseded, captured, bus, stop, deliveriesByReport, delivery };
+  return { orch, retention, handlers: () => handlers.current!, entries, resolved, recorded, notified, permission, superseded, captured, bus, stop, deliveriesByReport, delivery };
 }
 
 const summary = (id: string, over: Partial<ReportSummary> = {}): ReportSummary => ({
@@ -138,6 +140,19 @@ describe('orchestrator: Claude events', () => {
   });
 });
 
+describe('orchestrator: retention', () => {
+  it('does not resurrect entries that retention already pruned when history is replayed', () => {
+    const h = harness();
+    h.retention.activityDays = 30;
+    const old = '2020-01-01T00:00:00.000Z';
+    h.handlers().onDerived!(derived({ derivedId: 'old1', to: 'needs_input', at: old, replay: true }), view());
+    expect(h.entries.size).toBe(0);
+    // live events are never dropped, whatever their timestamp
+    h.handlers().onDerived!(derived({ derivedId: 'live1', to: 'needs_input', at: old, replay: false }), view());
+    expect(h.entries.size).toBe(1);
+  });
+});
+
 describe('orchestrator: reports and deliveries', () => {
   it('a new report gets a delivery, a requires-action entry and one notification', () => {
     const h = harness();
@@ -189,11 +204,11 @@ describe('orchestrator: reports and deliveries', () => {
 
   it('reconcile repairs a report that has no delivery and notifies nothing', () => {
     const h = harness();
-    const base = { bus: h.bus, log: { debug() {}, info() {}, warn() {}, error() {} } } as unknown as CoreBase;
+    const base = { bus: h.bus, clock: { now: () => new Date('2026-10-30T12:00:00.000Z') }, log: { debug() {}, info() {}, warn() {}, error() {} } } as unknown as CoreBase;
     const missing = summary('r5');
     const created: string[] = [];
     const orch = createOrchestrator({
-      base, sessions: { subscribe: () => () => {}, get: () => null },
+      base, settings: { get: () => ({ retention: { activityDays: 0 } }) } as never, sessions: { subscribe: () => () => {}, get: () => null },
       reports: { capture: () => ({ report: missing, created: false }), captureCandidate: () => ({ created: false }), list: () => ({ items: [missing], nextBefore: null }), summary: () => missing },
       deliveries: { onReportCaptured: (r) => { created.push(r.id); return h.delivery(r.id); }, list: () => [] },
       activity: { record: (i) => { h.recorded.push(i); return { activity: {} as ActivityEvent, created: true }; }, resolve: () => 0, get: () => null },
@@ -203,6 +218,18 @@ describe('orchestrator: reports and deliveries', () => {
     orch.reconcile();
     expect(created).toEqual(['r5']);
     expect(h.recorded.some((r) => r.id === 'rep_r5')).toBe(true);
+  });
+});
+
+describe('orchestrator: permission answers', () => {
+  it('closes the permission entry when the person answered, because Escape fires no hook', () => {
+    const h = harness();
+    const perm = { id: 'a9', kind: 'permission', status: 'executed', projectId: 'p1', projectName: 'GitManager', sessionKey: KEY, generation: 1, text: null,
+      summary: 'Bash', reportId: null, deliveryId: null, createdAt: 'x', createdBy: { kind: 'system' }, approvableBy: 'any_approver',
+      decidedAt: '2026-10-30T10:02:00.000Z', decidedBy: { kind: 'desktop' }, executedAt: null, failure: null, expiresAt: 'x',
+      target: { managed: true, live: true, generation: 1, generationMatches: true, state: 'needs_permission', problem: null } } as unknown as PendingAction;
+    h.bus.emit({ type: 'action.upserted', action: perm });
+    expect(h.resolved).toContainEqual({ sessionKey: KEY, types: ['needs_permission'] });
   });
 });
 

@@ -402,7 +402,7 @@ describe('what is remembered about a session', () => {
     ]);
     s.projection.applyNew();
     expect(s.projection.facts(key(S1))).toEqual({
-      firstAt: isoAt(1), lastHookAt: isoAt(4), startedAtHook: isoAt(1), name: 'Fix login', sessionEndReason: 'prompt_input_exit',
+      firstAt: isoAt(1), lastHookAt: isoAt(4), hookCount: 3, startedAtHook: isoAt(1), name: 'Fix login', sessionEndReason: 'prompt_input_exit',
       stateSince: { state: 'ended', at: isoAt(4) }, abnormalEnd: true, endedAt: isoAt(4),
     });
     expect(s.projection.isPrompted(key(S1))).toBe(true);

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Linking, View } from 'react-native';
 import Constants from 'expo-constants';
-import { useSession } from '../app/SessionProvider.tsx';
+import { useSession } from '../session/SessionProvider.tsx';
 import { useConnection, useConnectionApi } from '../connection/context.tsx';
 import { retryPushRegistration } from '../notifications/NotificationBridge.tsx';
 import { sendLocalTestNotification } from '../notifications/push.ts';

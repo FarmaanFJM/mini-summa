@@ -8,7 +8,8 @@ export type DotTone = 'busy' | 'idle' | 'attention' | 'error' | 'off';
 
 /** The colour family of a session's state dot. Colour never carries the meaning alone: the state label always sits beside it. */
 export function dotTone(session: Pick<SessionView, 'state' | 'availability'>): DotTone {
-  if (session.availability === 'disconnected' || session.availability === 'ended') return session.state === 'error' ? 'error' : 'off';
+  // Anything without a live process is not doing anything now, whatever state it was last in.
+  if (session.availability !== 'live') return session.state === 'error' ? 'error' : 'off';
   switch (session.state) {
     case 'working': return 'busy';
     case 'needs_permission': case 'needs_input': return 'attention';
@@ -28,13 +29,14 @@ export const originAndEnv = (session: Pick<SessionView, 'origin' | 'env'>): stri
 export const tabTitle = (session: SessionView): string =>
   `Session ${shortId(session)}, ${originAndEnv(session)}. ${session.stateLabel}.`;
 
+/** Why the session belongs (or does not belong) to its project, as a phrase that follows the project name. */
 export const RESOLUTION_TEXT: Record<ProjectResolution, string> = {
-  managed: 'Started by Mini-Summa',
-  manual: 'Assigned by you',
-  matched: 'Matched by its folder',
-  unregistered_directory: 'Its folder is not in any project',
-  ambiguous: 'Its folder matches more than one project',
-  no_cwd: 'Its folder is unknown',
+  managed: 'started by Mini-Summa',
+  manual: 'assigned by you',
+  matched: 'matched by its folder',
+  unregistered_directory: 'its folder is not in any project',
+  ambiguous: 'its folder matches more than one project',
+  no_cwd: 'its folder is unknown',
 };
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -40,7 +40,7 @@ const CONTENT_RULES = [
   ['private key block', /-----BEGIN [A-Z ]*PRIVATE KEY-----(?:\\r|\\n|\s)*[A-Za-z0-9+\/=]{40,}/],
   ['absolute home or temp path of a real machine', /(?:\/home\/(?!u\/|you\/|user\/mini-summa|me\/)[a-z][\w.-]*\/|\/Users\/(?!Some One|you\/|me\/)[A-Za-z][\w .-]*\/|C:\\Users\\(?!Some One|<|me\\|You\\)[A-Za-z][\w .-]*\\|\/root\/)/],
   ['harness or cloud session identifier', /claude-0\b|\/tmp\/claude-|scratchpad\/|session_01[A-Za-z0-9]{10,}|claude\.ai\/code\/session/],
-  ['email address', /(?<![:\/A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@(?!example\.|users\.noreply\.github\.com|noreply\.|[0-9]x\.)[A-Za-z0-9-]+\.[a-z]{2,}/],
+  ['email address', /(?<![:\/A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@(?!example\.|users\.noreply\.github\.com|noreply\.|[0-9]x\.|github\.com[:/])[A-Za-z0-9-]+\.[a-z]{2,}/],
 ];
 
 // Third-party and generated content that legitimately contains such strings is skipped for CONTENT rules only.

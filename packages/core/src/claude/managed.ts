@@ -215,6 +215,19 @@ interface Live {
 const clampInt = (value: unknown, fallback: number, min: number, max: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, Math.floor(value))) : fallback;
 
+/**
+ * Session names become command-line arguments (`--name <name>`, `--remote-control <name>`). Control characters are replaced by
+ * spaces, and a name that starts with a dash is refused: as the optional value of `--remote-control` it would be read as the
+ * next option (for example `--dangerously-skip-permissions`).
+ */
+export function normalizeSessionName(raw: string | null | undefined): string | null {
+  // eslint-disable-next-line no-control-regex
+  const name = (raw ?? '').replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 200);
+  if (name === '') return null;
+  if (name.startsWith('-')) throw new CoreError(400, 'bad_request', 'A session name cannot start with a dash. Choose another name.');
+  return name;
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms); });
 
 function installHelp(env: EnvId): string {
@@ -330,13 +343,14 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager {
 
   const handleExit = (live: Live, info: { exitCode: number | null; signal: number | null }): void => {
     if (live.pty === null && live.exit !== null) return;
-    live.pty = null;
     if (live.outputTimer) { clearTimeout(live.outputTimer); live.outputTimer = null; }
     const at = nowIso(clock);
     const reason = live.endReason ?? 'exited';
-    commit(live, { status: 'exited', pid: null, exitedAt: at, exitCode: info.exitCode, exitSignal: info.signal, exitReason: reason });
     const exit: ExitInfo = { code: info.exitCode, signal: info.signal, at, reason };
+    // Set before the listeners hear about it: one that attaches a terminal from inside onChange must still be told.
+    live.pty = null;
     live.exit = exit;
+    commit(live, { status: 'exited', pid: null, exitedAt: at, exitCode: info.exitCode, exitSignal: info.signal, exitReason: reason });
     for (const entry of [...live.sinks]) safeSink(live, entry, (sink) => sink.exit(exit));
     live.sinks.clear();
     for (const wake of live.exitWaiters.splice(0)) wake();
@@ -462,17 +476,19 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager {
         `Claude Code was expected at ${claude.file} but is not there any more. ${installHelp(env)} Then start the session again.`);
     }
     const layout = await environments.layout(env);
+    if (shutDown) throw new CoreError(503, 'shutting_down', 'Mini-Summa is closing; no new sessions can be started.');
 
     const sessionId = (resumeId ?? newSessionId()).toLowerCase();
     if (!UUID_RE.test(sessionId)) throw new CoreError(500, 'bad_session_id', 'Could not create a session id.');
     const key = makeSessionKey(env, sessionId);
     const resumedFrom = input.mode === 'resume' ? key : null;
-    const name = input.name?.trim() ? input.name.trim() : null;
+    const name = normalizeSessionName(input.name);
     const cols = clampInt(input.cols, 120, 20, 500);
     const rows = clampInt(input.rows, 32, 5, 200);
 
     // Everything from here to the spawn is synchronous: two starts of one session cannot both pass the check below.
     if (lives.get(key)?.pty) throw new CoreError(409, 'session_running', 'That session is already running in a Mini-Summa terminal.');
+    const before = input.mode === 'resume' ? selectOne(key) : null;   // what listeners saw until now, for the change event
 
     const settings = writeManagedSettings({ layout, sessionId, dataDir: base.dataDir });
     const claudeArgs = buildClaudeArgs({ mode: input.mode, sessionId, settingsPath: settings.envPath, name, remoteControl: input.remoteControl });
@@ -536,7 +552,7 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager {
       stopping: null,
     };
     lives.set(key, live);
-    emit(stored, null);
+    emit(stored, before);
 
     let pty: PtyProcess;
     try {

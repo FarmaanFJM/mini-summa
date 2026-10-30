@@ -39,7 +39,7 @@ function banner(cwd: string): string {
   ]) + nl;
 }
 
-const PROMPT_WIDTH = 76;
+const PROMPT_WIDTH = 62;
 /** The top edge of the input box and the first line of it. The cursor waits after "> ". */
 function promptBox(): string {
   return lines(dim(`╭${'─'.repeat(PROMPT_WIDTH)}╮`)) + `${dim('│')} ${bold('>')} `;
@@ -56,20 +56,21 @@ const workedTranscript = (): string => lines(
   `${clay('●')} ${bold('Read')}(internal/push/retry_test.go)`,
   `  ${dim('⎿')}  Read ${bold('142')} lines`,
   '',
-  `${clay('●')} The test sleeps for real time, so it depends on the machine. I'll switch it to the fake clock.`,
+  `${clay('●')} The test sleeps for real time, so it depends on`,
+  `  the machine. I'll switch it to the fake clock.`,
   '',
   `${clay('●')} ${bold('Update')}(internal/push/retry_test.go)`,
-  `  ${dim('⎿')}  Updated internal/push/retry_test.go with ${green('12 additions')} and ${red('9 removals')}`,
+  `  ${dim('⎿')}  Updated retry_test.go with ${green('12 additions')} and ${red('9 removals')}`,
   `      ${dim('36')}   func TestRetryBackoff(t *testing.T) {`,
   `      ${dim('37')}       clock := fakeclock.New()`,
-  `      ${dim('38')} ${removed('-       time.Sleep(50 * time.Millisecond)                    ')}`,
-  `      ${dim('38')} ${added('+       clock.Advance(50 * time.Millisecond)                 ')}`,
+  `      ${dim('38')} ${removed('-       time.Sleep(50 * time.Millisecond)            ')}`,
+  `      ${dim('38')} ${added('+       clock.Advance(50 * time.Millisecond)         ')}`,
   `      ${dim('39')}       require.Equal(t, 2, attempts)`,
   '',
   `${clay('●')} ${bold('Bash')}(go test ./internal/push -run Retry -count=200)`,
   `  ${dim('⎿')}  ${green('ok')}  \tgitmanager/internal/push\t4.213s`,
   '',
-  `${clay('✻')} ${yellow('Running tests')}${dim('… (12s · ↓ 2.4k tokens · esc to interrupt)')}`,
+  `${clay('✻')} ${yellow('Running tests')}${dim('… (12s · esc to interrupt)')}`,
   '',
 );
 
@@ -80,25 +81,26 @@ const permissionTranscript = (): string => lines(
   '',
   `${clay('●')} ${bold('Bash')}(rm -rf node_modules && npm ci)`,
   '',
-) + box(72, dim, [
+) + box(60, dim, [
   [['Bash command', bold]],
   [],
   ['  rm -rf node_modules && npm ci'],
-  [['  Remove installed packages and install from the lockfile', dim]],
+  [['  Remove packages and install from the lockfile', dim]],
   [],
   ['Do you want to proceed?'],
   [['❯ 1. Yes', cyan]],
-  ['  2. Yes, and don\'t ask again for npm ci commands in this project'],
+  ['  2. Yes, and don\'t ask again for npm ci'],
   ['  3. No, and tell Claude what to do differently ', ['(esc)', dim]],
 ]);
 
 const idleTranscript = (): string => lines(
   `${bold('>')} Summarise what changed in the auth middleware`,
   '',
-  `${clay('●')} The middleware now validates the token audience before checking scopes.`,
-  `  Three call sites were updated and two tests were added.`,
+  `${clay('●')} The middleware now validates the token audience`,
+  `  before checking scopes. Three call sites were updated`,
+  `  and two tests were added.`,
   '',
-  `${clay('●')} ${blue('Report')} ${dim('· status: complete · task: "Review the auth middleware changes"')}`,
+  `${clay('●')} ${blue('Report')} ${dim('· complete · "Review the auth middleware"')}`,
   '',
 );
 

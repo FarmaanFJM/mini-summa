@@ -26,7 +26,7 @@ afterEach(() => {
 interface Fake {
   state: string;
   cwd: string;
-  events: () => { event: string; tool?: string; prompt?: string; source?: string; reason?: string }[];
+  events: () => { event: string; tool?: string; prompt?: string; source?: string; reason?: string; mode?: string }[];
   names: () => string[];
   pty: PtyProcess;
   out: () => string;
@@ -46,7 +46,7 @@ function setup(): { root: string; state: string; cwd: string; settings: string; 
   const eventsFile = path.join(root, 'events.jsonl');
   fs.writeFileSync(logger, `import fs from 'node:fs';
 const p = JSON.parse(fs.readFileSync(0, 'utf8'));
-fs.appendFileSync(process.argv[2], JSON.stringify({ event: p.hook_event_name, tool: p.tool_name, prompt: p.prompt, source: p.source, reason: p.reason }) + '\\n');`);
+fs.appendFileSync(process.argv[2], JSON.stringify({ event: p.hook_event_name, tool: p.tool_name, prompt: p.prompt, source: p.source, reason: p.reason, mode: p.permission_mode }) + '\\n');`);
   const command = `"${process.execPath}" "${logger}" "${eventsFile}"`;
   const hooks: Record<string, unknown> = {};
   for (const e of ['SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PreToolUse', 'PostToolUse', 'Notification', 'Stop', 'StopFailure', 'SessionEnd']) {
@@ -395,6 +395,38 @@ describe('the fake CLI: a turn', () => {
     await waitFor(() => fake.names().includes('SessionStart'), 'SessionStart');
     fake.write(`${directive.tool('bash', 'FOO=bar sh -c "echo $FOO-value"'.replace(/"/g, "'"))}\r`);
     await fake.text('bar-value');
+  });
+
+  it('FAKE_CLAUDE_PASTE_WRAP=0 reports every paste verbatim', async () => {
+    const s = setup();
+    const fake = launch([], { env: { FAKE_CLAUDE_PASTE_WRAP: '0' } }, s);
+    await fake.text('? for shortcuts');
+    await waitFor(() => fake.names().includes('SessionStart'), 'SessionStart');
+    fake.write('\x1b[200~one\ntwo\nthree\nfour\x1b[201~\r');
+    await waitFor(() => fake.events().some((e) => e.event === 'UserPromptSubmit'), 'UserPromptSubmit');
+    expect(fake.events().find((e) => e.event === 'UserPromptSubmit')!.prompt).toBe('one\ntwo\nthree\nfour');
+    expect(fake.plain()).not.toContain('[Pasted text');
+  });
+
+  it('--permission-mode manual is reported as "default" (as the real CLI does); bypassPermissions skips the dialog', async () => {
+    const s = setup();
+    const manual = launch(['--permission-mode', 'manual'], {}, s);
+    await manual.text('? for shortcuts');
+    await waitFor(() => manual.names().includes('SessionStart'), 'SessionStart');
+    manual.write(`${directive.say('hi')}\r`);
+    await waitFor(() => manual.names().includes('Stop'), 'Stop');
+    expect(manual.events().find((e) => e.event === 'UserPromptSubmit')!.mode).toBe('default');
+    manual.write('/exit\r');
+    await waitFor(() => manual.exit(), 'exit');
+
+    const s2 = setup();
+    const bypass = launch(['--permission-mode', 'bypassPermissions'], {}, s2);
+    await bypass.text('? for shortcuts');
+    await waitFor(() => bypass.names().includes('SessionStart'), 'SessionStart');
+    bypass.write(`${directive.permission('bash', 'touch no-dialog.txt')}\r`);
+    await waitFor(() => bypass.names().includes('Stop'), 'Stop');
+    expect(fs.existsSync(path.join(s2.cwd, 'no-dialog.txt'))).toBe(true);
+    expect(bypass.names()).not.toContain('PermissionRequest');
   });
 
   it('can send the idle_prompt Notification when asked to', async () => {

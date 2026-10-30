@@ -8,7 +8,7 @@ import { systemClock } from '../../src/contracts.ts';
 import { CoreError } from '../../src/errors.ts';
 import { decodeCommandOutput, defaultCommandRunner, parseVersion, parseWslDistroList } from '../../src/claude/commandRunner.ts';
 import type { CommandResult, CommandRunner } from '../../src/claude/commandRunner.ts';
-import { createEnvironmentsService } from '../../src/claude/environments.ts';
+import { createEnvironmentsService, resolveCaptureScript } from '../../src/claude/environments.ts';
 import type { HostProbe } from '../../src/claude/environments.ts';
 import { envTag, windowsPathToWsl, wslPathToWindows } from '../../src/claude/envPaths.ts';
 import { collectingLogger } from './helpers/observer-harness.ts';
@@ -258,6 +258,35 @@ describe('layout', () => {
     const script = (await t.svc.layout('posix')).captureScriptInEnv;
     expect(fs.existsSync(script)).toBe(true);
     expect(script).toMatch(/claude-integration[\\/](dist[\\/]capture\.mjs|src[\\/]hook[\\/]capture\.mjs)$/);
+  });
+
+  describe('finding the capture script', () => {
+    const io = (existing: string[], resolves: Record<string, string> = {}) => ({
+      resolve: (spec: string) => { if (spec in resolves) return resolves[spec]; throw new Error(`not exported: ${spec}`); },
+      exists: (f: string) => existing.includes(f), packageRoot: '/ws/packages/claude-integration',
+    });
+    const HOOK = '@minisumma/claude-integration/hook';
+    const SOURCE = '@minisumma/claude-integration/hook-source';
+
+    it('prefers the built hook the package exports', () => {
+      expect(resolveCaptureScript(io(['/ws/dist.mjs', '/ws/src.mjs'], { [HOOK]: '/ws/dist.mjs', [SOURCE]: '/ws/src.mjs' }))).toBe('/ws/dist.mjs');
+    });
+    it('falls back to the source script when the bundle was not built', () => {
+      expect(resolveCaptureScript(io(['/ws/src.mjs'], { [HOOK]: '/ws/dist.mjs', [SOURCE]: '/ws/src.mjs' }))).toBe('/ws/src.mjs');
+    });
+    it('falls back to the workspace layout for a package that declares no hook exports', () => {
+      expect(resolveCaptureScript(io(['/ws/packages/claude-integration/dist/capture.mjs']))).toBe('/ws/packages/claude-integration/dist/capture.mjs');
+      expect(resolveCaptureScript(io(['/ws/packages/claude-integration/src/hook/capture.mjs']))).toBe('/ws/packages/claude-integration/src/hook/capture.mjs');
+    });
+    it('names the place the build will write when nothing exists yet', () => {
+      expect(resolveCaptureScript(io([]))).toBe('/ws/packages/claude-integration/dist/capture.mjs');
+    });
+    it('resolves, for real, to a file of the claude-integration package that exists', async () => {
+      const t = linux({ overrides: { captureScript: undefined } });
+      const script = (await t.svc.layout('posix')).captureScriptInEnv;
+      expect(fs.existsSync(script)).toBe(true);
+      expect(path.basename(script)).toBe('capture.mjs');
+    });
   });
 
   it('gives the host layout without waiting for a slow Claude version check (startup must not hang on it)', async () => {

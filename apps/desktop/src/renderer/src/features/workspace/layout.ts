@@ -29,6 +29,6 @@ export type PaneName = 'chatgpt' | 'claude';
 /** Maximising a pane that is already maximised restores the split. */
 export const toggleMaximized = (current: PaneName | null, pane: PaneName): PaneName | null => (current === pane ? null : pane);
 
-/** Which pane the SplitPane hides when `maximized` is set. */
-export const collapsedFor = (maximized: PaneName | null): 'first' | 'second' | null =>
-  maximized === 'chatgpt' ? 'second' : maximized === 'claude' ? 'first' : null;
+/** The SplitPane child shown alone when a pane is maximised: ChatGPT is the first child, Claude the second. */
+export const onlyPane = (maximized: PaneName | null): 'first' | 'second' | null =>
+  maximized === 'chatgpt' ? 'first' : maximized === 'claude' ? 'second' : null;

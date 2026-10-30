@@ -7,7 +7,7 @@ import * as ExpoLinking from 'expo-linking';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { decodePairingPayload } from '@minisumma/shared';
 import type { PairingPayload } from '@minisumma/shared';
-import { useSession } from '../app/SessionProvider.tsx';
+import { useSession } from '../session/SessionProvider.tsx';
 import { PairingError, pairWithDesktop, payloadFromManualInput, suggestDeviceName } from '../pairing/pairing.ts';
 import type { UrlAttempt } from '../pairing/pairing.ts';
 import { colors, radius, space } from '../theme.ts';

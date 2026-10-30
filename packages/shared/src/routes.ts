@@ -138,7 +138,9 @@ export const routes = {
   'projects.get': route<Project>()({ method: 'GET', path: '/projects/:id', scope: 'read' }),
   'projects.create': route<Project>()({ method: 'POST', path: '/projects', scope: 'desktop', body: projectCreateSchema, idempotent: true }),
   'projects.update': route<Project>()({ method: 'PATCH', path: '/projects/:id', scope: 'desktop', body: projectUpdateSchema }),
-  'projects.remove': route<Ok>()({ method: 'DELETE', path: '/projects/:id', scope: 'desktop', query: z.object({ mode: z.enum(['archive', 'delete']).optional() }) }),
+  'projects.remove': route<Ok>()({ method: 'DELETE', path: '/projects/:id', scope: 'desktop',
+    /** Without stopSessions, a project with running Claude terminals is refused (409 sessions_running) so nothing ends by surprise. */
+    query: z.object({ mode: z.enum(['archive', 'delete']).optional(), stopSessions: qBool.optional() }) }),
   'projects.reorder': route<Ok>()({ method: 'POST', path: '/projects-reorder', scope: 'desktop', body: z.object({ ids: z.array(id).max(500) }) }),
   'projects.addRoot': route<Project>()({ method: 'POST', path: '/projects/:id/roots', scope: 'desktop', body: z.object({ path: z.string().min(1).max(1024), env: envId.optional(), label: text(120).nullable().optional() }) }),
   'projects.removeRoot': route<Project>()({ method: 'DELETE', path: '/projects/:id/roots/:rootId', scope: 'desktop' }),

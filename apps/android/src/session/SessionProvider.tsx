@@ -68,7 +68,8 @@ export function SessionProvider({ children, store: injected, createManager }: Se
 
   useEffect(() => {
     if (!manager) return undefined;
-    if (AppState.currentState === 'active') manager.start();
+    // Connect unless the app was started in the background (a push can do that); it connects when it comes forward.
+    if (AppState.currentState !== 'background') manager.start();
     // Background closes the stream, foreground reopens it and reloads every snapshot.
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active') manager.start();

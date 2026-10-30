@@ -13,7 +13,7 @@
 import { API_VERSION, isSessionKey } from '@minisumma/shared';
 import type { Counts, Device, HookStatus, Scope, SessionKey, StateSnapshot, SystemInfo } from '@minisumma/shared';
 import type { CoreBase } from '../contracts.ts';
-import { CoreError, notFound, unavailable } from '../errors.ts';
+import { CoreError, conflict, notFound, unavailable } from '../errors.ts';
 import type { ConversationActions } from './conversations.ts';
 import type { HandlerMap, HttpServices } from './types.ts';
 
@@ -78,7 +78,17 @@ export function createHandlers(deps: HandlerDeps): HandlerMap {
     'projects.get': ({ params }) => projects.require(params.id),
     'projects.create': ({ body }) => projects.create(body),
     'projects.update': ({ params, body }) => projects.update(params.id, body),
-    'projects.remove': ({ params, query }) => {
+    'projects.remove': async ({ params, query }) => {
+      // A removed project must not leave Claude terminals running where nobody can see them. Ending a terminal is the
+      // user's decision, so a project with running terminals is refused until the caller says to stop them.
+      const running = sessions.list({ projectId: params.id }).filter((s) => s.origin === 'managed' && s.availability === 'live');
+      if (running.length > 0) {
+        if (!query.stopSessions) {
+          throw conflict(`This project has ${running.length} running Claude terminal${running.length === 1 ? '' : 's'}. Stop ${running.length === 1 ? 'it' : 'them'} first, or confirm that Mini-Summa should stop ${running.length === 1 ? 'it' : 'them'} when removing the project.`,
+            'sessions_running', { sessions: running.map((s) => s.key) });
+        }
+        for (const s of running) await sessions.stop(s.key, {});
+      }
       // Archiving keeps the history, so it is the default; deleting must be asked for.
       projects.remove(params.id, query.mode ?? 'archive');
       return OK;

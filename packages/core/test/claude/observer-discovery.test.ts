@@ -234,7 +234,7 @@ describe('which environments are asked', () => {
     const { h } = await harness([[agent()]]);
     await expect(h.sessions.refreshDiscovery('win')).rejects.toMatchObject({ status: 422, code: 'unknown_environment' });
 
-    const down = await makeHarness({ environments: createStubEnvironments('posix', [layoutFor({ dataDir: path.join(os.tmpdir(), 'x'), dir: '' }, 'posix')], false), run: scripted([[agent()]]).run });
+    const down = await makeHarness({ environments: (layout) => createStubEnvironments('posix', [layout], false), run: scripted([[agent()]]).run });
     cleanups.push(() => down.cleanup());
     expect(await down.sessions.refreshDiscovery('posix')).toEqual({ ran: [], errors: [{ env: 'posix', message: 'Claude Code was not found.' }] });
     expect(await down.sessions.refreshDiscovery()).toEqual({ ran: [], errors: [] }); // the "refresh all" button skips what has no Claude

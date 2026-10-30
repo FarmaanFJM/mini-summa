@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeSessionKey } from '@minisumma/shared';
@@ -7,7 +8,7 @@ import { CoreError } from '../../src/errors.ts';
 import { createNodePtySpawner } from '../../src/claude/ptyHost.ts';
 import { directive, readEnvReport, readReceived } from '../../src/testing/fake-claude/index.ts';
 import {
-  CONVERSATION_ID, FakePty, FakeSpawner, PROJECT_ID, createHarness, eventsOf, startWithSink, waitFor, waitForText,
+  CONVERSATION_ID, FakePty, FakeSpawner, PROJECT_ID, RecordingSink, createHarness, eventsOf, startWithSink, waitFor, waitForText,
 } from './managed-harness.ts';
 import type { Harness } from './managed-harness.ts';
 
@@ -138,7 +139,7 @@ describe('start: a new session', () => {
 
 describe('start: the environment the process gets', () => {
   it('removes harness identity variables, keeps credentials and CLAUDE_CONFIG_DIR, sets TERM and COLORTERM', async () => {
-    const configDir = path.join(fs.mkdtempSync(path.join(fs.realpathSync(process.env.TMPDIR ?? '/tmp'), 'ms-cfg-')), 'claude');
+    const configDir = path.join(os.tmpdir(), 'ms-cfg-never-created', 'claude'); // only its name matters here: nothing writes to it
     h = createHarness({
       baseEnv: {
         CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', CLAUDE_CODE_SSE_PORT: '5555', CLAUDE_CODE_CHILD_SESSION: '1', CLAUDE_CODE_SESSION_ID: 'parent', CLAUDE_CODE_SESSION_ATTENDED: '1',
@@ -349,7 +350,7 @@ describe('app restart: the PTY died with the old process', () => {
     second.resize(gone.key, 80, 24);
     expect(await second.stop(gone.key, { force: true })).toMatchObject({ status: 'disconnected' });
 
-    const sink = new (await import('./managed-harness.ts')).RecordingSink();
+    const sink = new RecordingSink();
     const attached = second.attach(gone.key, { cols: 80, rows: 24 }, sink);
     if ('error' in attached) throw new Error(attached.error);
     expect(attached.replay).toBe('');
@@ -368,7 +369,11 @@ describe('app restart: the PTY died with the old process', () => {
     const spawnerB = new FakeSpawner();
     const second = h.makeManager({ spawner: spawnerB, appRunId: 'run_B' });
     second.init();
+    const seen: { prev: string | null; next: string }[] = [];
+    second.onChange((r, p) => seen.push({ prev: p?.status ?? null, next: r.status }));
     const resumed = await second.start(h.startInput({ mode: 'resume', resumeSessionId: old.sessionId, conversationId: null }));
+    // listeners learn that an existing record came back to life, not that a new one appeared
+    expect(seen).toEqual([{ prev: 'disconnected', next: 'running' }, { prev: 'running', next: 'running' }]);
     expect(resumed.key).toBe(old.key);
     expect(resumed).toMatchObject({
       mode: 'resume', resumedFrom: old.key, status: 'running', appRunId: 'run_B', exitReason: null, exitedAt: null,
@@ -383,7 +388,55 @@ describe('app restart: the PTY died with the old process', () => {
   });
 });
 
+describe('session names', () => {
+  it('are cleaned before they reach the command line; a leading dash is refused (it could pose as an option)', async () => {
+    h = createHarness();
+    const spawner = new FakeSpawner();
+    const manager = h.makeManager({ spawner });
+    const record = await manager.start(h.startInput({ name: '  Fix\nthe\tlogin\u0007 bug  ', remoteControl: true }));
+    expect(record.name).toBe('Fix the login bug');
+    const args = spawner.requests[0].args as string[];
+    expect(args.slice(args.indexOf('--name'))).toEqual(['--name', 'Fix the login bug', '--remote-control', 'Fix the login bug']);
+    expect((await manager.start(h.startInput({ name: '   ' }))).name).toBeNull();
+    for (const bad of ['--dangerously-skip-permissions', '-x', ' \n--model']) {
+      expect(await catchError(manager.start(h.startInput({ name: bad, remoteControl: true }))), bad).toMatchObject({ status: 400, code: 'bad_request' });
+    }
+    expect(count(h, 'managed_sessions')).toBe(2);
+    expect(spawner.requests).toHaveLength(2);
+  });
+});
+
 describe('start: things that go wrong', () => {
+  it('a start that was still preparing when shutdown began does not spawn anything', async () => {
+    h = createHarness();
+    const spawner = new FakeSpawner();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const original = h.environments.layout;
+    h.environments.layout = async (env) => { await gate; return original(env); };
+    const manager = h.makeManager({ spawner });
+    const pending = catchError(manager.start(h.startInput()));
+    await manager.shutdown();
+    release();
+    expect(await pending).toMatchObject({ status: 503, code: 'shutting_down' });
+    expect(spawner.requests).toHaveLength(0);
+    expect(count(h, 'managed_sessions')).toBe(0);
+  });
+
+  it('a listener that attaches a terminal while it is told about the exit still gets the exit', async () => {
+    h = createHarness();
+    const spawner = new FakeSpawner();
+    const manager = h.makeManager({ spawner });
+    const record = await manager.start(h.startInput());
+    const late = new RecordingSink();
+    manager.onChange((r) => { if (r.status === 'exited') manager.attach(r.key, { cols: 80, rows: 24 }, late); });
+    spawner.ptys[0].emitData('last words\r\n');
+    spawner.ptys[0].emitExit({ exitCode: 0, signal: null });
+    await Promise.resolve();
+    expect(late.exits).toHaveLength(1);
+    expect(manager.attach(record.key, { cols: 80, rows: 24 }, late)).toMatchObject({ replay: 'last words\r\n' });
+  });
+
   it('claude_not_found (422) with install guidance, and nothing is recorded', async () => {
     h = createHarness();
     h.environments.claude.set('posix', null);

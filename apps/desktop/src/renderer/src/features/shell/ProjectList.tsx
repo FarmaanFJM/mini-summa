@@ -157,7 +157,7 @@ function ProjectConfirm({ confirm, onClose }: { confirm: Confirm; onClose: () =>
 
   if (!confirm) return null;
   const { project } = confirm;
-  const sessionsNote = liveCount > 0 ? ` Its ${plural(liveCount, 'running session')} ${liveCount === 1 ? 'is' : 'are'} not stopped.` : '';
+  const sessionsNote = liveCount > 0 ? ` ${liveCount === 1 ? 'The running session is' : `The ${liveCount} running sessions are`} not stopped.` : '';
   return confirm.kind === 'archive' ? (
     <ConfirmDialog
       open

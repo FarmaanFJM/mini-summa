@@ -31,7 +31,15 @@
 //
 // Knobs (environment): FAKE_CLAUDE_THINK_MS (default 120, pause before a turn acts), FAKE_CLAUDE_NOTIFY_MS (default
 // 6000, delay of the permission_prompt Notification, as observed on the real CLI), FAKE_CLAUDE_IDLE_NOTIFY_MS (default 0 =
-// off, idle_prompt Notification after that long idle).
+// off, idle_prompt Notification after that long idle), FAKE_CLAUDE_PASTE_WRAP=0 (report pasted prompts verbatim; by default
+// a bracketed paste of 3+ line breaks is shown as "[Pasted text #1 +N lines]" and reported in UserPromptSubmit wrapped in
+// <pasted_content> tags, as the real CLI does).
+//
+// What is copied from the real CLI (2.1.314, see packages/core/test/claude/REAL-CLAUDE-RUNS.md): the field sets of the hook
+// payloads, the permission dialog and its numbering (Enter/1/2/3 approve, Esc/4 reject), Esc = "Interrupted" with no Stop, the
+// ~6 s delay of the permission_prompt Notification, a resumed SessionStart without `model` but with context_tokens and friends,
+// "No conversation found with session ID" for a session that was never prompted, SessionEnd before the exit. What is invented:
+// the banner, the text of the elicitation dialog, the reply text, and everything a model would do.
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
@@ -381,7 +389,7 @@ async function runInteractive(parsed) {
   const S = {
     sessionId, name, cwd, source,
     model: parsed.first('--model') ?? 'claude-fake-1',
-    permissionMode: parsed.first('--permission-mode') ?? (parsed.has('--dangerously-skip-permissions') ? 'bypassPermissions' : 'default'),
+    permissionMode: ({ manual: 'default' })[parsed.first('--permission-mode')] ?? parsed.first('--permission-mode') ?? (parsed.has('--dangerously-skip-permissions') ? 'bypassPermissions' : 'default'),
     remoteControl: parsed.has('--remote-control', '--rc'),
     startedAt: Date.now(),
     transcriptPath: path.join(configDir, 'projects', encodeDir(cwd), `${sessionId}.jsonl`),
