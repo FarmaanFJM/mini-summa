@@ -113,7 +113,7 @@ class FirstRunDriver {
 }
 
 async function main(): Promise<void> {
-  const version = spawnSync(claudeBin, ['--version'], { encoding: 'utf8', timeout: 20_000 });
+  const version = spawnSync(claudeBin, ['--version'], { encoding: 'utf8', timeout: 20_000, shell: process.platform === 'win32' });
   if (version.error || version.status !== 0) {
     say(`Claude Code was not found or did not start: ${claudeBin}\n${version.error?.message ?? version.stderr}`);
     process.exit(2);

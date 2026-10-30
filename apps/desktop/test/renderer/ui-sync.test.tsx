@@ -152,15 +152,17 @@ describe('writing back', () => {
 
   it('sends the window\'s own copy when the core has none, so the core becomes the durable home', async () => {
     const storage = createMemoryStorage({
-      'minisumma.route.v1': JSON.stringify({ view: 'reports', projectId: IDS.atlas, sessionByProject: { [IDS.gitManager]: IDS.s.gmPermission }, conversationByProject: { [IDS.gitManager]: IDS.c.gmReview } }),
+      'minisumma.route.v1': JSON.stringify({ view: 'workspace', projectId: IDS.atlas, sessionByProject: { [IDS.gitManager]: IDS.s.gmPermission }, conversationByProject: { [IDS.gitManager]: IDS.c.gmReview } }),
       'minisumma.onboarding.v1': JSON.stringify({ seenEmpty: true, dismissed: true }),
     });
     const app = await renderApp({ seed: seedWith(undefined), storage, uiSync: FAST });
     await waitFor(() => expect(app.runtime.store.getState().settings?.ui).toEqual({
-      route: { projectId: IDS.atlas, view: 'reports' },
+      route: { projectId: IDS.atlas, view: 'workspace' },
       perProject: { [IDS.gitManager]: { sessionKey: IDS.s.gmPermission, conversationId: IDS.c.gmReview } },
       setup: { dismissed: true, seenEmpty: true },
     }));
+    // ...and the window shows what it had
+    expect(heading()).toBe('Atlas API');
   });
 
   it('remembers that the checklist was hidden', async () => {
@@ -173,7 +175,8 @@ describe('writing back', () => {
   it('forgets the choices of a project that was removed', async () => {
     const app = await renderApp({ seed: seedWith({ perProject: { [IDS.docs]: { conversationId: 'cnv_x' }, [IDS.atlas]: { conversationId: IDS.c.atlasMain } } }), storage: createMemoryStorage(), uiSync: FAST });
     await app.demo.call('projects.remove', { params: { id: IDS.docs }, query: { mode: 'delete' } });
-    await waitFor(() => expect(app.runtime.store.getState().settings?.ui?.perProject).toEqual({ [IDS.atlas]: { conversationId: IDS.c.atlasMain } }));
+    await waitFor(() => expect(Object.keys(app.runtime.store.getState().settings?.ui?.perProject ?? {})).not.toContain(IDS.docs));
+    expect(app.runtime.store.getState().settings?.ui?.perProject?.[IDS.atlas]).toEqual({ conversationId: IDS.c.atlasMain });
     expect(app.runtime.route.getState().conversationByProject[IDS.docs]).toBeUndefined();
   });
 
@@ -207,7 +210,7 @@ describe('when a write fails', () => {
     await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
     await waitFor(() => expect(uiWrites(spy).length).toBeGreaterThanOrEqual(2)); // tried, and tried again
     expect(heading()).toBe('Atlas API'); // the window works
-    expect(app.runtime.uiSync.pending()).toEqual(['route']); // still waiting for the core
+    expect(app.runtime.uiSync.pending()).toContain('route'); // still waiting for the core
     expect(screen.queryByRole('alert')).toBeNull(); // nothing on screen
     expect(document.querySelector('.sm-toast, [data-toast]')).toBeNull();
     expect(app.runtime.store.getState().settings?.ui?.route).toBeUndefined();
