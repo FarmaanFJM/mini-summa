@@ -218,7 +218,7 @@ scenario('[A11] Multiple sessions can belong to one project', async () => {
   expect(sessions[0].pid).not.toBe(sessions[1].pid);
 
   // Each tab is its own terminal: it shows its own session id, and input goes to the selected one only.
-  const [first, second] = [...sessions].sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  const [first, second] = [...sessions].sort((a, b) => (a.startedAt ?? '').localeCompare(b.startedAt ?? ''));
   const tab = (key: SessionKey) => h.page.getByRole('tab', { name: new RegExp(`^Session ${key.split('|')[1].slice(0, 8)},`) });
   await tab(first.key).click();
   await waitForScreen(h.page, `session: ${first.sessionId}`);

@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import { expect } from 'vitest';
 import { launchApp } from '../helpers/app.ts';
-import { acceptsInput, createProject, fullReport, latestDelivery, reportsOf, startSession, waitForReports } from '../helpers/core.ts';
+import { acceptsInput, fullReport, latestDelivery, reportsOf, waitForReports } from '../helpers/core.ts';
 import { evidence } from '../helpers/evidence.ts';
 import { directive } from '../helpers/fake-claude.ts';
 import { finishTask, sceneWithSession } from '../helpers/flow.ts';
@@ -11,7 +11,7 @@ import { chatgptView, readClipboard, standInPageState, writeClipboard } from '..
 import { scenario } from '../helpers/scenario.ts';
 import { conversationUrl, uuidOf } from '../helpers/standin.ts';
 import { observe, typeLikeAPerson, waitForScreen } from '../helpers/terminal.ts';
-import { handoffCard, openActivity, openReport, openReports, projectRow, projectRowWith, reportDetail, reportList, reportRow, selectProject } from '../helpers/ui.ts';
+import { handoffCard, openActivity, openReport, openReports, projectRow, projectRowWith, reportDetail, reportRow, selectProject } from '../helpers/ui.ts';
 import { until } from '../helpers/wait.ts';
 
 const A = uuidOf('a');
@@ -141,13 +141,13 @@ scenario('[A17] The report remains linked to the correct project', async () => {
 
   // The link is to the project, not to its name: after a rename the report's project button still leads to the same project.
   await h.api.call('projects.update', { params: { id: alpha.project.id }, body: { name: 'Alpha renamed' } });
-  await h.page.getByRole('heading', { level: 1, name: 'Alpha renamed' }).waitFor();
   expect((await reportsOf(h, alpha.project.id))[0].projectId).toBe(alpha.project.id);
   expect((await latestDelivery(h, report.id)).projectId).toBe(alpha.project.id);
+  const nameOnReport = (await reportsOf(h, alpha.project.id))[0].projectName;
   await openReport(h.page, 'Alpha storage');
   await reportDetail(h.page).getByRole('button', { name: /^Alpha/ }).first().click();
   await h.page.getByRole('heading', { level: 1, name: 'Alpha renamed' }).waitFor();
-  evidence('A17', `Alpha's Claude finished while Beta was selected: the report is stored under Alpha (project id ${alpha.project.id.slice(0, 12)}) and Alpha's session; Beta has none; the sidebar counted it on Alpha's row only; the report page's project and session links lead to Alpha; filtering by Beta shows nothing; after renaming Alpha the report still belongs to it (same project id) and its project button leads there`);
+  evidence('A17', `Alpha's Claude finished while Beta was selected: the report is stored under Alpha (project id ${alpha.project.id.slice(0, 12)}) and Alpha's session; Beta has none; the sidebar counted it on Alpha's row only; the report page's project and session links lead to Alpha; filtering by Beta shows nothing; after renaming Alpha the report still belongs to it (same project id) and its project button leads there (the report keeps the name it was captured under: "${nameOnReport}")`);
   void beta;
 });
 
@@ -244,6 +244,14 @@ scenario('[A19] The correct ChatGPT conversation can be opened for handoff', asy
   const delivery = await latestDelivery(h, report.id);
   expect(delivery.destination).toMatchObject({ url: conversationUrl(C2), resolvedFrom: 'project_preferred', conversationId: scene.conversations[1].id });
 
+  // The person happens to be reading the project's OTHER conversation when the report is ready.
+  await h.page.getByRole('button', { name: 'Conversation', exact: true }).click();
+  await h.page.getByRole('option', { name: /ChatGPT conversation c1c1c1c1/ }).click();
+  await until('the first conversation to be in front', async () => {
+    const view = await chatgptView(h.app);
+    return view?.url === conversationUrl(C1) && !view.loading && view.title === 'Stand-in: C first';
+  });
+
   await openReport(h.page, 'Opening book');
   const card = handoffCard(h.page);
   await card.getByLabel('Destination').getByText(conversationUrl(C2), { exact: true }).waitFor();
@@ -257,8 +265,10 @@ scenario('[A19] The correct ChatGPT conversation can be opened for handoff', asy
     const view = await chatgptView(h.app);
     return view?.url === conversationUrl(C2) && !view.loading && view.title === 'Stand-in: C second (preferred)';
   });
-  await openReport(h.page, 'Opening book');
-  await handoffCard(h.page).getByText('Awaiting your send', { exact: true }).waitFor();
+  // The core's truth, and the queue (which follows the report summaries): copied and opened, waiting for the person.
+  await until('the delivery to wait for the person', async () => (await latestDelivery(h, report.id)).state === 'awaiting_user_send');
+  await openReports(h.page);
+  await until('the queue to say so', async () => ((await reportRow(h.page, 'Opening book').getAttribute('aria-label')) ?? '').includes('Awaiting your send'));
   expect(h.standIn.pathsSince(mark)).toEqual([`/c/${C2}`]);
   expect(h.standIn.requests.some((r) => r.path === `/c/${C1}`)).toBe(false);
   const clip = await readClipboard(h.app);
@@ -325,7 +335,24 @@ scenario('[A20] A report cannot be accidentally routed to another project\'s map
   evidence('A20', `Beta selected with its conversation in front: Alpha's report was frozen to Alpha's conversation and nothing was created for Beta; "Change destination" listed only Alpha's conversation; "Copy and open" left Alpha's text on the clipboard and navigated to ${conversationUrl(A)} (stand-in saw only GET /c/${A}); adding a new preferred conversation to Alpha did not retarget the delivery; re-pointing is only possible by an explicit action (API; the window offers none across projects) and is recorded as destination_changed with otherProject:true`);
 });
 
-// startSession and projectRow are shared helpers used by sibling files; keep the imports honest.
-void startSession;
-void createProject;
-void reportList;
+// Not one of the 25 behaviours: a check on the screen that carries the handoff. The card is the only place to say "I sent it", so
+// what it shows must be what the core holds after "Copy and open".
+scenario('[X01] The Handoff card follows the delivery after "Copy and open" and "I sent it"', async () => {
+  const h = await launchApp();
+  const scene = await sceneWithSession(h, 'Alpha', { conversations: [conversationUrl(A)] });
+  const report = await finishTask(h, scene, 'Card state');
+  await openReport(h.page, 'Card state');
+  await handoffCard(h.page).getByRole('button', { name: 'Copy and open' }).click();
+  await until('the core to hold awaiting_user_send', async () => (await latestDelivery(h, report.id)).state === 'awaiting_user_send');
+
+  // Back on the report: the card must say what the core says.
+  await openReport(h.page, 'Card state');
+  const headline = () => handoffCard(h.page).locator('h3').first().innerText();
+  let shown = '';
+  await until('the card to show "Awaiting your send" (the core holds awaiting_user_send)', async () => { shown = await headline(); return shown === 'Awaiting your send'; }, { timeout: 10_000 })
+    .catch((error) => { throw new Error(`${error.message}. The card shows "${shown}" while the core says awaiting_user_send; the report queue row says "${'Awaiting your send'}".`); });
+  await handoffCard(h.page).getByRole('button', { name: 'I sent it', exact: true }).click();
+  await until('the core to hold user_confirmed_sent', async () => (await latestDelivery(h, report.id)).state === 'user_confirmed_sent');
+  await handoffCard(h.page).getByText(/You confirmed it was sent/).first().waitFor();
+  evidence('X01', 'after "Copy and open" the card showed "Awaiting your send" with an "I sent it" button, and after pressing it "You confirmed it was sent", each matching the core');
+});

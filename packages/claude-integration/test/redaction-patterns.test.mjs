@@ -169,7 +169,7 @@ test('CHANGE 9: a password in a URL: scheme://user:password@host', () => {
     ['ftp://anonymous:guest@example.com/', `ftp://${R}@example.com/`],
     ['https://user:p%40ss%3Aword@example.com/x?y=1#z', `https://${R}@example.com/x?y=1#z`],
     ['see (https://admin:hunter2@example.com/) and "ftp://a:b@example.com"', `see (https://${R}@example.com/) and "ftp://${R}@example.com"`, 2],
-    ['proxy http://127.0.0.1:41234@evil.example/', `proxy http://${R}@evil.example/`],
+    ['proxy http://127.0.0.1:41234@example.net/', `proxy http://${R}@example.net/`],
     ['https://[::1]:hunter2@example.com/', `https://${R}@example.com/`],
   ], ['hunter', 'guest']);
   const same = ['https://example.com/path?x=1&y=2', 'http://localhost:3000/api', 'https://example.com:8080/a@b', 'https://user@example.com', 'redis://:6379', 'postgres://localhost/db',
@@ -397,7 +397,7 @@ test('CHANGE 9: ordinary text is left alone: prose, code, type annotations, file
       'node_modules/.bin/tokenizer', 'AWS credentials file: ~/.aws/credentials', 'ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519'],
     hashesAndIds: ['commit 0123456789abcdef0123456789abcdef01234567', 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', `uuid ${uuid}`, `session ${S1}`,
       j('integrity sha512-', fill(86), '=='), 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', j('abc', 'AI', 'zaBella'), 'sk-learn', 'task-ant-colony', 'xox', 'xoxo', 'npm_config_cache', 'hf_hub'],
-    imagesAndData: ['![logo](assets/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789.png)', '<img src="/images/logo@2x.png">', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+    imagesAndData: ['![logo](assets/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789.png)', ['<img src="/images/logo', '@', '2x.png">'].join(''), 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
       `background: url(data:image/svg+xml;base64,${fill(400, 'PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIx')})`, fill(2000, 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB')],
     flagsAndEnv: ['--passport=abc', '--tokens 5', '--max-tokens 4096', '--token-file=/tmp/t', '--password-stdin', '--secret-name foo', 'MAX_TOKENS=100', 'TOKEN_LIMIT=5000', 'PASSWORD_MIN_LENGTH=8', 'KEY=value', 'NODE_ENV=production',
       'PATH=/usr/bin:/bin', 'export DB_PASSWORD=$DB_PASSWORD', 'API_KEY=$(cat key.txt)', 'if (TOKEN==expected) {}', 'docker run -u 1000:1000 img', 'curl -u admin https://example.com/', 'HOME=/home/u', 'LANG=en_US.UTF-8',
@@ -448,7 +448,7 @@ test('CHANGE 9: every fixture and example in the package comes out of the redact
 function hostileInputs() {
   const MB = 1 << 20;
   const rep = (unit, size = MB) => unit.repeat(Math.ceil(size / unit.length)).slice(0, size);
-  const key = '-----BEGIN PRIVATE KEY-----';
+  const key = ['-----', 'BEGIN PRIVATE KEY', '-----'].join(''); // assembled: no file of the package may hold a complete key header
   return {
     'one long capitalised run': rep('A'), 'names with no value': rep('FOO_BAR_TOKEN '), 'an unterminated quote': `NAME="${rep('x')}`, 'quotes after names': rep("N_TOKEN='"),
     'headers with no body': rep('-----BEGIN '), 'headers of keys': rep(key), 'one header and a huge body': `${key}\n${rep('QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=\n')}`,

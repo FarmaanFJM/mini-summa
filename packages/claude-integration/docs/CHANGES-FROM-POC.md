@@ -171,8 +171,8 @@ behaviour that did **not** change still pass.
   `xoxb-` `xoxp-` `xoxa-` `xoxr-` `xoxs-` and Slack webhook URLs, Google `AIza` keys, `aws_secret_access_key` assignments,
   `Authorization: Basic`, `curl -u user:password`, `scheme://user:password@host`, PEM private key blocks, `npm_` and `hf_` tokens,
   Azure `AccountKey=`, `--password=hunter2` and its siblings, `export DB_PASSWORD=...` and the like, and a `Bearer` token shorter
-  than 12 characters. (Each input of `test/redaction-patterns.test.mjs` was run through the proof of concept's redactor and comes
-  out unchanged.)
+  than 12 characters. (Reproduced here: the tests below, run against a copy of the proof of concept's redactor, fail for each of
+  them.)
 - **Now.** `redactString` also hides the following; each hidden value adds one to the count, as before, and a value that two rules
   could hide is hidden and counted once (the second rule finds `[REDACTED]` and leaves it). Text that has been hidden is a fixed
   point: hiding it again changes nothing and counts nothing.
@@ -182,8 +182,9 @@ behaviour that did **not** change still pass.
     of any type (`RSA`, `EC`, `DSA`, `OPENSSH`, `ENCRYPTED`, `PGP ... BLOCK`, plain `PRIVATE KEY`; not `PUBLIC KEY`, not a certificate).
     A block is hidden from its BEGIN line to its END line when the END line is within 4096 characters and only base64, line breaks
     (also as the two characters `\n`) and the `Proc-Type` / `DEK-Info` lines of old keys lie between. With no END line (a capture cut
-    short) the base64 that follows is hidden, at most 4096 characters, and it takes the line break that ends the key no further than
-    the key. The cap is deliberate: what is hidden never grows with the text after it.
+    short) the base64 that follows is hidden, at most 4096 characters, and the line break that ends it stays outside the hidden
+    part. A header with fewer than 8 base64 characters after it (a mention in a sentence) is not a key and is left alone. The cap is
+    deliberate: what is hidden never grows with the text after it.
   - *Bearer*: `Bearer <6 or more characters>` as a whole (before: 12 or more), unless the word is one that follows "Bearer" in a
     sentence (`tokens`, `scheme`, `schemes`, `header`, `headers`, `prefix`, `strategy`, `access`, `credential(s)`, `values`,
     `protocol`) or a challenge parameter (`realm=`, `error=`, `scope=` ...: `WWW-Authenticate: Bearer realm="api"`). After
@@ -210,7 +211,7 @@ behaviour that did **not** change still pass.
 
   | Text | Size | Files that differ | Hidden before → now | What the differences are |
   |---|---|---|---|---|
-  | this repository outside this package (core, shared, apps, docs, scripts) | 580 files, 6.1 MB | 11 | 5 → 18 | `scheme://user:pw@host` in 7 tests of URL validation, a garbage PEM block in a test, `--token=abc` in a test of argv redaction, 3 test tokens written `Bearer tok-secret` |
+  | this repository outside this package (core, shared, apps, docs, scripts) | 580 files, 6.1 MB | 11 | 5 → 18 | 8 lines with `scheme://user:pw@host` in tests of URL validation, a garbage PEM block in a test, `--token=abc` in a test of argv redaction, 3 fake bearer tokens (`Bearer tok-secret`, `Bearer at-prod`) |
   | this package's `fixtures/`, `examples/`, `scripts/` | 26 files, 0.1 MB | 0 | 0 → 0 | none |
   | `poc/` | 60 files, 0.3 MB | 0 | 5 → 5 | none |
   | every text file in `node_modules` (README, typings, code, JSON, shell) | 19,756 files, 214 MB | 32 | 2 → 76 | 65 `new URL('https://user:pass@example.com')` style examples, 4 PEM blocks and 5 `SECRET_KEY="..."` lines in the dotenv READMEs |
@@ -219,32 +220,40 @@ behaviour that did **not** change still pass.
   Nothing that is prose, code, a type annotation, a file name, a hash, a UUID, an image path or a URL without a password changed in
   any of them. What does change is documentation and tests that use the shape of a credential with a placeholder inside
   (`user:pass@host`, `PASSWORD="s1mpl3"`): the redactor cannot tell a placeholder from a secret and hides it, which is the safe
-  direction, and the README of the redactor says so. The measurement found five false positives, all fixed before this was
+  direction, and the comment at the top of `redact.mjs` says so. The measurement found five false positives, all fixed before this was
   written: a PEM header named in a sentence ("lines that start with ..."), code that builds a PEM string around `${data}`,
   `WWW-Authenticate: Bearer realm="..."` in an HTTP library, `PASSWORD=...` as an elision in a README, and usage text such as
   `--token <token>`. Each has a test.
-- **Cost.** About 90 microseconds for a string of 8 KB (the hook's cap for tool input and output) against 13 for the six rules of
-  the proof of concept, 41 MB/s against 286 MB/s on 60 MB of source and documentation; a process start is about 40 ms. On hostile
-  input of one megabyte each (a single capitalised run, 100,000 `FOO_TOKEN=` names, unterminated quotes, 90,000 `BEGIN` headers, `Bearer`
-  followed by a megabyte of spaces, 80,000 `http://u:p@h`, a 2-megabyte `curl` line and 28 more shapes) every case finishes in under
-  half a second, in proportion to its size.
-- **Tests** (`test/redaction-patterns.test.mjs`, 21 tests): the token shapes in 11 surroundings each; each written form with its
-  exact output (aws, Basic, `curl -u` in 14 spellings, URLs, Azure, 5 flags times 7 forms, 18 names times 15 forms, Bearer); PEM for
-  7 types with LF, CRLF and escaped line ends, with and without END, the 4096 cap, two blocks; the exact count for each rule and for
-  values two rules could hide (24 cases), idempotence of every positive; `redactDeep` with the new shapes next to key-based
-  hiding; the proof of concept's redactor copied into the test, to show that nothing it left alone changes and what it hid is hidden
-  and counted the same; 160 look-alikes (prose about passwords and tokens, type annotations such as `password: string`, code, file
-  names, git SHAs, UUIDs, base64 and image paths, URLs without userinfo, `--passport`, `--max-tokens`, `MAX_TOKENS=100`, `docker run -u
-  1000:1000`) that neither redactor changes; every fixture and example of the package equal to the proof of concept's output; the
-  hostile inputs, run in a child process with a deadline so that a bad rule fails the test instead of hanging it; and one test
-  through the real hook that checks the spool file and `transport.redactions`.
-- **Checked.** The tests fail against the proof of concept's redactor (15 of the 21; the 6 that pass pin what did not change). Each
-  of the 22 rules was disabled in turn, and 33 semantic changes were made one at a time (a guard removed, a threshold moved, the
-  `(?<![A-Za-z0-9_])` anchor of the `NAME=` rule dropped): MUTATIONS.
+- **Cost.** About 90 microseconds for a string of 8 KB (the cap for tool input and output) against 13 for the six rules of the
+  proof of concept: 41 MB/s against 286 MB/s on 60 MB of source and documentation. A hook invocation took 40 ms with either (30
+  runs each); starting node is what it costs. 25 hostile inputs of one megabyte each (one capitalised run, 75,000 names without a
+  value, an unterminated quote, 95,000 `BEGIN` headers, `Bearer` followed by a megabyte of spaces, 80,000 `http://u:p@h`, a long
+  `curl` line with 90,000 `-u a:b`, and others) finish in 0.4 s at the most each, in proportion to their size. One detail, the
+  `(?<![A-Za-z0-9_])` anchor of the `NAME=` rule, is what keeps a long run of capitals from costing the square of its length;
+  removing it makes the test fail by its deadline.
+- **Tests** (`test/redaction-patterns.test.mjs`, 21 tests; the secrets in it are assembled at run time, because the publish guard
+  and the hosts' secret scanners read every file): the 19 token shapes in 11 surroundings each; every written form with its exact
+  output (aws in 9 spellings, Basic, `curl -u` in 14 spellings and 15 that must stay, URLs, Azure, 5 flags times 7 forms and 6
+  prefixed flags, 18 names times 15 forms, Bearer); PEM of 7 types with LF, CRLF and escaped line ends, with and without END, the
+  4096 cap, two blocks, a legacy encrypted key; the exact count for 18 combinations that two rules could hide, and idempotence of
+  every positive; `redactDeep` with the new shapes next to key-based hiding; the proof of concept's six rules copied into the test,
+  to show that nothing it left alone changes and that what it hid is hidden the same way and counted the same; 164 look-alikes
+  (prose about passwords and tokens, type annotations such as `password: string`, code, file names, git SHAs, UUIDs, base64 and
+  image paths, URLs without userinfo, `--passport`, `--max-tokens`, `MAX_TOKENS=100`, `docker run -u 1000:1000`) that neither
+  redactor changes; every fixture and example of the package giving the proof of concept's output and count, as text and as a
+  document; the 25 hostile inputs, run in a child process with a deadline so that a bad rule fails the test instead of hanging it;
+  and one test through the real hook that checks the spool file and `transport.redactions`.
+- **Checked.** Against a copy of the proof of concept's redactor 15 of the 21 tests fail; the 6 that pass pin what did not change
+  (the look-alikes, the fixtures and examples, the proof of concept's own shapes, the PEM mentions, the prefix mentions, the cost).
+  Then 55 changes were made to the redactor one at a time, each in a scratch copy: every one of the 22 rules disabled, the PEM
+  pass disabled, and 32 changes to the guards (a stop-list removed, a placeholder check dropped, a threshold raised, the 4096 cap
+  doubled and quartered, the line-break trim dropped, the `NAME=` anchor and lookbehind dropped, the counter not incremented, and so
+  on). All 55 fail at least one test; none survives.
 - **Limits.** It is a deny-list. Not covered: a lower-case or dotted name (`password=hunter2`, `db.password=...`, `?token=...` in a
-  query string), `NAME = "value"` with spaces, `password: value` in YAML or JSON text (a JSON *key* is hidden, as before), short
-  options such as `mysql -phunter2` or `docker login -p`, `Cookie:` and `X-API-Key:` headers, ADO.NET `Password=...;`, a legacy
-  `_authToken` that is a UUID, anything encoded, split or reversed, and a secret in a file name. The word lists (what follows a flag or
+  query string), a name that ends in another word (`ENCRYPTION_KEY=`, `DB_CREDENTIALS=`), `NAME = "value"` with spaces, `password:
+  value` in YAML or JSON text (a JSON *key* is hidden, as before), short options such as `mysql -phunter2` or `docker login -p`,
+  `Cookie:` and `X-API-Key:` headers, ADO.NET `Password=...;`, a legacy `_authToken` that is a UUID, a secret mentioned in a sentence
+  ("the password is hunter2"), anything encoded, split or reversed, and a secret in a file name. The word lists (what follows a flag or
   `Bearer` in a sentence) are English. A key larger than 4096 characters is hidden up to the cap. The capture cuts strings at 8192
   characters before it redacts, as before, so a token cut in two by that limit can be too short to be recognised. An `Authorization:
   Bearer` value is hidden even when it is a word of six letters, because there it is a credential.
@@ -255,15 +264,15 @@ behaviour that did **not** change still pass.
   0755 for the usual 022. Any other account on the machine could list the directory and walk into `done/` and `quarantine/`, which
   the ingestor creates the same way. The files are 0600, so their content was not readable, but names (a clock reading and an id), sizes and
   timing were, and a file that ever arrived with a looser mode (a copy, a restore) was readable. `capture-errors.log` was created
-  with the default mode. (Reproduced under umasks 0, 022 and 077.)
+  with the default mode. (Reproduced with the proof of concept's `capture.mjs`: the spool and the parents it creates come out
+  0755 under umask 022 and 0777 under umask 0, the records 0600, the error log 0644.)
 - **Now.** The spool directory, and the parents the hook has to create, are made with mode `0700`, whatever the umask. A spool of the
   earlier version is tightened to `0700` when it is plainly the hook's: a real directory (not a link), owned by the current user, with
   group or world access, and holding only names the hook and the ingestor write (`<digits>-<uuid>.json`, `.tmp-<uuid>`, `done`,
-  `quarantine`; an empty directory qualifies, and after 256 matching entries the rest is not listed). Anything else (a folder
-  someone pointed `--spool` at, a directory with other files, a symbolic link, a directory of another user) is left exactly as it was
-  and the capture goes on. Failing to tighten never fails the capture. An already private directory costs one `lstat`. The files stay
-  `0600`; `capture-errors.log` is created `0600`; and `done/` and `quarantine/` are created `0700` by `src/lib/spool.mjs`, which is
-  where the application's ingestor makes them.
+  `quarantine`; an empty directory qualifies). Anything else (a folder someone pointed `--spool` at, a directory with other files, a
+  symbolic link, a directory of another user) is left exactly as it was and the capture goes on. Failing to tighten never fails
+  the capture. An already private directory costs one `lstat`. The files stay `0600`; `capture-errors.log` is created `0600`; and
+  `done/` and `quarantine/` are created `0700` by `src/lib/spool.mjs`, which is where the application's ingestor makes them.
 - **Why.** Prompts, file contents and command output are what the spool holds. A directory that others can enter is a bet
   that the files inside never get the wrong mode.
 - **Windows: modes are not applied and not tested.** `mkdir` ignores the mode there and the hook does not call `chmod`; the
@@ -276,8 +285,10 @@ behaviour that did **not** change still pass.
   record and a stranger, names that only look like ours, a symbolic link and (as root) a directory of another user are left alone and
   the capture still writes; the error log is `0600` under umask 0; the ingestor's `done/` and `quarantine/` are `0700` and what it
   moves is `0600`; and the bundle built the way `build:hook` builds it behaves the same.
-- **Checked.** Against the proof of concept's `capture.mjs` and the `spool.mjs` without the mode, 6 of the 7 fail (the seventh pins that
-  foreign directories are left alone).
+- **Checked.** Against the proof of concept's `capture.mjs` and a `spool.mjs` without the mode, 6 of the 7 tests fail (the seventh
+  pins that foreign directories are left alone). Then 12 changes were made one at a time (the mode dropped, the tightening never
+  called or never applied, the owner check dropped, `stat` for `lstat`, the name check dropped or loosened, a name pattern
+  shortened, the error log's mode dropped, the ingestor's mode dropped); none survives.
 
 ## 11. A typographic quote in a Windows hook path is refused
 
@@ -293,7 +304,7 @@ behaviour that did **not** change still pass.
 - **A decision for the owner.** The range was added as asked, but PowerShell reads only U+201C to U+201E as *double* quotes. U+2018, U+2019,
   U+201A and U+201B are single-quote characters and mean nothing inside a double-quoted string, so a Windows profile folder such as
   `C:\Users\O` U+2019 `Neil` is now refused for a reason that is not a safety one. If that matters, change the class to
-  `\u201c-\u201e`; the tests mark which four characters are affected by looping over the list of seven.
+  `\u201c-\u201e` and drop the four from the `QUOTES` list at the top of `test/setup-powershell-quotes.test.mjs`.
 - **Windows: NOT TESTED.** PowerShell was not available. That these characters are PowerShell's quote characters is taken from its
   language specification (the tokenizer's single-quote and double-quote character sets), not from running it.
 - **Tests** (`test/setup-powershell-quotes.test.mjs`, 5 tests): 7 characters x 4 paths x 4 positions are refused with the message that
@@ -301,7 +312,9 @@ behaviour that did **not** change still pass.
   still refused and an ordinary path gives the command it always did; U+2017, U+201F, `'` and other quote-like characters that
   PowerShell does not read as quotes are accepted; POSIX and WSL accept all seven, and a real shell takes such a path as one
   argument; and the paths and the tokens now refuse the same seven.
-- **Checked.** Against the `setup.mjs` without the added range, 3 of the 5 fail (the other two pin what did not change).
+- **Checked.** Against the `setup.mjs` without the added range, 3 of the 5 tests fail (the other two pin what did not change).
+  Four changes made one at a time (the range narrowed to the double quotes, one end of it cut off, the guard applied to the
+  spool path only) are each caught.
 
 ## Additions that change no existing behaviour
 
