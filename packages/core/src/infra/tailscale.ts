@@ -118,9 +118,11 @@ export function createTailscaleService(deps: TailscaleDeps): TailscaleServiceImp
   function readRecord(): ServeRecord | null {
     try {
       const row = db.get<{ value_json: string }>('SELECT value_json FROM kv WHERE key = ?', [SERVE_RECORD_KEY]);
-      const v = fromJson<Partial<ServeRecord> | null>(row?.value_json, null);
-      if (v && Number.isInteger(v.port) && (v.port as number) > 0 && (v.port as number) < 65536) {
-        return { port: v.port as number, createdAt: typeof v.createdAt === 'string' ? v.createdAt : '' };
+      const v = fromJson<Partial<ServeRecord> | number | null>(row?.value_json, null);
+      // `{"port":n,...}` is what this code writes; a bare number is accepted too, as the same statement of the same fact.
+      const port = typeof v === 'number' ? v : v !== null && typeof v === 'object' ? v.port : undefined;
+      if (typeof port === 'number' && Number.isInteger(port) && port > 0 && port < 65536) {
+        return { port, createdAt: v !== null && typeof v === 'object' && typeof v.createdAt === 'string' ? v.createdAt : '' };
       }
     } catch { /* the database is closed */ }
     return null;

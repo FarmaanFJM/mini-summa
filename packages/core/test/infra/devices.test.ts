@@ -3,7 +3,7 @@ import { API_VERSION, decodePairingPayload } from '@minisumma/shared';
 import type { Scope } from '@minisumma/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DevicesService, Principal } from '../../src/contracts.ts';
-import { LAST_SEEN_INTERVAL_MS, MAX_CODE_ATTEMPTS, OFFER_TTL_MS, createDevicesService } from '../../src/infra/devices.ts';
+import { LAST_SEEN_INTERVAL_MS, MAX_CODE_ATTEMPTS, OFFER_TTL_MS, cleanDeviceName, createDevicesService, sanitizeName } from '../../src/infra/devices.ts';
 import { expectPlainText, failure, makeBase } from './part1-fixtures.ts';
 import type { TestBase } from './part1-fixtures.ts';
 
@@ -522,5 +522,151 @@ describe('actorOf', () => {
     const ext = devices.createOffer([], URLS, 'extension');
     const extDevice = devices.redeem({ offerId: ext.id, code: ext.code, deviceName: 'Chrome', platform: 'extension' }, 'localhost');
     expect(devices.actorOf(devices.authenticate(extDevice.token, 'localhost') as Principal)).toEqual({ kind: 'device', deviceId: extDevice.device.id, name: 'Chrome' });
+  });
+});
+
+describe('device names are cleaned before they are stored or shown (SEC-13)', () => {
+  const redeemNamed = (deviceName: string) => {
+    const offer = devices.createOffer(['read'], URLS, 'phone');
+    return devices.redeem({ offerId: offer.id, code: offer.code, deviceName, platform: 'android' }, 'localhost');
+  };
+
+  const CONTROL: [string, string][] = [
+    ['NUL', 'Pixel\u0000 9'], ['BEL', 'Pix\u0007el 9'], ['backspace', 'Pix\u0008el 9'], ['ESC', 'Pi\u001Bxel 9'],
+    ['DEL', 'Pixel\u007F 9'], ['C1 control', 'Pix\u009Bel 9'], ['SUB', '\u001APixel 9'],
+  ];
+  for (const [name, input] of CONTROL) {
+    it(`removes a ${name} control character`, () => {
+      const out = sanitizeName(input);
+      expect(out).not.toMatch(/\p{Cc}/u);
+      expect(out.replace(/ /g, '')).toBe('Pixel9');
+    });
+  }
+
+  it('turns tabs, line breaks, no-break and wide spaces into single plain spaces', () => {
+    expect(sanitizeName('  Farmaan\u00A0\u3000 \t Pixel\r\nPro\u2028 9  ')).toBe('Farmaan Pixel Pro 9');
+    expect(sanitizeName('a\u0085b')).toBe('a b');
+    expect(sanitizeName('a \u200A b')).toBe('a b');
+  });
+
+  const BIDI = ['\u061C', '\u200E', '\u200F', '\u202A', '\u202B', '\u202C', '\u202D', '\u202E', '\u2066', '\u2067', '\u2068', '\u2069'];
+  for (const ch of BIDI) {
+    it(`removes the direction-changing character U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`, () => {
+      expect(sanitizeName(`Phone${ch}gpj.exe${ch}`)).toBe('Phonegpj.exe');
+    });
+  }
+
+  it('removes invisible format characters, but keeps the joiners that some scripts and emoji need', () => {
+    expect(sanitizeName('a\u200Bb\u2060c\uFEFFd\u00ADe')).toBe('abcde');
+    expect(sanitizeName('men\u200Cu')).toBe('men\u200Cu'); // zero-width non-joiner (Persian and others)
+    expect(sanitizeName('\u{1F468}\u200D\u{1F469}')).toBe('\u{1F468}\u200D\u{1F469}');
+  });
+
+  it('removes lone surrogates but keeps a real pair', () => {
+    expect(sanitizeName('a\uD800b')).toBe('ab');
+    expect(sanitizeName('a\u{1F600}b')).toBe('a\u{1F600}b');
+  });
+
+  it('leaves an ordinary name exactly as it was, including punctuation and other scripts', () => {
+    for (const name of ["Farmaan's Pixel 9", 'Telefon \u00FCber WLAN', '\u0645\u0647\u0627\u062A\u0641\u06CC', '\u30D5\u30A1\u30FC\u30DE\u30F3\u306E\u96FB\u8A71', 'Work phone (2)']) {
+      expect(sanitizeName(name)).toBe(name);
+      expect(cleanDeviceName(name)).toBe(name);
+    }
+  });
+
+  describe('when pairing', () => {
+    it('stores and returns the cleaned name, in the database, the device and the event', () => {
+      const { device, token } = redeemNamed('  Pixel\u202E\u0007  9\u200B\n');
+      expect(device.name).toBe('Pixel 9');
+      expect(base.db.get('SELECT name FROM devices WHERE id = ?', [device.id])).toEqual({ name: 'Pixel 9' });
+      expect(base.eventsOf('device.upserted').at(-1)?.device.name).toBe('Pixel 9');
+      expect(devices.authenticate(token, 'localhost')?.name).toBe('Pixel 9');
+      expect(devices.actorOf(devices.authenticate(token, 'localhost') as Principal)).toMatchObject({ name: 'Pixel 9' });
+    });
+
+    it('refuses a name with nothing left, says why, and does not use up the offer', () => {
+      const offer = devices.createOffer(['read'], URLS, 'phone');
+      for (const bad of ['\u202E', '\u200B\u200B', '\u0000\u0001', ' \t\n ', '\u200D', '\u2066\u2069 \u202E']) {
+        const err = failure(() => devices.redeem({ offerId: offer.id, code: offer.code, deviceName: bad, platform: 'android' }, 'localhost'));
+        expect(err, JSON.stringify(bad)).toMatchObject({ status: 400, code: 'invalid_name' });
+        expectPlainText(err.message);
+      }
+      expect(devices.list()).toEqual([]);
+      expect(base.db.get('SELECT failed_attempts, redeemed_at FROM pairing_offers WHERE id = ?', [offer.id])).toEqual({ failed_attempts: 0, redeemed_at: null });
+      expect(devices.redeem({ offerId: offer.id, code: offer.code, deviceName: 'Fine', platform: 'android' }, 'localhost').device.name).toBe('Fine');
+    });
+
+    it('explains an invisible-only name differently from an empty one', () => {
+      const empty = failure(() => cleanDeviceName('   '));
+      const hidden = failure(() => cleanDeviceName('\u202E\u200B'));
+      expect(empty.message).toMatch(/needs a name/);
+      expect(hidden.message).toMatch(/nothing left once control and invisible characters are removed/);
+    });
+  });
+
+  describe('when renaming', () => {
+    it('stores the cleaned name and says so in the event', () => {
+      const { device } = pair(['read']);
+      const renamed = devices.update(device.id, { name: 'Work\u202E\u0000   phone\u200B' });
+      expect(renamed.name).toBe('Work phone');
+      expect(base.db.get('SELECT name FROM devices WHERE id = ?', [device.id])).toEqual({ name: 'Work phone' });
+      expect(base.eventsOf('device.upserted').at(-1)?.device.name).toBe('Work phone');
+    });
+
+    it('treats a name that cleans to the current one as no change', () => {
+      const { device } = pair(['read'], 'Pixel 9');
+      const events = base.events.length;
+      devices.update(device.id, { name: ' Pixel\u202E  9\u0000 ' });
+      expect(base.events).toHaveLength(events);
+    });
+
+    it('refuses a name with nothing left and keeps the old one', () => {
+      const { device } = pair(['read'], 'Pixel 9');
+      for (const bad of ['\u202E\u202C', '\u0000', '   ', '\u200B']) {
+        expect(failure(() => devices.update(device.id, { name: bad })), JSON.stringify(bad)).toMatchObject({ status: 400, code: 'invalid_name' });
+      }
+      expect(devices.get(device.id)?.name).toBe('Pixel 9');
+    });
+  });
+
+  describe('the length, measured after cleaning', () => {
+    it('allows 1 to 80 characters', () => {
+      expect(cleanDeviceName('a')).toBe('a');
+      expect(cleanDeviceName('a'.repeat(80))).toHaveLength(80);
+      for (const n of [81, 200]) expect(failure(() => cleanDeviceName('a'.repeat(n)))).toMatchObject({ status: 400, code: 'invalid_name' });
+    });
+
+    it('counts what is left, not what was sent', () => {
+      expect(cleanDeviceName(`${'a'.repeat(80)}${'\u200B'.repeat(50)}\u202E`)).toHaveLength(80);
+      expect(cleanDeviceName(`${'a'.repeat(60)}${' '.repeat(100)}${'b'.repeat(19)}`)).toHaveLength(80);
+      expect(failure(() => cleanDeviceName(`${'a'.repeat(81)}\u200B`)).code).toBe('invalid_name');
+    });
+
+    it('counts characters, not UTF-16 units: eighty emoji fit, eighty-one do not', () => {
+      expect([...cleanDeviceName('\u{1F600}'.repeat(80))]).toHaveLength(80);
+      expect(failure(() => cleanDeviceName('\u{1F600}'.repeat(81))).code).toBe('invalid_name');
+    });
+
+    it('applies to pairing and renaming alike', () => {
+      expect(failure(() => redeemNamed('a'.repeat(81))).code).toBe('invalid_name');
+      const { device } = pair(['read']);
+      expect(failure(() => devices.update(device.id, { name: 'a'.repeat(81) })).code).toBe('invalid_name');
+      expect(redeemNamed(`${'a'.repeat(80)}\u202E`).device.name).toHaveLength(80);
+    });
+  });
+
+  it('refuses a name that is not text', () => {
+    const { device } = pair(['read']);
+    for (const bad of [null, undefined, 5, {}, ['x']] as unknown as string[]) expect(failure(() => cleanDeviceName(bad)).code).toBe('invalid_name');
+    expect(failure(() => devices.update(device.id, { name: 7 as never })).code).toBe('invalid_name');
+  });
+
+  it('cleans the computer name that goes into the QR code and the pairing answer', () => {
+    const named = createDevicesService({ base, machineName: 'Farmaan\u202E-PC\u0007  main' });
+    const offer = named.createOffer(['read'], URLS, 'phone');
+    expect(decodePairingPayload(offer.qrPayload)?.name).toBe('Farmaan-PC main');
+    expect(named.redeem({ offerId: offer.id, code: offer.code, deviceName: 'x', platform: 'android' }, 'localhost').server.name).toBe('Farmaan-PC main');
+    const fallback = createDevicesService({ base, machineName: '\u202E\u0000' });
+    expect(decodePairingPayload(fallback.createOffer(['read'], URLS, 'phone').qrPayload)?.name).toBe('Mini-Summa');
   });
 });

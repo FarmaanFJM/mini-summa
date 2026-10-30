@@ -83,17 +83,13 @@ async function until<T>(what: string, probe: () => Promise<T | null | undefined 
 
 interface CoreProcess { baseUrl: string; desktopToken: string; child: ChildProcess; log: () => string }
 
-/** tsx starts the core as a child process: the whole group is signalled, or the core keeps running. */
-function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
-  try { if (child.pid) process.kill(-child.pid, signal); } catch { /* already gone */ }
-}
-
 async function startCore(dataDir: string): Promise<CoreProcess> {
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.TSX_TSCONFIG_PATH;
-  const args = ['packages/core/src/cli.ts', '--data-dir', dataDir, '--port', '0', '--print-connection'];
+  const args = ['--import', 'tsx', 'packages/core/src/cli.ts', '--data-dir', dataDir, '--port', '0', '--print-connection'];
   if (option('--claude-bin')) args.push('--claude-bin', claudeBin);
-  const child = spawn(join(repoRoot, 'node_modules/.bin/tsx'), args, { cwd: repoRoot, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+  // One node process, no wrapper: signalling it stops the core, on every platform.
+  const child = spawn(process.execPath, args, { cwd: repoRoot, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   let err = '';
   const first = await new Promise<string>((res, rej) => {
@@ -109,9 +105,9 @@ async function startCore(dataDir: string): Promise<CoreProcess> {
 async function stopCore(core: CoreProcess): Promise<void> {
   if (core.child.exitCode !== null) return;
   const exited = new Promise<void>((r) => core.child.once('exit', () => r()));
-  signalGroup(core.child, 'SIGTERM');
+  core.child.kill('SIGTERM');
   await Promise.race([exited, sleep(15_000)]);
-  if (core.child.exitCode === null) signalGroup(core.child, 'SIGKILL');
+  if (core.child.exitCode === null) core.child.kill('SIGKILL');
 }
 
 // ---------------------------------------------------------------------------------------------------------------

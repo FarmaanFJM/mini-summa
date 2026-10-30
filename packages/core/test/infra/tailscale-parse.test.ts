@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  describeServeFailure, isOurProxy, looksNotRunning, matchServe, parseBackend, parseProxy, parseServe, problemForBackend, problems, statusKey, emptyStatus,
+  describeServeFailure, emptyStatus, findOwnedEntry, isOurProxy, looksNotRunning, matchServe, parseBackend, parseProxy, parseServe, problemForBackend, problems,
+  statusKey,
 } from '../../src/infra/tailscale-parse.ts';
 import { expectPlainText } from './part1-fixtures.ts';
 import { serveConfigFor } from './tailscale-fake.ts';
@@ -94,13 +95,47 @@ describe('parseServe and matchServe', () => {
   });
 });
 
+describe('findOwnedEntry', () => {
+  const entry = (hostPort: string, path: string, proxy: string | null) => ({ hostPort, host: hostPort.split(':')[0], port: Number(hostPort.split(':')[1]), path, proxy });
+  const info = (...entries: ReturnType<typeof entry>[]) => ({ entries, funnel: [] });
+
+  it('finds the root entry on the HTTPS port that forwards to the recorded loopback port', () => {
+    const e = entry('pc.ts.net:443', '/', 'http://127.0.0.1:47811');
+    expect(findOwnedEntry(info(e), 47811, 'pc.ts.net')).toBe(e);
+    expect(findOwnedEntry(info(e), 47811, null)).toBe(e); // Serve is per machine: any host key is this machine's
+    expect(findOwnedEntry(info(entry('pc.ts.net:443', '/', 'http://localhost:47811/')), 47811, 'PC.ts.net')).not.toBeNull();
+  });
+
+  it('finds nothing for a different port, another path, another HTTPS port, another host or a target that is not loopback', () => {
+    const wanted = 47811;
+    for (const e of [
+      entry('pc.ts.net:443', '/', 'http://127.0.0.1:9999'),
+      entry('pc.ts.net:443', '/files', 'http://127.0.0.1:47811'),
+      entry('pc.ts.net:8443', '/', 'http://127.0.0.1:47811'),
+      entry('other.ts.net:443', '/', 'http://127.0.0.1:47811'),
+      entry('pc.ts.net:443', '/', 'http://192.168.1.9:47811'),
+      entry('pc.ts.net:443', '/', null),
+    ]) expect(findOwnedEntry(info(e), wanted, 'pc.ts.net'), JSON.stringify(e)).toBeNull();
+    expect(findOwnedEntry(info(), wanted, null)).toBeNull();
+  });
+
+  it('is what matchServe calls the occupant when the entry is not on the current port', () => {
+    const parsed = parseServe(serveConfigFor({ dns: 'pc.ts.net', target: 'http://127.0.0.1:47811' }));
+    const m = matchServe(parsed, 4317, 'pc.ts.net');
+    expect(m.configured).toBe(false);
+    expect(m.occupant).toMatchObject({ port: 443, path: '/', proxy: 'http://127.0.0.1:47811' });
+    expect(findOwnedEntry(parsed, 47811, 'pc.ts.net')).toBe(m.occupant);
+    expect(matchServe(parsed, 47811, 'pc.ts.net').occupant).toBeNull();
+  });
+});
+
 describe('problem texts', () => {
   it('are plain sentences: no dashes as punctuation, and each says what to do', () => {
     const all = [
       problems.notInstalled(), problems.notRunning(), problems.timedOut('tailscale status'), problems.unreadable(), problems.stopped(),
       problems.needsLogin(), problems.needsMachineAuth(), problems.starting(), problems.unknownState('Odd'), problems.noDnsName(),
       problems.httpsNotEnabled(), problems.funnel(['pc.ts.net:443']), problems.foreignServe('http://127.0.0.1:9999'),
-      problems.serveUnreadable('boom'), problems.serveNotShown(),
+      problems.serveUnreadable('boom'), problems.serveNotShown(), problems.staleServe(47811, 51234), problems.portNotReady(),
       describeServeFailure('anything', 'enable'), describeServeFailure('anything', 'disable'),
       describeServeFailure('Access denied', 'enable'), describeServeFailure('Serve is not enabled on your tailnet', 'enable'),
     ];

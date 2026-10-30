@@ -86,9 +86,9 @@ const INVISIBLE = /[\u00AD\u061C\u180E\u200B\u200E\u200F\u202A-\u202E\u2060-\u20
 /** The text of a name as it may be stored and shown: no control or invisible characters, single spaces, trimmed. */
 export function sanitizeName(raw: string): string {
   return raw
+    .replace(INVISIBLE, '') // first: the byte order mark counts as white space to JavaScript, and must vanish, not become a space
     .replace(/[\s\u0085]+/gu, ' ') // tabs, line breaks, no-break and other spaces become one plain space
     .replace(/[\p{Cc}\p{Cs}]/gu, '') // what is left of the control characters, and lone surrogates
-    .replace(INVISIBLE, '')
     .replace(/ {2,}/g, ' ')
     .trim();
 }

@@ -16,6 +16,8 @@ const REDACTED = '[REDACTED]';
 const PEM_BEGIN = /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/g;
 const PEM_END = /-----END (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/;
 const PEM_WINDOW = 4096;
+const PEM_MIN_BODY = 16; // without an END line, fewer base64 characters than this after the header is not a key
+const PEM_BODY = /^[A-Za-z0-9+/=\s\\:,.-]*$/; // all that may stand between the header and the END line: base64, line breaks (also as \n), the Proc-Type/DEK-Info lines of old keys
 
 function redactPem(s, counter) {
   if (!s.includes('-----BEGIN ')) return s;
@@ -24,12 +26,14 @@ function redactPem(s, counter) {
   while ((m = PEM_BEGIN.exec(s)) !== null) {
     const bodyStart = m.index + m[0].length;
     const window = s.slice(bodyStart, bodyStart + PEM_WINDOW);
-    const end = PEM_END.exec(window);
+    let end = PEM_END.exec(window);
+    if (end && !PEM_BODY.test(window.slice(0, end.index))) end = null; // code that builds a PEM string has more than base64 between the two lines
     let stop;
     if (end) stop = bodyStart + end.index + end[0].length;
     else {
       let run = /^[A-Za-z0-9+/=\\\r\n]*/.exec(window)[0]; // base64 lines, or the same with escaped newlines
       if (/^[ \t]/.test(window.slice(run.length))) run = run.slice(0, run.lastIndexOf('\n') + 1); // do not eat the first word of prose that follows
+      if (run.replace(/[\s\\]/g, '').length < PEM_MIN_BODY) continue; // the header mentioned in prose, with no key after it: nothing to hide
       stop = bodyStart + run.length;
     }
     out += s.slice(from, m.index) + REDACTED;
@@ -48,14 +52,19 @@ function redactPem(s, counter) {
 const REFERENCE = '(?:"?\\$|["\']?\\[REDACTED\\])';
 const REFERENCE_RE = new RegExp(`^${REFERENCE}`);
 const unquote = (v) => v.replace(/^["']|["']$/g, '');
+// the value of a flag: quoted, or up to the next space or quote (never across a backtick, which closes a code span in prose)
+const FLAG_VALUE = '("[^"\\n]+"|\'[^\'\\n]+\'|[^\\s"\'`]+)';
 // a name in capitals that ends in a secret word: DB_PASSWORD, GITHUB_TOKEN, API_KEY. MAX_TOKENS, TOKEN_LIMIT, PASSWORD_MIN_LENGTH do not.
 const SECRET_NAME = /(?:^|_)(?:PASSWORD|PASSWD|PASSPHRASE|SECRET|TOKEN|API_?KEY|SECRET_?KEY|ACCESS_?KEY|PRIVATE_?KEY)$/;
 // words that follow a mention of a flag in prose ("the --token flag"), which are not its value
 const PROSE = new Set(['flag', 'option', 'argument', 'parameter', 'param', 'arg', 'value', 'is', 'are', 'was', 'must', 'should', 'can', 'will',
   'to', 'and', 'or', 'if', 'when', 'with', 'for', 'in', 'on', 'as', 'not', 'be', 'the', 'a', 'an', 'it', 'this', 'that', 'instead', 'here', 'set', 'from', 'file']);
 const bare = (v) => v.replace(/^["']|["'.,;:!?)]+$/g, '').toLowerCase();
-// usage text, not a value: `--token <token>`, `--password PASSWORD`
-const isPlaceholder = (v) => /^<[^<>\s]+>$/.test(v) || /^(?:PASSWORD|PASSWD|PASSPHRASE|TOKEN|SECRET|API[_-]?KEY|KEY|VALUE|STRING)$/.test(v);
+// usage text or an elision, not a value: `--token <token>`, `--password PASSWORD`, `PASSWORD=...`, `PASSWORD=****`
+const isPlaceholder = (v) => {
+  const core = unquote(v).replace(/[`,.;:!?)\]}]+$/, '');
+  return /^<[^<>\s]+>$/.test(core) || /^(?:PASSWORD|PASSWD|PASSPHRASE|TOKEN|SECRET|API[_-]?KEY|KEY|VALUE|STRING)$/.test(core) || /^(?:\.{2,}|\u2026+|\*+)$/.test(unquote(v));
+};
 
 // The command a flag belongs to starts on a line of its own; a trailing backslash continues it on the next one.
 function commandStart(str, offset) {
@@ -109,15 +118,16 @@ const RULES = [
     (m, scheme, user, password) => (REFERENCE_RE.test(password) ? null : `${scheme}${REDACTED}@`)],
   [/\b(AccountKey|SharedAccessKey)=([A-Za-z0-9+/=]{16,})/gi, (m, name) => `${name}=${REDACTED}`],
   // --password=hunter2, --client-secret=hunter2 (any prefix before the secret word when there is an =) ...
-  [new RegExp(`(?<![A-Za-z0-9-])(--(?:[a-z][a-z0-9]*-)*(?:password|passwd|token|secret|api-key)=)(?!${REFERENCE})("[^"\\n]+"|'[^'\\n]+'|[^\\s"']+)`, 'g'),
-    (m, head, value) => (isPlaceholder(unquote(value)) ? null : head + REDACTED)],
+  [new RegExp(`(?<![A-Za-z0-9-])(--(?:[a-z][a-z0-9]*-)*(?:password|passwd|token|secret|api-key)=)(?!${REFERENCE})${FLAG_VALUE}`, 'g'),
+    (m, head, value) => (isPlaceholder(value) ? null : head + REDACTED)],
   // ... and --password hunter2 (only the five bare names, and not the next word of a sentence about the flag)
-  [new RegExp(`(?<![A-Za-z0-9-])(--(?:password|passwd|token|secret|api-key)[ \\t]+)(?!-)(?!${REFERENCE})("[^"\\n]+"|'[^'\\n]+'|[^\\s"']+)`, 'g'),
-    (m, head, value) => (PROSE.has(bare(value)) || isPlaceholder(unquote(value)) ? null : head + REDACTED)],
+  [new RegExp(`(?<![A-Za-z0-9-])(--(?:password|passwd|token|secret|api-key)[ \\t]+)(?!-)(?!${REFERENCE})${FLAG_VALUE}`, 'g'),
+    (m, head, value) => (PROSE.has(bare(value)) || isPlaceholder(value) ? null : head + REDACTED)],
   // KEY=VALUE where the name is a capitalised variable that ends in a secret word. The value is not empty, not a $variable,
   // not already hidden, and not a comparison (TOKEN==x) or a boolean.
   [/(?<![A-Za-z0-9_])([A-Z][A-Z0-9_]*)=(?!=)("[^"\n]+"|'[^'\n]+'|[^\s"'`;|&<>()]+)/g,
-    (m, name, value) => (SECRET_NAME.test(name) && !REFERENCE_RE.test(value) && !/^(?:true|false)$/i.test(unquote(value)) ? `${name}=${REDACTED}` : null)],
+    (m, name, value) => (SECRET_NAME.test(name) && !REFERENCE_RE.test(value) && !isPlaceholder(value) && !/^(?:true|false)$/i.test(unquote(value))
+      ? `${name}=${REDACTED}` : null)],
 ];
 
 export function redactString(s, counter) {

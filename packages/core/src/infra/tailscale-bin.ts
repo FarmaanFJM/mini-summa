@@ -64,7 +64,7 @@ export function tailscaleCandidates(s: BinSearch): string[] {
       return bare === null ? [] : searchWindows(bare, s.env, s.exists);
     }
     const out: string[] = [];
-    
+    if (s.exists(WINDOWS_INSTALL)) out.push(WINDOWS_INSTALL);
     for (const found of searchWindows('tailscale.exe', s.env, s.exists)) {
       if (!out.some((o) => o.toLowerCase() === found.toLowerCase())) out.push(found);
     }

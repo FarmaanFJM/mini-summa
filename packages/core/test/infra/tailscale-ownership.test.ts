@@ -109,10 +109,25 @@ describe('the record of the entry Mini-Summa created', () => {
     const fake = fakeTs();
     fake.setServe(published(OLD_PORT));
     const { svc } = setup(fake);
-    for (const junk of ['not json', '{"port":"4317"}', '{"port":0}', '{"port":70000}', '{"port":47811.5}', 'null', '[]']) {
+    for (const junk of ['not json', '{"port":"4317"}', '{"port":0}', '{"port":70000}', '{"port":47811.5}', 'null', '[]', '"47811"', '-1', '0', '47811.5']) {
       base!.db.run('INSERT OR REPLACE INTO kv (key, value_json, updated_at) VALUES (?, ?, ?)', [SERVE_RECORD_KEY, junk, 'x']);
       const s = await svc.status({ refresh: true });
       expect(s.problem, junk).toMatch(/already publishes something else on port 443/);
+    }
+  });
+});
+
+describe('reading the record', () => {
+  it('accepts the object it writes and a bare port number, as the same statement', async () => {
+    for (const value of ['{"port":47811,"createdAt":"an earlier run"}', '{"port":47811}', '47811']) {
+      const fake = fakeTs();
+      fake.setServe(published(OLD_PORT));
+      const { svc } = setup(fake);
+      base!.db.run('INSERT OR REPLACE INTO kv (key, value_json, updated_at) VALUES (?, ?, ?)', [SERVE_RECORD_KEY, value, 'x']);
+      await svc.shutdown();
+      expect(serveCalls(fake), value).toEqual(['serve --https=443 off']);
+      expect(record(), value).toBeNull();
+      base!.close();
     }
   });
 });
