@@ -15,6 +15,7 @@ import { scenario } from '../helpers/scenario.ts';
 import { snapshotTree } from '../helpers/sandbox.ts';
 import { conversationUrl, uuidOf } from '../helpers/standin.ts';
 import { openSettings } from '../helpers/ui.ts';
+import { sleep } from '../helpers/wait.ts';
 
 const sha256 = (data: Buffer | string): string => crypto.createHash('sha256').update(data).digest('hex');
 
@@ -74,11 +75,16 @@ scenario('[A24] Hook installation is permission-gated (exact diff, explicit cons
   expect(untouched()).toBe(true);
   expect(backupFiles()).toEqual([]);
 
-  // 2. Without consent the button does nothing: it is disabled, and a click would write nothing.
+  // 2. Without consent the button does nothing: it is disabled, and pressing it anyway (a real click on it, then the Enter key inside the dialog) writes nothing.
   const install = dialog.getByRole('button', { name: 'Install hooks', exact: true });
   expect(await install.isDisabled()).toBe(true);
-  await install.click({ force: true, trial: true }).catch(() => undefined);
+  await install.click({ force: true, timeout: 3000 });
+  await dialog.getByRole('checkbox', { name: /I have read these changes to/ }).focus();
+  await h.page.keyboard.press('Enter');
+  await sleep(600); // a write, if one were going to happen, would have happened by now
+  expect(await dialog.isVisible()).toBe(true);
   expect(untouched()).toBe(true);
+  expect(backupFiles()).toEqual([]);
   expect((await h.api.call('hooks.list')).find((x) => x.env === 'posix')?.installed).toBe(false);
 
   // 3. Cancel leaves everything as it was.
@@ -141,7 +147,7 @@ scenario('[A24] Hook installation is permission-gated (exact diff, explicit cons
   expect(afterRemoval).toEqual(edited); // the person's file, as they last wrote it
   expect(fs.readFileSync(settingsFile).equals(editedBytes)).toBe(true);
   expect((await h.api.call('hooks.list')).find((x) => x.env === 'posix')?.installed).toBe(false);
-  evidence('A24', `the dialog named ${settingsFile} and listed ${added.length} added lines, identical to the core's plan, with no line removed; before agreement the button was disabled and the file, byte for byte, and the backups folder were untouched (also after Cancel); a file edited while the dialog was open produced "nothing was written" and withdrew the agreement; after reading and agreeing again, hooks were added next to the person's own Stop and PreToolUse hooks, theme, permissions and model, with a backup equal to the old file; removal asked the same way and restored the file byte for byte`);
+  evidence('A24', `the dialog named ${settingsFile} and listed ${added.length} added lines, identical to the core's plan, with no line removed; before agreement the button was disabled, a forced click on it and the Enter key changed nothing, and the file, byte for byte, and the backups folder were untouched (also after Cancel); a file edited while the dialog was open produced "nothing was written" and withdrew the agreement; after reading and agreeing again, hooks were added next to the person's own Stop and PreToolUse hooks, theme, permissions and model, with a backup equal to the old file; removal asked the same way and restored the file byte for byte`);
 });
 
 scenario('[A25] Runtime secrets remain outside the repository', async () => {

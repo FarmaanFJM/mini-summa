@@ -157,6 +157,4 @@ scenario('[CRIT] A report from A is handed off to A\'s conversation while B is s
   await reportRow(h.page, 'Chess Integrity Openings').click();
   await handoffCard(h.page).getByLabel('Destination').getByText(conversationUrl(CONV.C2), { exact: true }).waitFor();
   evidence('CRIT', `four projects (C with two conversations and the second preferred, D with none) configured in the real dialog, a running session in each; with ${NAMES.B} selected and its conversation in front, Claude finished tasks in ${NAMES.A}, C and D: the reports were stored under their own projects and sessions, none under B; A's delivery was frozen to A's conversation (${conversationUrl(CONV.A)}), C's to its preferred second one, D's is destination_missing with no handoff button and the core refusing handoff/copy/open (409 destination_missing); pressing the real "Copy and open" while B was still selected left A's message (byte-identical to the prepared message, no mention of B, C or D) on the clipboard, getAllWebContents() listed only ${conversationUrl(CONV.A)}, the stand-in saw exactly one request since the click (GET /c/${CONV.A}) and none for B, C or D, the delivery is awaiting_user_send and still frozen, and the page's composer is empty`);
-  void convD;
-  void fullReport;
 }, { timeout: 180_000 });

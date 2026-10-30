@@ -120,6 +120,11 @@
       "id": "X03",
       "title": "A session that ended says why in words, not as an internal code",
       "why": "Regression check for a defect this suite found: the notice under a finished session printed the terminal manager's internal code (\"exited\", \"app_exit\") instead of a sentence."
+    },
+    {
+      "id": "X04",
+      "title": "The test sandbox is closed: the app reaches the chatgpt.com stand-in and no other host",
+      "why": "Not a product behaviour: it proves the suite's own promise that nothing a test does can reach a real host (other host names do not resolve, from either of the app's network sessions)."
     }
   ]
 }
