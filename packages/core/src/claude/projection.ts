@@ -11,6 +11,10 @@
 // replay reproduces the same values. Attribution (project) is: the session binding (managed, then manual), then the
 // registry match the Reducer made from the working directory. It never looks at what is focused.
 //
+// Continuity evidence (continuation.ts): besides the Reducer, the log is read for the SessionStart / SessionEnd hooks of every
+// session (who delivered them, with which source or reason) and for the newest full `claude agents --json` snapshot of each
+// environment (trace(), listing()). Like everything here they are a pure function of the log, so a replay rebuilds them.
+//
 // Permission requests: EVERY PermissionRequest hook the Reducer accepted as live evidence is reported (ApplyResult.permissions),
 // including a second one that arrives while the session already waits (which changes no state and so has no derived event),
 // and the newest one since the session last left needs_permission is remembered (currentPermission). "Accepted" means not a
@@ -23,6 +27,8 @@ import { makeSessionKey } from '@minisumma/shared';
 import type { EnvId, ProjectResolution, SessionKey, SessionState } from '@minisumma/shared';
 import type { Db } from '@minisumma/storage';
 import type { CapturedCandidate, CapturedReport, Clock, ClaudeDerivedEvent, Logger, PermissionRequestInfo, ProjectsService } from '../contracts.ts';
+import { isReplacementReason } from './continuation.ts';
+import type { ListedProcess, SessionTrace } from './continuation.ts';
 import type { RawStore } from './rawStore.ts';
 import { readBindings } from './sessionBindings.ts';
 import type { BindingRow } from './sessionBindings.ts';
@@ -116,6 +122,13 @@ export interface Projection {
   isPrompted(key: SessionKey): boolean;
   /** The newest PermissionRequest since the session last left needs_permission, or null (also when it is not waiting). */
   currentPermission(key: SessionKey): OpenPermission | null;
+  /** What the log says about the SessionStart / SessionEnd hooks of a session (continuity evidence). */
+  trace(key: SessionKey): SessionTrace | undefined;
+  /**
+   * The newest full discovery snapshot of an environment, as the processes it listed. `usable` is false when the newest discovery
+   * call of the environment failed (a failed call observed nothing, so the older listing says nothing about now).
+   */
+  listing(env: EnvId): { seq: number; rows: ListedProcess[]; usable: boolean } | undefined;
   /** Reads the session bindings now. Cheap; call once per pass. */
   attributionContext(): AttributionContext;
   attribute(key: SessionKey, ctx: AttributionContext): Attribution;
@@ -176,6 +189,10 @@ interface State {
   byKey: Map<SessionKey, ReducerSession>;
   permissions: Map<SessionKey, OpenPermission>;
   applyErrors: number;
+  traces: Map<SessionKey, SessionTrace>;
+  listings: Map<EnvId, { seq: number; rows: ListedProcess[] }>;
+  /** Environments whose newest discovery call failed. */
+  listingFailed: Set<EnvId>;
 }
 
 interface Accumulator {
@@ -206,6 +223,7 @@ export function createProjection(deps: ProjectionDeps): Projection {
     return {
       reducer: new Reducer({ registry }), lastSeq: 0, derivedIndex: 0, reportCount: 0, candidateCount: 0, sessionCount: 0,
       facts: new Map(), byKey: new Map(), permissions: new Map(), applyErrors: 0,
+      traces: new Map(), listings: new Map(), listingFailed: new Set(),
     };
   }
 
@@ -335,7 +353,7 @@ export function createProjection(deps: ProjectionDeps): Projection {
     const f = factsFor(s, event.sessionKey);
     if (d.kind === 'transition') {
       f.stateSince = { state: d.to, at: event.at };
-      f.abnormalEnd = d.to === 'ended' && d.abnormal === true;
+      f.abnormalEnd = d.to === 'ended' && event.abnormal === true;
       if (d.to === 'ended' || d.to === 'presence_lost') f.endedAt = event.at;
       else { f.endedAt = null; f.sessionEndReason = null; }
     } else if (d.kind === 'report_ready' && !d.late) {
@@ -344,6 +362,41 @@ export function createProjection(deps: ProjectionDeps): Projection {
       f.endedAt = null;
       f.sessionEndReason = null;
       f.abnormalEnd = false;
+    }
+  }
+
+  const text = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+  const MAX_MARKS = 6;
+
+  /** Continuity evidence: the session-lifecycle hooks as delivered, and the newest full discovery listing per environment. */
+  function traceFromEntry(s: State, entry: RawEntry): void {
+    if (entry.kind === 'hook') {
+      const p = entry.payload;
+      if (!p?.session_id || !p.hook_event_name) return;
+      const key = keyOf(entry.transport?.env_id, p.session_id);
+      let trace = s.traces.get(key);
+      if (!trace) { trace = { first: null, starts: [], ends: [] }; s.traces.set(key, trace); }
+      const event = p.hook_event_name;
+      if (!trace.first) trace.first = { event, value: text(p.source) ?? text(p.reason), seq: entry.seq };
+      if (event !== 'SessionStart' && event !== 'SessionEnd') return;
+      const mark = {
+        seq: entry.seq, value: text(event === 'SessionStart' ? p.source : p.reason),
+        handler: text((entry.transport as { handler_id?: unknown } | undefined)?.handler_id), cwd: text(p.cwd),
+      };
+      const list = event === 'SessionStart' ? trace.starts : trace.ends;
+      list.push(mark);
+      if (list.length > MAX_MARKS) list.shift();
+    } else if (entry.kind === 'discovery') {
+      const env = envOf(entry.transport?.env_id);
+      if (entry.payload?.scope?.cwd) return; // a folder-scoped call lists only part of the sessions
+      const rows: ListedProcess[] = (entry.payload?.sessions ?? []).map((o) => ({
+        sessionId: text(o.sessionId), pid: typeof o.pid === 'number' && Number.isInteger(o.pid) ? o.pid : null,
+        pidAlive: typeof o.pid_alive === 'boolean' ? o.pid_alive : null, kind: text(o.kind), cwd: text(o.cwd),
+      }));
+      s.listings.set(env, { seq: entry.seq, rows });
+      s.listingFailed.delete(env);
+    } else if (entry.kind === 'discovery_error') {
+      s.listingFailed.add(envOf(entry.transport?.env_id));
     }
   }
 
@@ -397,6 +450,7 @@ export function createProjection(deps: ProjectionDeps): Projection {
       // A new session must be indexed before anything of this entry is attributed to it.
       if (reducer.sessions.size !== s.sessionCount) indexSessions(s);
       factsFromEntry(s, entry);
+      traceFromEntry(s, entry);
 
       if (entry.kind === 'hook') {
         const p = entry.payload;
@@ -409,6 +463,12 @@ export function createProjection(deps: ProjectionDeps): Projection {
       for (; s.derivedIndex < reducer.derived.length; s.derivedIndex++) {
         const d = reducer.derived[s.derivedIndex];
         const event = convertDerived(d, entry, replay);
+        // A session that ended because its conversation was replaced inside a running process (/clear, /resume) did not end
+        // abnormally, whatever it was doing a moment before, and nobody needs to be alerted about it.
+        if (event.kind === 'transition' && event.to === 'ended' && event.abnormal && entry.kind === 'hook' && isReplacementReason(entry.payload?.reason)) {
+          event.abnormal = false;
+          event.notify = false;
+        }
         factsFromDerived(s, d, event);
         out.derived.push(event);
         out.touched.add(event.sessionKey);
@@ -496,6 +556,11 @@ export function createProjection(deps: ProjectionDeps): Projection {
       return Boolean(rs && (rs.tasks.size > 0 || rs.current_prompt_id !== null));
     },
     currentPermission: (key) => state.permissions.get(key) ?? null,
+    trace: (key) => state.traces.get(key),
+    listing(env) {
+      const listing = state.listings.get(env);
+      return listing ? { seq: listing.seq, rows: listing.rows, usable: !state.listingFailed.has(env) } : undefined;
+    },
     attributionContext,
     attribute: (key, ctx) => attributeKey(state, key, ctx),
     stats: () => ({

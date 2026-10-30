@@ -19,7 +19,7 @@ import type { AgentsRunner } from '../../../src/claude/discovery.ts';
 import { createRawStore } from '../../../src/claude/rawStore.ts';
 import type { RawStore } from '../../../src/claude/rawStore.ts';
 import { createSessionsService } from '../../../src/claude/sessions.ts';
-import type { ObserverSessionsService } from '../../../src/claude/sessions.ts';
+import type { ObserverSessionsService, SessionsDeps } from '../../../src/claude/sessions.ts';
 import { createFakeManaged, createFakeProjects, createFakeSettings, createStubEnvironments } from './observer-fakes.ts';
 import type { FakeManaged, FakeProjects, FakeSettings } from './observer-fakes.ts';
 import { CAPTURE_SRC } from './observer-hook.ts';
@@ -56,6 +56,8 @@ export interface HarnessOptions {
   /** The core's environment variables as discovery sees them (CLAUDE_CONFIG_DIR). Default: none. */
   sessionsEnv?: Record<string, string | undefined>;
   captureScript?: string;
+  /** Seams of the "follow the process" logic (retry delays of the fresh listings, parent links of processes). */
+  continuation?: SessionsDeps['continuation'];
   /** Call sessions.init() (default true). */
   init?: boolean;
   /** Subscribe the collectors before init so replayed events are collected too (default true). */
@@ -140,7 +142,7 @@ export async function makeHarness(opts: HarnessOptions = {}): Promise<Harness> {
   const collected: Collected = { derived: [], permissions: [], reports: [], candidates: [], sessionChanges: [], busUpserts: [] };
   const rawStore = createRawStore(db, clock);
   const sessions = createSessionsService({
-    base, settings, projects, environments, managed, rawStore, run: opts.run, env: opts.sessionsEnv ?? {},
+    base, settings, projects, environments, managed, rawStore, run: opts.run, env: opts.sessionsEnv ?? {}, continuation: opts.continuation,
     overrides: { hostEnv, spoolPollMs: opts.spoolPollMs ?? 0, discoveryIntervalMs: opts.discoveryIntervalMs ?? 0, captureScript },
   });
   const offBus = bus.subscribe((_seq, event) => { if (event.type === 'session.upserted') collected.busUpserts.push(event.session); });

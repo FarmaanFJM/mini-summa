@@ -27,6 +27,7 @@ that bypasses the manager except the first-run onboarding keys and the Shift+Tab
 | 1 | Start, onboarding, idle prompt, graceful stop. Its environment still carried `CLAUDE_CODE_CHILD_SESSION` (my driver's env strip had a bug), which is how finding 8 was found | none |
 | 2 | Clean environment. Onboarding, a 4-line prompt, approve (Enter), a 1-line prompt, reject (Escape), a 2-line prompt, approve, graceful stop | 3 prompts |
 | 3 | `--resume` of run 2's session, graceful stop | none |
+| 4 | `/clear`, then `/resume <old id>` typed inside the terminal (finding 11); two probes, one of them with one short prompt | one Haiku turn |
 
 ## Result per goal
 
@@ -111,6 +112,26 @@ that bypasses the manager except the first-run onboarding keys and the Shift+Tab
 10. **Real payloads carry more than the captured examples.** A named session's `UserPromptSubmit` also has `session_title` and
     `scratchpad_dir`; the examples in `packages/claude-integration/examples/captured-hooks` lack them. Unknown fields are ignored
     by the reducer, so nothing breaks.
+
+11. **`/clear` and `/resume` replace the session id INSIDE the running process** (run 4: two short probes with the same managed
+    settings and the real capture script; the second one sent one `Reply with the single word ok.` prompt first, Haiku, low cost;
+    `/clear` itself is a local command and costs nothing). Typed into the terminal:
+    * `/clear`: `SessionEnd` for the old id with `reason: "clear"` (it carries the last `prompt_id`), then `SessionStart` for a
+      brand-new id with `source: "clear"` and **no `model`** (no `prompt_id`; same `cwd`), both through the managed registration;
+      the two hook runs were 64 ms apart (`received_at` 37.316 s and 37.380 s) and, for `/resume`, 46 ms apart.
+    * `claude agents --json` called right after (about 0.7 s later; earlier calls were not made) lists the NEW id with the **same
+      `pid` and the same `startedAt`** as the old entry and the same `name`; the old id is gone from the listing. The pid is the
+      one of the process Mini-Summa spawned (the wrapper `exec`s `claude`; the binary is a native executable).
+    * `/resume <old id>` typed after that: `SessionEnd` with `reason: "resume"` for the cleared session, then `SessionStart` with
+      `source: "resume"` for the OLD id again, this time **with** `model`, `seconds_since_last_response`, `context_tokens`,
+      `prompt_cache_likely_expired` and `estimated_cache_write_usd` (the `--resume` command-line flag at startup has no `model`, see
+      finding 7). `agents --json` listed the older id with the same pid again.
+    * Consequence: a managed terminal can come back to an id it already had (a record exists for it), and neither event is an
+      end of the terminal. Mini-Summa follows the process (`continuation.ts`): the pid that `claude agents --json` lists for the
+      terminal's process decides, the managed hooks only where pids cannot be compared. The fake CLI does the same
+      (`/clear`, `/resume <id>`, `[[fake:clear]]`, `[[fake:resume=<id>]]`).
+    * Not observed: `/clear` while Claude is working or a dialog is open; "clear context and proceed" after a plan (assumed to take
+      the same path); the same on Windows (ConPTY) or in WSL2.
 
 ## Raw evidence (spool, run 2; paths shortened to `<scratch>`; times are the hook's `received_at`)
 

@@ -63,10 +63,19 @@
 //  - UNSENT INPUT. A person typed at the desktop terminal and has not pressed Enter (ManagedManager.hasUnsentInput, a
 //    heuristic): typeInto and targetCheck refuse, whatever the caller, because the text would be appended to that line.
 //    answerPermission is not held back (the permission dialog takes the keys, and the person may have to answer it there).
+//  - FOLLOW THE PROCESS, NOT THE ID. /clear and /resume change the session id inside the SAME Claude process, so the terminal
+//    Mini-Summa started would otherwise "end" while it keeps running, and the new id would be a stranger it cannot type into.
+//    After every apply (before the views are built) continuation.ts decides from facts whether a new id PROVABLY belongs to a
+//    live terminal of ours (the process id Claude lists for it, else strictly corroborated managed hooks; ambiguity is never
+//    guessed), and the managed record is re-keyed (ManagedManagerExtras.rekey): the terminal, its scrollback, the project binding,
+//    the name, the default flag and the remote-control state move to the new key; the old key stays behind as an ordinary
+//    ended/resumable record that says what happened. While the successor is being learned the terminal says so
+//    ("Conversation replaced, learning the new session"); if it cannot be settled, it says that, and typing is paused.
+//    A hook that announces a replacement also makes the next discovery call run at once, so the answer takes a second, not 15.
 //  - ManagedManager has no method for "a prompt reached Claude", so the sessions layer calls the optional extra
 //    ManagedManagerExtras.promptSubmitted(key, hook time) when it exists (the real manager has it): it clears the unsent flag.
 import { tidOfSpoolName } from '@minisumma/claude-integration';
-import { envLabel, parseSessionKey } from '@minisumma/shared';
+import { envLabel, parseSessionKey, shortSessionId } from '@minisumma/shared';
 import type { EnvId, Project, SessionKey, SessionState, SessionView } from '@minisumma/shared';
 import { fromJson } from '@minisumma/storage';
 import type {
@@ -75,10 +84,14 @@ import type {
 } from '../contracts.ts';
 import { nowIso } from '../contracts.ts';
 import { CoreError, badRequest, notFound, unprocessable } from '../errors.ts';
+import { PENDING_TEXT, decideContinuations, parseReplacedReason, replacedReason, successorOf } from './continuation.ts';
+import type { Adoption, CandidateFact, ContinuationDecision, EnvEvidence, TerminalFact } from './continuation.ts';
 import { createDiscovery } from './discovery.ts';
 import type { AgentsRunner } from './discovery.ts';
 import { createIngestion } from './ingestion.ts';
 import type { ManagedManagerExtras } from './managed.ts';
+import { defaultParentPid, isSameOrBelow } from './processTree.ts';
+import type { ParentPid } from './processTree.ts';
 import { attribute } from './projection.ts';
 import type { ApplyResult } from './projection.ts';
 import { createProjection } from './projection.ts';
@@ -107,6 +120,13 @@ export interface SessionsDeps {
   overrides?: CoreOptions['overrides'];
   /** Test seam: the core's environment variables (CLAUDE_CONFIG_DIR). */
   env?: Record<string, string | undefined>;
+  /** Test seams of the "follow the process" logic. */
+  continuation?: {
+    /** Pauses before the fresh discovery calls asked for while a replaced conversation's successor is not listed yet. */
+    retryDelaysMs?: number[];
+    /** Parent links of processes (default: /proc on Linux, ps on macOS, nothing elsewhere). */
+    parentPid?: ParentPid;
+  };
 }
 
 /** The contract plus two maintenance hooks the composition root and the tests use. */
@@ -222,6 +242,178 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
     }
   }
 
+  // ---- following the process (continuation.ts) ----------------------------------------------------------------------------
+
+  const extras = managed as ManagedManager & Partial<ManagedManagerExtras>;
+  const retryDelays = deps.continuation?.retryDelaysMs ?? [0, 600, 1500, 3000, 6000];
+  const ancestry = (pid: number, of: number): boolean | null => isSameOrBelow(pid, of, deps.continuation?.parentPid ?? defaultParentPid());
+  /** Terminals whose session was replaced and whose successor is not settled: pending (a fresh listing is on its way) or unresolved. */
+  const continuations = new Map<SessionKey, { status: 'pending' | 'unresolved'; text: string }>();
+  /** Old key -> the key its terminal went on as, in this run. Lets a client that was attached to the old key keep typing. */
+  const replacedBy = new Map<SessionKey, SessionKey>();
+  interface Wait { tries: number; timer: NodeJS.Timeout | null; blind: boolean }
+  const waits = new Map<SessionKey, Wait>();
+  /** Moves the manager refused, by "from>to" -> when: not tried again for a while, so a refusal does not repeat on every pass. */
+  const refusedMoves = new Map<string, number>();
+  const REFUSED_RETRY_MS = 30_000;
+  const NOT_LEARNED_TEXT = 'The conversation in this terminal was replaced (/clear or /resume), but Claude Code has not told Mini-Summa which session the terminal runs now. '
+    + 'Typing from Mini-Summa is paused here; the terminal itself still works.';
+
+  const continuationProblem = (c: { status: 'pending' | 'unresolved'; text: string }): string =>
+    (c.status === 'pending' ? `${PENDING_TEXT}. Try again in a moment.` : c.text);
+
+  function clearWait(key: SessionKey): void {
+    const w = waits.get(key);
+    if (w?.timer) clearTimeout(w.timer);
+    waits.delete(key);
+  }
+
+  /** Asks for a fresh listing soon; gives up after the configured delays and lets the hooks have their say. */
+  function scheduleWait(key: SessionKey): void {
+    const env = parseSessionKey(key)?.env;
+    if (!env || shuttingDown) return;
+    let w = waits.get(key);
+    if (!w) { w = { tries: 0, timer: null, blind: false }; waits.set(key, w); }
+    if (w.timer || w.blind) return;
+    const delay = retryDelays[w.tries];
+    if (delay === undefined) {
+      w.blind = true;
+      queue.run(() => { const touched = new Set<SessionKey>(); settleContinuations(touched); refreshAndCommit(touched); })
+        .catch((err) => log.warn('Re-checking a replaced conversation failed.', { error: String(err) }));
+      return;
+    }
+    const wait = w;
+    wait.timer = setTimeout(() => {
+      wait.timer = null;
+      wait.tries++;
+      if (shuttingDown) return;
+      discovery.runNow(env).catch((err) => log.warn('Asking Claude Code for its sessions after a replaced conversation failed.', { error: String(err) }));
+    }, delay);
+    wait.timer.unref?.();
+  }
+
+  function continuationFacts(): { terminals: TerminalFact[]; candidates: CandidateFact[]; envs: Map<EnvId, EnvEvidence> } {
+    const running = managed.list().filter((r) => r.status === 'running');
+    const runningKeys = new Set(running.map((r) => r.key));
+    const terminals: TerminalFact[] = running.map((r) => {
+      const rs = projection.session(r.key);
+      return {
+        key: r.key, env: r.env, sessionId: r.sessionId, cwds: [r.cwd, ...(rs?.cwd ? [rs.cwd] : [])], pid: r.pid,
+        phase: rs?.gen.phase ?? 'none', trace: projection.trace(r.key) ?? null, listingBlind: waits.get(r.key)?.blind ?? false,
+      };
+    });
+    const envs = new Map<EnvId, EnvEvidence>();
+    for (const t of terminals) {
+      if (envs.has(t.env)) continue;
+      const listing = projection.listing(t.env);
+      envs.set(t.env, { env: t.env, comparable: t.env === hostEnv, listing: listing && listing.usable ? listing.rows : null });
+    }
+    const candidates: CandidateFact[] = [];
+    if (terminals.length > 0) {
+      for (const key of projection.sessionKeys()) {
+        const parsed = parseSessionKey(key);
+        if (!parsed || !envs.has(parsed.env)) continue;
+        const rs = projection.session(key);
+        candidates.push({
+          key, env: parsed.env, sessionId: parsed.sessionId, cwd: rs?.cwd ?? null, phase: rs?.gen.phase ?? 'none',
+          trace: projection.trace(key) ?? null, managedRunning: runningKeys.has(key),
+        });
+      }
+    }
+    return { terminals, candidates, envs };
+  }
+
+  /** Re-keys the terminal to the session it was proven to run now. Returns false when the manager refused. */
+  function performAdoption(a: Adoption, touched: Set<SessionKey>): boolean {
+    const record = managed.get(a.terminal);
+    if (!extras.rekey || !record || record.status !== 'running') return false;
+    const pair = `${a.terminal}>${a.to}`;
+    const refusedAt = refusedMoves.get(pair);
+    if (refusedAt !== undefined && clock.now().getTime() - refusedAt < REFUSED_RETRY_MS) return false;
+    // The terminal has been up all along: what counts as its sign of life moves with it (the new session's first hook is
+    // already in the log, and must not make a running terminal "Starting" again).
+    const baseline = runBaselines.get(a.terminal);
+    const hadBaseline = runBaselines.has(a.to);
+    if (baseline) runBaselines.set(a.to, { ...baseline });
+    const prompted = a.cause === 'resume' || projection.isPrompted(a.to);
+    let next: ManagedSessionRecord | null = null;
+    try {
+      next = extras.rekey({ from: a.terminal, toSessionId: a.toSessionId, leftBehindReason: replacedReason(a.cause, a.toSessionId), prompted });
+    } catch (err) {
+      log.error('Re-keying a managed terminal failed.', { from: a.terminal, to: a.to, error: String(err) });
+    }
+    if (!next) {
+      if (baseline && !hadBaseline) runBaselines.delete(a.to);
+      refusedMoves.set(pair, clock.now().getTime());
+      log.warn('Mini-Summa could not follow a terminal to its new session.', { from: a.terminal, to: a.to });
+      return false;
+    }
+    refusedMoves.delete(pair);
+    inFlight.delete(a.terminal);
+    startingKeys.delete(a.terminal);
+    continuations.delete(a.terminal);
+    clearWait(a.terminal);
+    replacedBy.set(a.terminal, a.to);
+    replacedBy.delete(a.to);
+    // The default session of the project is a property of the terminal people work in, not of one conversation id.
+    if (record.projectId) {
+      try {
+        if (projects.get(record.projectId)?.defaultSessionKey === a.terminal) projects.setDefaultSession(record.projectId, a.to);
+      } catch (err) { log.warn('Moving the default session to the new session failed.', { error: String(err) }); }
+    }
+    log.info('A managed terminal went on as another Claude session.', { from: a.terminal, to: a.to, via: a.via, cause: a.cause, why: a.why });
+    touched.add(a.terminal);
+    touched.add(a.to);
+    return true;
+  }
+
+  function applyVerdicts(decision: ContinuationDecision, touched: Set<SessionKey>): void {
+    const next = new Map<SessionKey, { status: 'pending' | 'unresolved'; text: string }>();
+    for (const key of decision.pending) {
+      next.set(key, waits.get(key)?.blind ? { status: 'unresolved', text: NOT_LEARNED_TEXT } : { status: 'pending', text: PENDING_TEXT });
+    }
+    for (const u of decision.unresolved) next.set(u.terminal, { status: 'unresolved', text: u.text });
+    for (const [key, verdict] of next) {
+      const before = continuations.get(key);
+      if (!before || before.status !== verdict.status || before.text !== verdict.text) touched.add(key);
+    }
+    for (const key of continuations.keys()) if (!next.has(key)) touched.add(key);
+    continuations.clear();
+    for (const [key, verdict] of next) continuations.set(key, verdict);
+    for (const key of decision.pending) scheduleWait(key);
+    for (const key of [...waits.keys()]) if (!next.has(key)) clearWait(key);
+  }
+
+  /**
+   * Looks at the evidence after something new was applied and, before any view is built from it, lets terminals follow the
+   * sessions they were proven to run. Adds every key whose view may have changed to `touched`.
+   */
+  function settleContinuations(touched: Set<SessionKey>): void {
+    if (!extras.rekey || shuttingDown) return;
+    for (let round = 0; round < 4; round++) {
+      const facts = continuationFacts();
+      if (facts.terminals.length === 0) {
+        for (const key of continuations.keys()) touched.add(key);
+        continuations.clear();
+        for (const key of [...waits.keys()]) clearWait(key);
+        return;
+      }
+      const decision = decideContinuations({ ...facts, ancestry });
+      let moved = false;
+      for (const a of decision.adopt) moved = performAdoption(a, touched) || moved;
+      if (moved) continue; // the facts changed: look again
+      applyVerdicts(decision, touched);
+      return;
+    }
+  }
+
+  /** The key a client that was attached to `key` should write to: the same terminal, under the id it has now. */
+  function terminalKeyFor(key: SessionKey): SessionKey {
+    if (managed.get(key)?.status === 'running') return key;
+    const next = replacedBy.get(key);
+    return next && managed.get(next)?.status === 'running' ? next : key;
+  }
+
   // ---- views -----------------------------------------------------------------------------------------------------------
 
   function allKeys(): Set<SessionKey> {
@@ -259,7 +451,7 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
       const view = buildSessionView({
         key, env: parsed.env, sessionId: parsed.sessionId, reducer: reducerSession, facts, managed: m, starting,
         attribution: att, projectDefaultKey: att.projectId ? (projectsById.get(att.projectId)?.defaultSessionKey ?? null) : null,
-        history: views.get(key) ?? null,
+        history: views.get(key) ?? null, continuation: m?.status === 'running' ? continuations.get(key) ?? null : null,
       });
       if (!view) continue;
       const json = JSON.stringify(view);
@@ -302,6 +494,8 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
     for (const event of result.derived) {
       if (deliveredDerived.has(event.derivedId)) continue;
       deliveredDerived.add(event.derivedId);
+      // A conversation replaced by /clear drops out of Claude's listing in the same instant: that is not a lost session.
+      if (event.kind === 'transition' && event.to === 'presence_lost' && (replacedBy.has(event.sessionKey) || parseReplacedReason(managed.get(event.sessionKey)?.exitReason))) continue;
       const view = views.get(event.sessionKey);
       if (view) callHandlers((h) => h.onDerived?.(event, view));
     }
@@ -356,12 +550,17 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
   function applyAndPublish(opts: { replay: boolean }): void {
     if (shuttingDown) return;
     const result = projection.applyNew({ replay: opts.replay });
-    if (result.applied > 0) publish(result);
+    if (result.applied > 0) {
+      settleContinuations(result.touched);
+      publish(result);
+    }
   }
 
   async function rebuildAndPublish(): Promise<void> {
     if (shuttingDown) return;
-    publish(await projection.rebuild());
+    const result = await projection.rebuild();
+    settleContinuations(result.touched);
+    publish(result);
   }
 
   // ---- parts ----------------------------------------------------------------------------------------------------------------
@@ -387,6 +586,11 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
   // ---- target checks ----------------------------------------------------------------------------------------------------------
 
   function availabilityProblem(view: SessionView): string {
+    const successor = successorOf(view.env, managed.get(view.key)?.exitReason);
+    if (successor) {
+      return `This conversation was replaced inside its terminal (/clear or /resume); the terminal went on as session ${shortSessionId(successor)}. `
+        + 'Text written for the old conversation is not sent to the new one: send it to the new session if you still want it.';
+    }
     switch (view.availability) {
       case 'resumable': return 'This session is not running. Resume it first, then try again.';
       case 'disconnected': return 'Mini-Summa lost the connection to this session\'s terminal. Resume the session to type into it.';
@@ -407,11 +611,13 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
     const starting = isManaged && live && startingKeys.has(key);
     const unsent = isManaged && live && !starting && managed.hasUnsentInput(key);
     let problem: string | null = null;
+    const replaced = isManaged && live ? continuations.get(key) : undefined;
     if (!isManaged) problem = 'Mini-Summa only types into sessions it started itself. This session is observed only.';
     else if (!live) problem = availabilityProblem(view);
     else if (!generationMatches) problem = `This session restarted after the request was made (it is on run ${view.generation} now, the request was for run ${expectGeneration}).`;
     else if (starting) problem = STARTING_PROBLEM;
     else if (unsent) problem = UNSENT_INPUT_PROBLEM;
+    else if (replaced) problem = continuationProblem(replaced);
     return { starting, unsent, check: { managed: isManaged, live, generation: view.generation, generationMatches, state: view.state, problem } };
   }
 
@@ -590,6 +796,8 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
       if (starting) return { ok: false, code: 'state_not_allowed', problem: STARTING_PROBLEM };
       // Nor can the caller: this text would be appended to what a person typed at the terminal and submitted together with it.
       if (unsent) return { ok: false, code: 'state_not_allowed', problem: UNSENT_INPUT_PROBLEM };
+      // The conversation was replaced and the new session is not settled: the text could land in a conversation nobody chose.
+      if (check.problem && continuations.has(key)) return { ok: false, code: 'state_not_allowed', problem: check.problem };
       if (!req.allowedStates.includes(check.state as SessionState)) {
         return { ok: false, code: 'state_not_allowed', problem: `Claude is "${labelOf(check.state as SessionState)}" right now. Text can only be sent when it is: ${stateWords(req.allowedStates)}.` };
       }
@@ -619,6 +827,7 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
       const refused = refusal(check);
       if (refused) return refused;
       if (starting) return { ok: false, code: 'state_not_allowed', problem: STARTING_PROBLEM };
+      if (check.problem && continuations.has(key)) return { ok: false, code: 'state_not_allowed', problem: check.problem };
       if (check.state !== 'needs_permission') {
         return { ok: false, code: 'state_not_allowed', problem: 'Claude is not waiting for a permission answer right now, so nothing was sent.' };
       }
@@ -644,9 +853,14 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
         if (!managed.get(key)) return { error: 'Mini-Summa did not start this session, so there is no terminal to show. Sessions started elsewhere can only be observed.' };
         return managed.attach(key, size, sink);
       },
-      input: (key, data) => (managed.get(key) ? managed.write(key, data) : false),
+      // A client attached to a key that was replaced keeps working: it reaches the same terminal under its new id.
+      input(key, data) {
+        const k = terminalKeyFor(key);
+        return managed.get(k) ? managed.write(k, data) : false;
+      },
       resize(key, cols, rows) {
-        if (managed.get(key)) managed.resize(key, cols, rows);
+        const k = terminalKeyFor(key);
+        if (managed.get(k)) managed.resize(k, cols, rows);
       },
     },
 
@@ -716,6 +930,7 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
 
     async shutdown() {
       shuttingDown = true;
+      for (const key of [...waits.keys()]) clearWait(key);
       discovery.stop();
       ingestion.stop();
       for (const off of offs.splice(0)) off();

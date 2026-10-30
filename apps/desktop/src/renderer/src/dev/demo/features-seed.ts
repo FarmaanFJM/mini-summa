@@ -265,3 +265,26 @@ export function applyFeatureScenario(server: DemoServer): FeatureAdditions {
   emit({ type: 'counts', counts: server.counts() });
   return added;
 }
+
+/**
+ * One more report with a delivery in a given state, added to a running demo core and announced, so a page that is open shows it.
+ * The handoff strip's tests and screenshots use it to build the cases the base scene does not have (a very long title, a long
+ * message that splits into parts, several reports waiting at once).
+ */
+export function addReportScene(server: DemoServer, p: { projectId: string; title: string; state: DeliveryState; body?: string; session?: SessionKey; minutesAgo?: number; id?: string }): { report: Report; delivery: Delivery } {
+  const data = server.data;
+  const project = data.projects.find((x) => x.id === p.projectId);
+  if (!project) throw new Error(`The demo core has no project ${p.projectId}.`);
+  const now = new Date();
+  const id = p.id ?? `rpt_extra_${data.reports.length + 1}`;
+  const session = p.session ?? (data.sessions.find((x) => x.projectId === project.id && x.origin === 'managed')?.key as SessionKey | undefined) ?? (IDS.s.gmWorking as SessionKey);
+  const report = spec(now, { id, project: project.id, projectName: project.name, session, title: p.title, status: 'complete', minutesAgo: p.minutesAgo ?? 2, body: p.body ?? `${p.title}\n\nThe work is done and the tests pass.\n` });
+  const delivery = deliveryFor(now, data, report, p.state);
+  data.reports.unshift(report);
+  data.deliveries.push(delivery);
+  seedHistory(data, [delivery]);
+  server.transport.emit(structuredClone({ type: 'report.upserted', report }));
+  server.transport.emit(structuredClone({ type: 'delivery.upserted', delivery }));
+  server.transport.emit({ type: 'counts', counts: server.counts() });
+  return { report, delivery };
+}

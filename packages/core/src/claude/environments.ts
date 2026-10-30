@@ -16,6 +16,8 @@
 // Contract notes (decisions where the brief and the sibling terminal host disagreed; both are one-line changes here):
 //  - claudeCommand(WSL) is { file: 'claude', prefixArgs: [], wslDistro } : `file` is the command to run INSIDE the
 //    distribution, because ptyHost.buildLaunchPlan builds `wsl.exe -d <distro> --cd <cwd> --exec <file> ...` itself.
+//    When only a login shell finds Claude (~/.local/bin, nvm) it is { file: 'sh', prefixArgs: ['-lc', 'exec claude "$@"',
+//    'claude'], wslDistro } (or bash -lic): the same fields, the shell is the program and the script is fixed text.
 //  - claudeCommand(Windows .cmd shim) is { file: '<shim>.cmd', prefixArgs: [] }, not `cmd.exe /d /c <shim>`:
 //    buildLaunchPlan recognises a .cmd/.bat file and builds the safe `cmd.exe /d /s /c "..."` line itself. Only the
 //    version check here goes through `cmd.exe /d /c <shim> --version`.
@@ -195,6 +197,9 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
       const prefix = host.env.npm_config_prefix ?? host.env.NPM_CONFIG_PREFIX;
       if (prefix) out.push(lib.join(prefix, 'claude.cmd'));
       if (host.env.APPDATA) out.push(lib.join(host.env.APPDATA, 'npm', 'claude.cmd'));
+      // `winget install Anthropic.ClaudeCode` (the way installHelp in managed.ts tells people to install it) puts a link here, and the
+      // folder is added to PATH, which a program started before the install does not see.
+      if (host.env.LOCALAPPDATA) out.push(lib.join(host.env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Links', 'claude.exe'));
     } else {
       out.push(lib.join(home, '.local', 'bin', 'claude'), lib.join(home, '.claude', 'local', 'claude'));
       const prefix = host.env.npm_config_prefix ?? host.env.NPM_CONFIG_PREFIX;
@@ -406,10 +411,10 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
     const notes: string[] = [];
     const unreachable = ver.code === null && where.code === null;
 
-    interface Lookup { launcher: WslLauncher; claudeVersion: string | null; claudePath: string | null; nodeVersion: string | null; failure: CommandResult }
+    interface Lookup { launcher: WslLauncher; claudeVersion: string | null; claudePath: string | null; nodeVersion: string | null }
     const pathOf = (r: CommandResult): string | null => (r.code === 0 && firstLine(r.stdout).startsWith('/') ? firstLine(r.stdout) : null);
     const lookups: Lookup[] = [{
-      launcher: PLAIN_LAUNCHER, failure: ver, claudePath: pathOf(where),
+      launcher: PLAIN_LAUNCHER, claudePath: pathOf(where),
       claudeVersion: ver.code === 0 ? parseVersion(ver.stdout) ?? parseVersion(ver.stderr) : null,
       nodeVersion: nodeVer.code === 0 ? parseVersion(nodeVer.stdout) : null,
     }];
@@ -422,7 +427,7 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
           wsl([...launcher.argv('claude'), '--version']), wsl(launcher.script('command -v claude')), wsl([...launcher.argv('node'), '--version']),
         ]);
         const found: Lookup = {
-          launcher, failure: v, claudePath: pathOf(p),
+          launcher, claudePath: pathOf(p),
           claudeVersion: v.code === 0 ? parseVersion(v.stdout) ?? parseVersion(v.stderr) : null,
           nodeVersion: n.code === 0 ? parseVersion(n.stdout) : null,
         };

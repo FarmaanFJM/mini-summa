@@ -14,6 +14,10 @@ import path from 'node:path';
 // Identical-looking POSIX paths in two distributions, or in WSL and a native Linux host, stay different.
 
 const UNC_WSL = /^[\\/]{2}wsl(?:\$|\.localhost)[\\/]+([^\\/]+)((?:[\\/].*)?)$/i;
+// \\?\C:\x and \\?\UNC\server\share\x (also written //?/...) are the long-path spellings of C:\x and \\server\share\x, and the device
+// form \\.\ is read the same way; without this they would never match the folder they name. Other uses of the prefix are left alone.
+const LONG_PATH = /^[\\/]{2}[?.][\\/](?:UNC[\\/](.*)|([A-Za-z]:(?:[\\/].*)?))$/is;
+const withoutLongPathPrefix = (p) => { const m = LONG_PATH.exec(p); return m ? (m[1] !== undefined ? `\\\\${m[1]}` : m[2]) : p; };
 
 export function detectEnv(platform = process.platform, env = process.env) {
   if (platform === 'win32') return 'win';
@@ -27,6 +31,7 @@ export function canonicalize(p, env, opts = {}) {
   if (typeof p !== 'string' || p === '') return null;
   const automount = (opts.automount ?? '/mnt/').replace(/\/?$/, '/');
   if (env === 'win') {
+    p = withoutLongPathPrefix(p);
     const unc = UNC_WSL.exec(p);
     if (unc) {
       const rest = path.posix.normalize('/' + unc[2].replace(/\\/g, '/'));
@@ -51,8 +56,11 @@ export function normPath(p, platform = process.platform) {
   return c ? c.path : null;
 }
 
+// The same file system? The name of a WSL distribution is not case-sensitive for Windows (\\wsl$\ubuntu and \\wsl$\Ubuntu are the
+// same share), so a root typed one way matches a session reported the other way; everything else must match exactly.
+const sameFs = (a, b) => a === b || (a.startsWith('wsl:') && b.startsWith('wsl:') && a.toLowerCase() === b.toLowerCase());
 const within = (root, dir) => {
-  if (root.fs !== dir.fs) return false;
+  if (!sameFs(root.fs, dir.fs)) return false;
   const sep = root.fs === 'win' ? '\\' : '/';
   return dir.path === root.path || dir.path.startsWith(root.path.endsWith(sep) ? root.path : root.path + sep);
 };

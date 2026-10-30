@@ -11,7 +11,7 @@ import type {
   TerminalSink,
 } from '../../../src/contracts.ts';
 import { notFound } from '../../../src/errors.ts';
-import type { ManagedManagerExtras } from '../../../src/claude/managed.ts';
+import type { ManagedManagerExtras, RekeyRequest } from '../../../src/claude/managed.ts';
 import type { ProjectsPort } from '../../../src/claude/sessions.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -158,6 +158,10 @@ export interface FakeManaged extends ManagedManager, ManagedManagerExtras {
   promptSubmittedCalls: { key: SessionKey; receivedAt: string | undefined }[];
   /** What typeText / sendKeys answer (false = the terminal is gone). */
   terminalAvailable: boolean;
+  /** Every rekey call (the extra the real manager has on top of the contract). */
+  rekeyCalls: RekeyRequest[];
+  /** true: rekey refuses (the manager could not move the terminal). */
+  refuseRekey: boolean;
   /** Adds or replaces a record (without telling the listeners unless `notify`). */
   seed(record: Partial<ManagedSessionRecord> & { key: SessionKey }, notify?: boolean): ManagedSessionRecord;
   /** Changes a record and tells the listeners, like the real manager does. */
@@ -191,7 +195,7 @@ export function createFakeManaged(deps: { db: Db; clock: Clock }): FakeManaged {
 
   const fake: FakeManaged = {
     initCalls: 0, shutdownCalls: 0, started: [], stopped: [], typed: [], keys: [], written: [], prompted: [], terminalAvailable: true,
-    unsent: new Set(), promptSubmittedCalls: [],
+    unsent: new Set(), promptSubmittedCalls: [], rekeyCalls: [], refuseRekey: false,
 
     init() { fake.initCalls++; },
     list: () => [...records.values()].map((r) => ({ ...r })),
@@ -220,6 +224,27 @@ export function createFakeManaged(deps: { db: Db; clock: Clock }): FakeManaged {
     promptSubmitted(key, receivedAt) {
       fake.promptSubmittedCalls.push({ key, receivedAt });
       fake.unsent.delete(key);
+    },
+    rekey(req) {
+      fake.rekeyCalls.push(req);
+      const from = records.get(req.from);
+      if (fake.refuseRekey || !from || from.status !== 'running') return null;
+      const toSessionId = req.toSessionId.toLowerCase();
+      const toKey = makeSessionKey(from.env, toSessionId);
+      if (toKey === req.from || records.get(toKey)?.status === 'running') return null;
+      const previousTo = records.get(toKey) ?? null;
+      const retired: ManagedSessionRecord = { ...from, status: 'exited', pid: null, exitedAt: at(), exitCode: null, exitSignal: null, exitReason: req.leftBehindReason };
+      const next: ManagedSessionRecord = {
+        ...from, key: toKey, sessionId: toSessionId, resumedFrom: req.from, exitedAt: null, exitCode: null, exitSignal: null, exitReason: null,
+        prompted: req.prompted || Boolean(previousTo?.prompted),
+      };
+      records.set(req.from, retired);
+      records.set(toKey, next);
+      if (fake.unsent.delete(req.from)) fake.unsent.add(toKey);   // the terminal (and so its input line) moves with the record
+      writeBinding(next);
+      fire(next, previousTo);
+      fire(retired, from);
+      return { ...next };
     },
     async typeText(key, text, opts) { fake.typed.push({ key, text, submit: opts.submit }); return fake.terminalAvailable; },
     async sendKeys(key, k) { fake.keys.push({ key, keys: k }); return fake.terminalAvailable; },

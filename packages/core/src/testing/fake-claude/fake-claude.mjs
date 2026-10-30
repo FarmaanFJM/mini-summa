@@ -26,6 +26,13 @@
 // [[fake:report status=complete task="Fix login"]], [[fake:error]], [[fake:sleep=300]], [[fake:say "text"]],
 // [[fake:crash]]. Without a directive the reply echoes the prompt and the turn ends with a plain Stop (no marker).
 //
+// The conversation can be replaced INSIDE the running process, as in the real CLI: typing /clear, or /resume <session id>, or a
+// directive [[fake:clear]] / [[fake:resume=<session id>]] in a prompt. Observed on the real CLI 2.1.314: SessionEnd (old id,
+// reason "clear" or "resume") and then SessionStart (new id, source "clear" without `model`, or "resume" with it), and
+// `claude agents --json` lists the new id with the SAME pid. The fake does the same; the turn that triggered a directive ends
+// without a Stop (the old session is over). FAKE_CLAUDE_REGISTRY_LAG_MS (default 0) delays the moment `agents --json` shows the new
+// id, to test the window in which only the hooks know about it.
+//
 // <state> is `--fake-state-dir <dir>` (anywhere in the arguments; fakeClaudeCommand() puts it in prefixArgs, so several
 // fakes with different directories can run in one process) or else $FAKE_CLAUDE_STATE_DIR.
 //
@@ -67,6 +74,7 @@ const PASTE_CLOSE = '\uE001';
 const THINK_MS = intEnv('FAKE_CLAUDE_THINK_MS', 120);
 const NOTIFY_MS = intEnv('FAKE_CLAUDE_NOTIFY_MS', 6000);
 const IDLE_NOTIFY_MS = intEnv('FAKE_CLAUDE_IDLE_NOTIFY_MS', 0);
+const REGISTRY_LAG_MS = intEnv('FAKE_CLAUDE_REGISTRY_LAG_MS', 0);
 
 // ---------------------------------------------------------------------------------------------------------------
 // Command line
@@ -340,6 +348,8 @@ function toolInputFor(toolName, positional) {
 // The interactive session
 
 class Interrupted extends Error {}
+/** The conversation was replaced during a turn (a [[fake:clear]] / [[fake:resume]] directive): the turn ends with no Stop. */
+class Switched extends Error {}
 
 async function runInteractive(parsed) {
   if (!process.stdin.isTTY) {
@@ -387,7 +397,7 @@ async function runInteractive(parsed) {
   }
 
   const S = {
-    sessionId, name, cwd, source,
+    sessionId, registeredId: sessionId, inProcess: false, switching: false, name, cwd, source,
     model: parsed.first('--model') ?? 'claude-fake-1',
     permissionMode: ({ manual: 'default' })[parsed.first('--permission-mode')] ?? parsed.first('--permission-mode') ?? (parsed.has('--dangerously-skip-permissions') ? 'bypassPermissions' : 'default'),
     remoteControl: parsed.has('--remote-control', '--rc'),
@@ -416,7 +426,7 @@ async function runInteractive(parsed) {
 
   // --- registration, status
   const registration = () => {
-    const entry = { pid: process.pid, cwd, kind: 'interactive', startedAt: S.startedAt, sessionId, status: S.status };
+    const entry = { pid: process.pid, cwd, kind: 'interactive', startedAt: S.startedAt, sessionId: S.registeredId, status: S.status };
     if (S.name) entry.name = S.name;
     if (S.waitingFor) entry.waitingFor = S.waitingFor;
     if (S.remoteControl) entry.remoteControl = true;
@@ -442,9 +452,12 @@ async function runInteractive(parsed) {
     const payload = {};
     for (const key of Object.keys(template)) payload[key] = key in known ? known[key] : template[key];
     Object.assign(payload, extra);
+    // Observed on the real CLI: the SessionStart of a /clear has no `model`.
+    if (event === 'SessionStart' && S.source === 'clear') delete payload.model;
     if (event === 'SessionStart' && S.source === 'resume') {
-      // Observed on the real CLI: a resumed start has no `model`, and carries these numeric fields instead.
-      delete payload.model;
+      // Observed on the real CLI: a resumed start (`--resume`) has no `model` and carries these numeric fields instead; the
+      // /resume typed inside a running session keeps the model and carries them as well.
+      if (!S.inProcess) delete payload.model;
       let bytes = 0;
       let idleSeconds = 0;
       try { const st = fs.statSync(S.transcriptPath); bytes = st.size; idleSeconds = Math.max(0, Math.round((Date.now() - st.mtimeMs) / 1000)); } catch { /* no transcript yet */ }
@@ -495,6 +508,39 @@ async function runInteractive(parsed) {
       lines.push(entry);
       fs.appendFileSync(S.transcriptPath, lines.map((l) => `${JSON.stringify({ ...l, sessionId, cwd, timestamp: new Date().toISOString() })}\n`).join(''));
     } catch { /* ignore */ }
+  };
+
+  // --- replacing the conversation inside the running process (/clear, /resume <id>)
+  const switchSession = async (kind, targetId) => {
+    S.switching = true;
+    try {
+      await fireHook('SessionEnd', { reason: kind });
+      const nextId = (kind === 'resume' ? targetId : randomUUID()).toLowerCase();
+      sessionId = nextId;
+      S.sessionId = nextId;
+      S.source = kind;
+      S.inProcess = true;
+      S.transcriptPath = path.join(configDir, 'projects', encodeDir(cwd), `${sessionId}.jsonl`);
+      S.scratchpadDir = path.join(os.tmpdir(), `claude-${process.getuid ? process.getuid() : 0}`, encodeDir(cwd), sessionId, 'scratchpad');
+      if (kind === 'clear') S.promptId = null;
+      writeSize();
+      writeJsonAtomic(stateFile(`env-${sessionId}.json`), {
+        names: Object.keys(process.env).sort(),
+        TERM: process.env.TERM ?? null, COLORTERM: process.env.COLORTERM ?? null, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? null,
+      });
+      // The registry that `agents --json` reads follows at once (or after FAKE_CLAUDE_REGISTRY_LAG_MS).
+      const register = () => { S.registeredId = nextId; publish(); };
+      if (REGISTRY_LAG_MS > 0) { const t = setTimeout(register, REGISTRY_LAG_MS); t.unref?.(); } else register();
+      out(`\n${accent('✻')} ${kind === 'clear' ? 'Conversation cleared' : 'Conversation resumed'}  ${dim('session:')} ${sessionId}\n`);
+      const results = await fireHook('SessionStart', {});
+      recordSessionStartContext(results);
+    } finally { S.switching = false; }
+  };
+  const resumable = (id) => UUID_RE.test(id) && Boolean(findTranscript(id));
+  const runCommand = async (command) => {
+    if (command.kind === 'clear') { await switchSession('clear'); return; }
+    if (!resumable(command.id)) { out(`\n  ⎿  ${dim(`No conversation found with session ID: ${command.id}`)}\n`); return; }
+    await switchSession('resume', command.id.toLowerCase());
   };
 
   // --- tools
@@ -665,6 +711,13 @@ async function runInteractive(parsed) {
             break;
           }
           case 'say': reply = d.positional[0] ?? ''; break;
+          case 'clear': await switchSession('clear'); throw new Switched();
+          case 'resume': {
+            const id = String(d.inline ?? d.positional[0] ?? '');
+            if (!resumable(id)) { out(`\n${accent('●')} No conversation found with session ID: ${id}\n`); break; }
+            await switchSession('resume', id);
+            throw new Switched();
+          }
           case 'error': failure = { error: d.named.error ?? 'api_error', error_details: d.named.details ?? '500', message: `API Error: ${d.named.error ?? 'api_error'}` }; break;
           case 'crash': process.exit(Number.parseInt(d.inline ?? '1', 10) || 1); break;
           default: break;
@@ -682,6 +735,8 @@ async function runInteractive(parsed) {
         await fireHook('Stop', { stop_hook_active: false, last_assistant_message: message });
       }
     } catch (err) {
+      // The conversation was replaced: that session is over, so nothing more is said about this turn.
+      if (err instanceof Switched) return;
       if (!(err instanceof Interrupted) && err?.name !== 'AbortError') throw err;
       // An interrupt ends the turn without a Stop, as on the real CLI.
       out(`\n  ⎿  ${dim('Interrupted · What should Claude do instead?')}\n`);
@@ -708,7 +763,8 @@ async function runInteractive(parsed) {
     try {
       while (S.queue.length > 0 && !S.exiting) {
         const next = S.queue.shift();
-        await runTurn(next);
+        if (next.command) await runCommand(next.command);
+        else await runTurn(next);
         if (S.queue.length === 0) { showPrompt(); armIdleNotification(); }
       }
     } finally { pumping = false; }
@@ -718,7 +774,12 @@ async function runInteractive(parsed) {
     if (text.trim() === '') return;
     if (/^\/(exit|quit)\s*$/.test(text.trim())) { void requestExit('prompt_input_exit'); return; }
     if (text.startsWith('/') && !text.includes('\n') && !text.includes('[[fake:')) {
-      out(`\n  ⎿  ${dim(`Unknown command: ${text.trim()} (fake-claude only knows /exit)`)}\n`);
+      const command = text.trim();
+      const resume = /^\/resume\s+(\S+)$/.exec(command);
+      // Like typed input in the real CLI, these wait for the turn that is still running and then run in order.
+      if (command === '/clear') { S.queue.push({ command: { kind: 'clear' } }); void pump(); return; }
+      if (resume) { S.queue.push({ command: { kind: 'resume', id: resume[1] } }); void pump(); return; }
+      out(`\n  ⎿  ${dim(`Unknown command: ${command} (fake-claude knows /exit, /clear and /resume <id>)`)}\n`);
       showPrompt();
       return;
     }

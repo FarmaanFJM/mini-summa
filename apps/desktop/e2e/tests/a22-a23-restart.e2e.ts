@@ -4,7 +4,7 @@
 import crypto from 'node:crypto';
 import { expect } from 'vitest';
 import type { Delivery, SessionView } from '@minisumma/shared';
-import { launchApp, PREFERRED_CORE_PORT } from '../helpers/app.ts';
+import { launchApp, occupyPreferredPort, PREFERRED_CORE_PORT } from '../helpers/app.ts';
 import type { AppHandle } from '../helpers/app.ts';
 import { createProject, fullReport, latestDelivery, reportsOf, startSession, waitForSession } from '../helpers/core.ts';
 import { evidence, notTested } from '../helpers/evidence.ts';
@@ -229,6 +229,60 @@ scenario('[X02] The window reopens on the project that was selected when it was 
   const heading = await h2.page.getByRole('heading', { level: 1 }).first().innerText();
   expect(heading, `reopened on "${heading}" instead of the project that was selected ("Beta"); origin ${originBefore} -> ${originAfter}`).toBe('Beta');
   evidence('X02', `the window reopened on Beta, as it was left, on the same origin (${originAfter})`);
+});
+
+// The same memory when the window's ORIGIN changes. The core prefers port 47811 and takes a free port when something else holds it
+// (another program, or a second Windows user's Mini-Summa), and localStorage belongs to the page origin: the window used to lose
+// everything it kept there although projects, sessions and reports were fine. The core keeps it now (Settings.ui). Here the second
+// launch is made to find the port busy, so that the origin really is different, and the window must still reopen where it was left.
+scenario('[X02] The window reopens where it was left when the origin changed (the core had to take another port)', async () => {
+  const h = await launchApp();
+  h.standIn.name(A1, 'Stand-in: Alpha first');
+  h.standIn.name(A2, 'Stand-in: Alpha second');
+  const alpha = await createProject(h, 'Alpha', { conversations: [conversationUrl(A1), conversationUrl(A2)] });
+  const beta = await createProject(h, 'Beta', { conversations: [conversationUrl(B)] });
+  const originBefore = new URL(h.page.url()).origin;
+
+  // The person looks at Alpha's SECOND conversation (not the one it opens on), then moves on to Beta and leaves it selected.
+  await selectProject(h.page, 'Alpha');
+  await until('Alpha\'s first conversation to be in front', async () => (await chatgptView(h.app))?.url === conversationUrl(A1));
+  await h.page.getByRole('button', { name: 'Conversation', exact: true }).click();
+  await h.page.getByRole('option', { name: /ChatGPT conversation a2a2a2a2/ }).click();
+  await until('Alpha\'s second conversation to be in front', async () => (await chatgptView(h.app))?.url === conversationUrl(A2));
+  await selectProject(h.page, 'Beta');
+
+  // The core, not the page, is where it is kept: wait for the window's quiet-period write to arrive (what a person waits for without knowing).
+  const remembered = await until('the core to hold what the window remembers', async () => {
+    const ui = (await h.api.call('settings.get')).ui;
+    return ui?.route?.projectId === beta.project.id && ui.perProject?.[alpha.project.id]?.conversationId === alpha.conversations[1].id && ui.setup?.dismissed === true ? ui : null;
+  }, { timeout: 15_000 });
+  expect(remembered.route).toEqual({ projectId: beta.project.id, view: 'workspace' });
+
+  expect((await h.quit()).code).toBe(0);
+
+  // Something else holds 47811 for the second launch only: the core falls back to a free port, so the window's origin is another one.
+  const holder = await occupyPreferredPort();
+  try {
+    const h2 = await launchApp({ sandbox: h.sandbox, standIn: h.standIn, firstRun: true }); // firstRun: the checklist is NOT hidden for the test
+    const originAfter = new URL(h2.page.url()).origin;
+    expect(h2.port, 'the core must have taken another port, or this check proves nothing').not.toBe(PREFERRED_CORE_PORT);
+    expect(originAfter, 'the window must be on another origin, so that nothing in the old origin\'s localStorage can help').not.toBe(originBefore);
+
+    // It reopens on Beta, as it was left.
+    const heading = await h2.page.getByRole('heading', { level: 1 }).first().innerText();
+    expect(heading, `reopened on "${heading}" instead of the project that was selected ("Beta"); origin ${originBefore} -> ${originAfter}`).toBe('Beta');
+    // The checklist that was hidden stays hidden, and a window that has projects never shows it in the middle of the screen.
+    await sleep(1500);
+    expect(await h2.page.getByRole('region', { name: 'Set up Mini-Summa' }).count(), 'the setup checklist came back after the origin changed').toBe(0);
+    // Alpha's choice of conversation came back too: its pane shows, and the view loads, the second conversation.
+    await selectProject(h2.page, 'Alpha');
+    await until('the second conversation of Alpha to be in front', async () => (await chatgptView(h2.app))?.url === conversationUrl(A2));
+    expect(await h2.page.getByRole('button', { name: 'Conversation', exact: true }).innerText()).toContain('a2a2a2a2');
+    expect(h2.standIn.requests.filter((r) => r.path.includes(B)).length, 'Beta\'s conversation was loaded for the window\'s first screen only').toBeGreaterThan(0);
+    evidence('X02', `the core could not take its preferred port ${PREFERRED_CORE_PORT} for the second launch (a throw-away listener held it) and listened on ${h2.port}, so the window's origin changed (${originBefore} -> ${originAfter}) and the localStorage of the old origin could not carry anything over; the window still reopened on Beta, kept Alpha's second conversation (its pane loaded it, not the first one) and kept the setup checklist hidden; the state came from the core's settings (ui.route, ui.perProject, ui.setup)`);
+  } finally {
+    await holder.close();
+  }
 });
 
 // Not one of the 25 behaviours: what the window tells a person about a session that ended. The reason is in words a person can

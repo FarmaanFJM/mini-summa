@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { _electron as electron } from 'playwright';
 
@@ -141,6 +142,46 @@ try {
     assert.equal(r.state.status, 'idle');
     assert.ok(path.isAbsolute(r.paths.dataDir) && path.isAbsolute(r.paths.logsDir));
     return JSON.stringify(r.paths);
+  });
+
+  await check('the core listens on the loopback address only (no other address of this machine reaches it)', async () => {
+    const port = Number(new URL(origin).port);
+    const canConnect = (host) => new Promise((resolve) => {
+      const s = net.connect({ host, port });
+      const done = (v) => { s.destroy(); resolve(v); };
+      s.setTimeout(3000, () => done('timeout'));
+      s.once('connect', () => done(true));
+      s.once('error', (e) => done(e.code ?? false));
+    });
+    assert.equal(await canConnect('127.0.0.1'), true);
+    const others = Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal);
+    if (others.length === 0) return 'NOT TESTED beyond 127.0.0.1: this machine has no other IPv4 address';
+    for (const other of others) {
+      const result = await canConnect(other.address);
+      assert.equal(result, 'ECONNREFUSED', `${other.address}:${port} answered with ${result}`);
+    }
+    // The same fact is what keeps the Windows Firewall from asking: it only asks when a program listens beyond loopback.
+    return `${others.length} other address(es) refused (${others.map((i) => i.address).join(', ')})`;
+  });
+
+  await check('no secret is on any command line of the app or its child processes', async () => {
+    if (process.platform !== 'linux') return 'NOT TESTED: reads /proc';
+    const c = await page.evaluate(() => window.miniSumma.connection());
+    const pids = new Set([app.process().pid]);
+    const parentOf = (pid) => { try { return Number(/^\d+ \(.*\) \S (\d+)/.exec(fs.readFileSync(`/proc/${pid}/stat`, 'utf8'))?.[1]); } catch { return NaN; } };
+    // Chromium helpers are children of the main process, but some are reparented; take every process that descends from it.
+    for (let round = 0; round < 4; round += 1) for (const name of fs.readdirSync('/proc')) if (/^\d+$/.test(name) && pids.has(parentOf(name))) pids.add(Number(name));
+    let scanned = 0;
+    for (const pid of pids) {
+      let cmd;
+      try { cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').join(' '); } catch { continue; }
+      scanned += 1;
+      assert.ok(!cmd.includes(c.token), `the desktop token is on the command line of process ${pid}`);
+      assert.ok(!/bearer\s+[A-Za-z0-9._~+/=-]{16,}/i.test(cmd), `an Authorization value is on the command line of process ${pid}`);
+      assert.ok(!/(?:^|\s)--?(?:token|password|secret|api-?key)[= ]/i.test(cmd), `a secret-looking option is on the command line of process ${pid}`);
+    }
+    assert.ok(scanned >= 3, `only ${scanned} process(es) found`);
+    return `${scanned} processes scanned`;
   });
 
   const info = await app.evaluate(({ app: a }) => ({ packaged: a.isPackaged, name: a.getName(), userData: a.getPath('userData'), resources: process.resourcesPath, exe: process.execPath }));

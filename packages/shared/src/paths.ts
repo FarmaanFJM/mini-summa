@@ -16,8 +16,20 @@ export interface RootInputOptions {
   env?: EnvId;
 }
 
-const WIN_DRIVE = /^([A-Za-z]):[\\/]*(.*)$/;
+// A drive, then a separator and the rest (or nothing: `C:` is taken as the drive's root). `C:dev` is a path relative to the current
+// folder of drive C, which has no meaning here, so it does not match.
+const WIN_DRIVE = /^([A-Za-z]):(?:[\\/]+(.*))?$/;
 const UNC_WSL = /^[\\/]{2}wsl(?:\$|\.localhost)[\\/]+([^\\/]+)((?:[\\/].*)?)$/i;
+// \\?\C:\x and \\?\UNC\server\share\x (also written //?/...) are the long-path spellings of C:\x and \\server\share\x; the device
+// form \\.\ is read the same way. Anything else behind the prefix (\\?\Volume{...}, \\?\GLOBALROOT) is left as it is.
+const LONG_PATH = /^[\\/]{2}[?.][\\/](?:UNC[\\/](.*)|([A-Za-z]:(?:[\\/].*)?))$/is;
+const UNC_SHARE = /^[\\/]{2}[^\\/]/;
+
+function withoutLongPathPrefix(p: string): string {
+  const m = LONG_PATH.exec(p);
+  if (!m) return p;
+  return m[1] !== undefined ? `\\\\${m[1]}` : m[2];
+}
 
 function cleanPosix(p: string): string {
   const parts: string[] = [];
@@ -38,9 +50,10 @@ function cleanWindows(drive: string, rest: string): string {
 }
 
 export function normalizeRootInput(raw: string, opts: RootInputOptions): RootInputResult {
-  const input = (raw ?? '').trim().replace(/^"(.*)"$/, '$1');
-  if (input === '') return { ok: false, message: 'Enter the folder that holds the repository.' };
-  if (/[\0\r\n]/.test(input)) return { ok: false, message: 'The path contains characters that are not allowed.' };
+  const typed = (raw ?? '').trim().replace(/^"(.*)"$/, '$1');
+  if (typed === '') return { ok: false, message: 'Enter the folder that holds the repository.' };
+  if (/[\0\r\n]/.test(typed)) return { ok: false, message: 'The path contains characters that are not allowed.' };
+  const input = withoutLongPathPrefix(typed);
 
   const unc = UNC_WSL.exec(input);
   if (unc) {
@@ -52,7 +65,12 @@ export function normalizeRootInput(raw: string, opts: RootInputOptions): RootInp
     if (opts.env && opts.env !== 'win') {
       return { ok: false, message: `A Windows drive path cannot belong to ${opts.env}. Choose Windows, or enter the path as /mnt/${drive[1].toLowerCase()}/... inside WSL.` };
     }
-    return { ok: true, env: 'win', path: cleanWindows(drive[1], drive[2]), note: null };
+    return { ok: true, env: 'win', path: cleanWindows(drive[1], drive[2] ?? ''), note: null };
+  }
+  // A share is a full path, so the generic "enter an absolute path" would be wrong. cmd.exe, which starts the npm launcher of
+  // Claude Code, cannot use a UNC folder as its working directory and falls back to the Windows folder, so none is accepted.
+  if (UNC_SHARE.test(input) && (input.startsWith('\\\\') || opts.hostPlatform === 'win32')) {
+    return { ok: false, message: 'A folder on a network share (\\\\server\\share) is not supported as a project folder. Map the share to a drive letter such as Z:, or use a folder on a local drive.' };
   }
   if (input.startsWith('/')) {
     const posix = cleanPosix(input);

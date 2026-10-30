@@ -4,8 +4,14 @@
 //
 //   node apps/desktop/scripts/make-icons.mjs
 //
-// Writes build/icon.png (512), build/icon.ico (16..256, PNG-compressed entries), resources/icon.png (256) and
-// resources/tray.png (32) + tray@2x.png (64). The output is deterministic, so re-running changes nothing.
+// Writes build/icon.png (512), build/icon.ico (16..256, PNG-compressed entries), resources/icon.png (256),
+// resources/tray.png (32) + tray@2x.png (64) and resources/tray.ico (16, 20, 24, 32, 48 as plain bitmaps). The output is
+// deterministic, so re-running changes nothing.
+//
+// Why a separate tray.ico: Electron turns a PNG tray icon into a single 32-pixel bitmap on Windows, which the notification area
+// then shrinks to 16, 20, 24 or 32 pixels depending on the display scale. An .ico lets Windows pick the frame of exactly the
+// right size (Electron's documentation recommends it). The frames are uncompressed 32-bit bitmaps, not PNG, because that is what
+// every Windows icon loader has always understood; sizes 20 and 24 cover 125% and 150% scaling.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -128,6 +134,53 @@ export function encodeIco(images) {
   return Buffer.concat([header, ...entries, ...images.map((i) => i.png)]);
 }
 
+/**
+ * An .ico whose frames are 32-bit bitmaps (BITMAPINFOHEADER, bottom-up BGRA pixels, then an all-zero AND mask), the classic
+ * layout. `images` are { size, rgba } with top-down RGBA pixels as drawMark returns them.
+ */
+export function encodeIcoDib(images) {
+  const header = Buffer.alloc(6);
+  header.writeUInt16LE(1, 2); // type: icon
+  header.writeUInt16LE(images.length, 4);
+  const frames = images.map(({ size, rgba }) => {
+    const maskRow = Math.ceil(size / 32) * 4; // 1 bit per pixel, rows padded to 4 bytes
+    const info = Buffer.alloc(40);
+    info.writeUInt32LE(40, 0); // biSize
+    info.writeInt32LE(size, 4); // biWidth
+    info.writeInt32LE(size * 2, 8); // biHeight: XOR bitmap plus AND mask
+    info.writeUInt16LE(1, 12); // biPlanes
+    info.writeUInt16LE(32, 14); // biBitCount
+    info.writeUInt32LE(size * size * 4 + maskRow * size, 20); // biSizeImage
+    const xor = Buffer.alloc(size * size * 4);
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const from = (y * size + x) * 4;
+        const to = ((size - 1 - y) * size + x) * 4; // bottom-up
+        xor[to] = rgba[from + 2]; // B
+        xor[to + 1] = rgba[from + 1]; // G
+        xor[to + 2] = rgba[from]; // R
+        xor[to + 3] = rgba[from + 3]; // A
+      }
+    }
+    return Buffer.concat([info, xor, Buffer.alloc(maskRow * size)]);
+  });
+  let offset = 6 + 16 * images.length;
+  const entries = images.map(({ size }, i) => {
+    const e = Buffer.alloc(16);
+    e[0] = size >= 256 ? 0 : size;
+    e[1] = size >= 256 ? 0 : size;
+    e.writeUInt16LE(1, 4); // planes
+    e.writeUInt16LE(32, 6); // bits per pixel
+    e.writeUInt32LE(frames[i].length, 8);
+    e.writeUInt32LE(offset, 12);
+    offset += frames[i].length;
+    return e;
+  });
+  return Buffer.concat([header, ...entries, ...frames]);
+}
+
+export const TRAY_ICO_SIZES = [16, 20, 24, 32, 48];
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const png = (size) => encodePng(size, drawMark(size));
   const write = (rel, data) => {
@@ -141,4 +194,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   write('resources/icon.png', png(256));
   write('resources/tray.png', png(32));
   write('resources/tray@2x.png', png(64));
+  write('resources/tray.ico', encodeIcoDib(TRAY_ICO_SIZES.map((size) => ({ size, rgba: drawMark(size) }))));
 }

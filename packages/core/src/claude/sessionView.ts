@@ -6,7 +6,9 @@ import type { ReducerSession } from '@minisumma/claude-integration';
 import type {
   AttentionKind, EnvId, SessionAvailability, SessionKey, SessionOrigin, SessionState, SessionTermination, SessionView,
 } from '@minisumma/shared';
+import { shortSessionId } from '@minisumma/shared';
 import type { ManagedSessionRecord } from '../contracts.ts';
+import { parseReplacedReason } from './continuation.ts';
 import type { Attribution, SessionFacts } from './projection.ts';
 
 /** The fields of the Reducer's session this module reads. */
@@ -29,6 +31,12 @@ export interface SessionViewInput {
   projectDefaultKey: SessionKey | null;
   /** The last persisted view: all that is left of a session the Reducer and the managed manager no longer know. */
   history: SessionView | null;
+  /**
+   * A running terminal whose session ended because the conversation was replaced (/clear, /resume), and Mini-Summa has not (yet)
+   * learned which session the terminal runs now. `pending` is the short wait for the next listing; `unresolved` is a state that
+   * needs words: nothing is guessed, and typing from Mini-Summa is paused.
+   */
+  continuation?: { status: 'pending' | 'unresolved'; text: string } | null;
 }
 
 /** What a person is told when a terminal is still starting. The trust dialog is the case that makes this matter. */
@@ -72,6 +80,9 @@ export function isStarting(
   }
   return !(facts?.lastHookAt != null && facts.lastHookAt >= managed.startedAt);
 }
+
+const PENDING_LABEL = 'Conversation replaced, learning the new session';
+const UNRESOLVED_LABEL = 'Conversation replaced, new session not identified';
 
 export const EXTERNAL_REMOTE_CONTROL_HINT = 'Type /remote-control inside that Claude session to control it from the Claude app';
 const NOT_RUNNING_RC_HINT = 'Remote Control is only available while the session is running.';
@@ -127,7 +138,19 @@ const EXIT_CODE_TEXT: Readonly<Record<string, string>> = {
   spawn_failed: 'Claude could not be started in a terminal.',
 };
 
+/** What a person is told about a record that was left behind when its terminal went on as another session. */
+function replacedText(cause: 'clear' | 'resume' | 'other', sessionId: string): string {
+  const next = shortSessionId(sessionId);
+  switch (cause) {
+    case 'clear': return `The conversation was cleared with /clear. The same terminal went on as session ${next}; this session is kept as history.`;
+    case 'resume': return `Another conversation was resumed in the same terminal (/resume). The terminal went on as session ${next}; this session is kept as history.`;
+    default: return `The terminal went on as another Claude session (${next}); this session is kept as history.`;
+  }
+}
+
 function managedExit(m: ManagedSessionRecord): SessionTermination {
+  const replaced = parseReplacedReason(m.exitReason);
+  if (replaced) return { kind: 'observed', reason: replacedText(replaced.cause, replaced.sessionId), at: m.exitedAt };
   const code = m.exitReason;
   const known = code !== null ? EXIT_CODE_TEXT[code] : undefined;
   // 'exited' is the code for "it ended by itself": the exit code or signal says more than the word does.
@@ -236,6 +259,11 @@ export function buildSessionView(i: SessionViewInput): SessionView | null {
     state = 'ended'; // the terminal exit was observed by Mini-Summa itself
     stateLabel = labelOf('ended');
     stateEvidence = 'managed:pty';
+  } else if (m?.status === 'running' && i.continuation && reducerState === 'ended' && !starting) {
+    // The terminal runs, but its session was replaced and the new one is not known: say so instead of "Session ended".
+    stateLabel = i.continuation.status === 'pending' ? PENDING_LABEL : UNRESOLVED_LABEL;
+    stateEvidence = r?.evidence && r.evidence !== 'none' ? r.evidence : 'managed:pty';
+    if (i.continuation.status === 'unresolved') termination = { kind: 'observed', reason: i.continuation.text, at: f?.endedAt ?? null };
   } else if (starting) {
     // Nothing about the earlier process of this session (a resume) may be shown as this process's state.
     state = 'unknown';

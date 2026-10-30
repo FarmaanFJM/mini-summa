@@ -10,10 +10,12 @@ import path from 'node:path';
 // `appendRaw`, which does the durable append and is idempotent per transport_id (the Store appends to raw.jsonl, the
 // Mini-Summa core appends to SQLite).
 //
-// Two deliberate differences from the proof of concept (docs/CHANGES-FROM-POC.md, changes 1 and 5):
+// Deliberate differences from the proof of concept (docs/CHANGES-FROM-POC.md, changes 1, 5 and 12):
 //   * a record that names a clock domain but whose monotonic_ns is not a decimal integer is quarantined, instead of
 //     making the ordering step throw on every pass and wedging the whole spool;
-//   * a file that another ingestor already moved away is skipped, instead of aborting the pass with ENOENT.
+//   * a file that another ingestor already moved away is skipped, instead of aborting the pass with ENOENT;
+//   * a file that another program has open for the moment (EBUSY or EPERM, Windows) is not taken for a damaged one and
+//     quarantined, and a move that meets the same is retried briefly.
 
 const SPOOL_SCHEMA = 'mini-summa.spool/1';
 
@@ -34,17 +36,28 @@ function isClockReading(value) {
   return false;
 }
 
+// Windows answers EBUSY or EPERM when another program has the file open: an antivirus scan of a file that was written a moment
+// ago, the search indexer, a backup. That says nothing about the file itself and passes within a moment (change 12).
+const BUSY_CODES = new Set(['EBUSY', 'EPERM']);
+const isBusy = (err) => BUSY_CODES.has(err?.code);
+const BUSY_RETRIES = 6; // 10, 20, 40, 80, 160 and 320 ms: about 0.6 s before the error is reported
+const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
 // Move <spoolDir>/<name> into <spoolDir>/<sub>/. Returns false when the file is already gone, which means another
 // ingestor moved it first (to done/ or quarantine/): there is nothing left to do for it. An ENOENT while the source still
-// exists means the destination folder vanished; that is retried once and then reported. Every other error propagates.
+// exists means the destination folder vanished; that is retried once and then reported. A file that is busy (EBUSY, EPERM) is
+// retried a few times with a short pause and then reported; the file stays pending and the next pass tries again. Every other
+// error propagates.
 function moveInto(spoolDir, sub, name) {
   const from = path.join(spoolDir, name); const dir = path.join(spoolDir, sub);
-  for (let attempt = 0; ; attempt++) {
+  let busyRetries = 0; let missingRetries = 0;
+  for (;;) {
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); // done/ and quarantine/ hold the same payloads as the spool itself (change 10)
     try { fs.renameSync(from, path.join(dir, name)); return true; } catch (err) {
+      if (isBusy(err) && busyRetries < BUSY_RETRIES) { pause(10 * 2 ** busyRetries++); continue; }
       if (err?.code !== 'ENOENT') throw err;
       if (!fs.existsSync(from)) return false;
-      if (attempt >= 1) throw err;
+      if (missingRetries++ >= 1) throw err;
     }
   }
 }
@@ -74,6 +87,7 @@ export function ingestSpoolFiles(spoolDir, { only } = {}, appendRaw) {
       parsed.push({ f, rec });
     } catch (err) {
       if (err?.code === 'ENOENT') continue; // vanished between the listing and the read: another ingestor took it
+      if (isBusy(err)) continue; // open in another program for the moment (Windows): not damaged, so not quarantined; the next pass reads it
       if (moveInto(spoolDir, 'quarantine', f)) res.quarantined++;
     }
   }

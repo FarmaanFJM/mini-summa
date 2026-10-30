@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { useApp, useRuntime, useUi } from '../../app/runtime';
 import { Button, EmptyState, IconButton, Menu, SplitPane } from '../../ui';
 import { useLayout } from '../shell/LayoutContext';
+import { HandoffStrip } from '../reports/HandoffStrip';
 import { ChatGptPane } from './ChatGptPane';
 import { ClaudePane } from './ClaudePane';
 import { useElementSize, useSelectedProject } from './hooks';
@@ -77,6 +78,7 @@ function WorkspaceBody({ project, visible }: { project: Project; visible: boolea
   return (
     <>
       <WorkspaceBar project={project} layout={layout} onChange={update} />
+      <HandoffStrip project={project} />
       <div className="ms-workspace__area" ref={area} data-orientation={orientation}>
         <SplitPane
           direction={horizontal ? 'horizontal' : 'vertical'}

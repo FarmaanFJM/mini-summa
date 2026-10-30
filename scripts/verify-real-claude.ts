@@ -1,6 +1,7 @@
 // Real Claude Code confirmation: the Mini-Summa core launches the REAL `claude` CLI as a managed session and the
 // whole chain is checked end to end: PTY launch in the project directory, per-session hook file, state from real hooks,
-// report capture from a real final message, frozen ChatGPT destination, permission approval keystrokes, resume, restart.
+// report capture from a real final message, frozen ChatGPT destination, permission approval keystrokes, /clear inside the
+// terminal (the terminal must stay the managed terminal under the new session id), resume, restart.
 //
 //   npm run verify:claude                                   uses `claude` from PATH and your normal Claude login
 //   npm run verify:claude -- --claude-bin /path/to/claude   a specific executable (or a wrapper script)
@@ -119,6 +120,8 @@ const stripAnsi = (s: string) => s.replace(ANSI, '');
 
 class TerminalWatcher {
   text = '';
+  /** Characters received since attach (the text above is trimmed; this only grows). */
+  received = 0;
   exited: { code: number | null; reason: string } | null = null;
   loginRequired = false;
   answered: string[] = [];
@@ -129,8 +132,8 @@ class TerminalWatcher {
 
   attach(key: SessionKey): void {
     this.handle = this.client.terminal.attach(key, { cols: 120, rows: 40 }, {
-      onAttached: (i) => { this.text = stripAnsi(i.replay).slice(-20_000); },
-      onData: (d) => { this.text = (this.text + stripAnsi(d)).slice(-20_000); },
+      onAttached: (i) => { this.text = stripAnsi(i.replay).slice(-20_000); this.received += i.replay.length; },
+      onData: (d) => { this.text = (this.text + stripAnsi(d)).slice(-20_000); this.received += d.length; },
       onExit: (i) => { this.exited = { code: i.code, reason: i.reason }; },
       onError: () => { /* surfaced through the state checks */ },
     });
@@ -142,8 +145,16 @@ class TerminalWatcher {
       const flat = this.text.replace(/\s+/g, '');
       if (/Selectloginmethod|Pastecodehere|Browserdidn'topen|Pleaserunclaudeandlogin|Invalidapikey/i.test(flat)) this.loginRequired = true;
       if (Date.now() - this.lastAction < 1500) return;
-      const act = (what: string, keys: () => void) => { this.answered.push(what); keys(); this.lastAction = Date.now(); this.text = ''; };
-      if (/trustthisfolder|Doyoutrust|Yes,Itrust/i.test(flat)) act('trust', () => { this.input('\x1b[B'); setTimeout(() => this.input('\r'), 500); });
+      const act = (what: string, keys: () => void, keepText = false) => { if (this.answered[this.answered.length - 1] !== what) this.answered.push(what); keys(); this.lastAction = Date.now(); if (!keepText) this.text = ''; };
+      // The trust question starts on "No, exit" and an Enter that arrives too early is ignored, so the keys are decided from what
+      // the screen shows NOW: Enter only while "Yes, I trust this folder" is the highlighted option, one Down while "No, exit" is.
+      // The screen text is kept, so a key that was swallowed is simply sent again 1.5 s later; it is never sent blind.
+      const tail = flat.slice(-700);
+      if (/trustthisfolder|Doyoutrust|Yes,Itrust/i.test(tail)) {
+        const choice = [...tail.matchAll(/❯(No,exit|Yes,Itrust)/g)].at(-1)?.[1];
+        if (choice === 'Yes,Itrust') act('trust', () => this.input('\r'), true);
+        else if (choice === 'No,exit') act('select-yes', () => this.input('\x1b[B'), true);
+      }
       else if (/PressEntertocontinue|Entertoconfirm/i.test(flat)) act('enter', () => this.input('\r'));
       else if (/Choosethetextstyle|Syntaxtheme/i.test(flat)) act('theme', () => this.input('\r'));
     }, 400);
@@ -360,6 +371,80 @@ async function main(): Promise<void> {
         expect(answer.sessionKey === key, 'the answer belongs to another session');
         return `answer "${answer.body.trim().slice(0, 40)}"`;
       });
+    }
+
+    // /clear inside the managed terminal. Claude Code keeps running in the SAME process under a NEW session id; the terminal must
+    // stay the managed terminal, now bound to the new id (it used to "end" while an observed stranger appeared next to it).
+    if (live) {
+      const cleared = await check('clear: /clear in the real terminal keeps it managed and live under the NEW session id; the old id becomes history; no phantom session', async () => {
+        const ids = (v: SessionView) => v.sessionId.slice(0, 8);
+        const ready = ['turn_ended', 'idle', 'report_ready', 'waiting_for_you'];
+        const before = await until('the session to be ready for /clear', async () => {
+          const s = await client.call('sessions.get', { params: { key } });
+          return ready.includes(s.state) ? s : null;
+        });
+        const receivedBefore = watcher.received;
+        const sentAt = Date.now();
+        await sendLine('/clear');
+        // The new id must become the managed, live session of the project (limit 60 s).
+        let found: SessionView | null = null;
+        try {
+          found = await until('the NEW session id to be managed and live', async () => {
+            const all = await client.call('sessions.list', { query: { projectId: project.id, includeEnded: true } });
+            return all.find((x) => x.origin === 'managed' && x.availability === 'live' && x.key !== key) ?? null;
+          }, 60_000);
+        } catch (err) {
+          // Honest: a Claude Code that has no /clear answers with an error line and nothing else happens. That is NOT TESTED, not PASS.
+          const old = await client.call('sessions.get', { params: { key } });
+          if (old.availability === 'live' && old.state !== 'ended' && /unknown (slash )?command|not a (valid |recognized )?command|isn'?t a command|command not found/i.test(watcher.text.slice(-3000))) {
+            throw new NotExercised('this Claude Code does not know /clear (it answered with an unknown-command message), so the behaviour could not be exercised');
+          }
+          throw new Error(`${err instanceof Error ? err.message : String(err)}. The old session ${ids(before)} is ${old.availability}/${old.state} (${old.stateLabel}). Terminal tail:\n${watcher.text.slice(-600)}`);
+        }
+        const adoptedMs = Date.now() - sentAt;
+        expect(found.sessionId !== before.sessionId, 'the new key has the old session id');
+        expect(found.pid === before.pid, `the new session runs in process ${found.pid}, the old one in ${before.pid}: that is not the same terminal`);
+        expect(found.projectId === project.id && found.projectResolution === 'managed', `the new session is attributed to ${found.projectId} (${found.projectResolution})`);
+        expect(found.name === before.name, `the name changed from "${before.name}" to "${found.name}"`);
+        expect(found.terminal !== null && !found.terminal.exited, 'the new session has no live terminal');
+        const old = await client.call('sessions.get', { params: { key } });
+        expect(old.origin === 'managed' && old.availability !== 'live', `the old session is ${old.origin}/${old.availability}`);
+        expect(old.termination !== null && /\/clear/.test(old.termination.reason), `the old session does not say what happened: ${JSON.stringify(old.termination)}`);
+        expect(old.attention === null, `the old session raised ${old.attention?.kind}: a /clear is not an alarm`);
+        // the terminal that was attached to the old key keeps receiving what the same process prints
+        await until('output from the same terminal after /clear', () => watcher.received > receivedBefore);
+
+        // A plain task in the new session: its report is captured under the NEW managed key.
+        const next = new TerminalWatcher(client);
+        next.attach(found.key);
+        await sleep(800);
+        const reportsBefore = (await client.call('reports.list', { query: { projectId: project.id } })).items.length;
+        const task = 'Real Claude after clear';
+        const marker = `<!-- mini-summa:report status=complete task="${task}" -->`;
+        next.input(`Do not use any tools. Reply with a short "## Implementation Report" section saying that nothing was changed, and make the very last line of your reply exactly: ${marker}`);
+        await sleep(600);
+        next.input('\r');
+        const report = await until('a report captured under the new managed key', async () =>
+          (await client.call('reports.list', { query: { projectId: project.id } })).items.find((r) => r.sessionKey === found!.key) ?? null);
+        expect(report.projectId === project.id, `the report is attributed to ${report.projectId}`);
+        expect((await client.call('reports.list', { query: { projectId: project.id } })).items.length > reportsBefore, 'no new report');
+        next.detach();
+
+        // Nothing is left behind: the project has the old (history) and the new (live) session of this terminal and nothing else.
+        const all = await client.call('sessions.list', { query: { projectId: project.id, includeEnded: true } });
+        const strangers = all.filter((x) => x.origin !== 'managed');
+        expect(strangers.length === 0, `observed sessions appeared next to the managed ones: ${strangers.map((x) => `${ids(x)} ${x.origin}/${x.availability}`).join(', ')}`);
+        const liveNow = all.filter((x) => x.availability === 'live');
+        expect(liveNow.length === 1 && liveNow[0].key === found!.key, `live sessions: ${liveNow.map((x) => ids(x)).join(', ')}`);
+        const everything = await client.call('sessions.list', { query: { includeEnded: true } });
+        expect(everything.every((x) => x.origin === 'managed'), 'a session outside the project is observed');
+        // The rest of the run (stop, restart, resume) follows the terminal, which is now the new session.
+        key = found.key;
+        view = found;
+        pid = found.pid;
+        return `${ids(before)} -> ${ids(found)} in ${(adoptedMs / 1000).toFixed(1)} s, same process ${found.pid}; report "${report.taskTitle}" under the new key`;
+      });
+      if (!cleared) say('            (the steps that follow keep using the original session)');
     }
 
     // Resume: the same session id comes back as a managed session in a new generation.

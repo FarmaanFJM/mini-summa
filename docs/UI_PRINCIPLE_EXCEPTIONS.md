@@ -108,7 +108,10 @@ make a decision uninformed:
 - Hooks: what installing changes and what it does not (only Mini-Summa's own entries, no repository file, sessions already running
   report only after a restart), next to the exact diff. This is the content of the consent.
 - Handoff: that the declared status is a claim by the model and not proof, that the destination was fixed at capture, and that "I sent
-  it" is the person's statement because Mini-Summa cannot see ChatGPT. Honest wording is the point of that screen.
+  it" is the person's statement because Mini-Summa cannot see ChatGPT. Honest wording is the point of that screen. The handoff strip
+  in the workspace (`features/reports/HandoffStrip.tsx`) repeats the one sentence that matters while the person is pasting into
+  ChatGPT, "It is not marked as sent until you press I sent it.", and names where the report goes. Without them the strip would be a
+  button that looks like it sends.
 - Push, remote access, data and privacy: what a push contains and that the PC must be awake to send it, what Tailscale Serve exposes
   and that Funnel is never used, what is stored and where. These say what leaves the PC and what does not.
 - Tailscale's own explanation (`problem`) is shown word for word, never summarised, because it names the exact command or page that
@@ -134,6 +137,15 @@ exists it shrinks to one small button in the corner so it never covers a termina
 is done.
 
 ## Checked and not exceptions (these four areas)
+
+- The handoff strip (the band above the two panes while a report of the selected project waits for the person): P15, one main action per
+  view: the strip's button is the main action, and while it is shown an empty Claude pane offers "Start a session" as a secondary
+  button instead of a second emerald one. P01, P02: the band is one surface step above the panes (the fill other notices use) with the
+  one hairline that every region boundary has (X3), no box inside it, no accent edge (P03). P13: no dashes in its copy. P06: a warning
+  or an error line uses the same two status colours as the handoff card, always with its words. It is in the page, not floating, so the
+  native ChatGPT view is laid out below it and needs no overlay handling (the kit's rule for floating UI does not apply). A long title
+  is cut at two lines and whole in the tooltip and the accessible name; the buttons wrap under the text in a narrow window instead of
+  shrinking.
 
 - P01, P02: cards (one environment, one device) are one surface step above the page and hold plain rows; code blocks inside them fill
   with the next darker surface. No box has a border inside another box.

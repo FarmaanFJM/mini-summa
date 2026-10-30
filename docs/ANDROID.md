@@ -67,6 +67,9 @@ npm run build:apk      # = node scripts/build-apk.mjs
 `./gradlew assembleRelease`, signs the result with a local key and prints the path, size and SHA-256. The generated
 `android/` folder and every `*.apk` and keystore are gitignored. The APK is written outside the repository, to
 `~/minisumma-apk/` (change it with `--out <dir>`). Add `--debug` for a debug build and `--clean` to regenerate `android/`.
+If Gradle fails because a download was refused or dropped (HTTP 429 and 5xx, timeouts), the script lists which servers refused
+which files, waits, and runs Gradle again (`--retries`, default 2, and `--wait`, default 60 s and doubling); see "Build notes".
+`--help` lists every option.
 
 The same by hand:
 
@@ -96,18 +99,40 @@ Keep that keystore out of the repository. Do not add a `google-services.json` un
 * **Gradle** is downloaded by the wrapper (9.4.1), and Android Gradle Plugin 9.2.1 and the React Native artifacts come from
   Google Maven, Maven Central, the Gradle Plugin Portal and JitPack. A first build downloads a lot: Gradle's cache was already
   406 MB after the configuration step, before anything was compiled.
-* **HTTP 429 from Maven Central.** Some networks (shared addresses, cloud sandboxes) get `429 Too Many Requests` from
-  `repo.maven.apache.org`, and then Gradle stops with "Could not GET ... Received status code 429" or, for plugins, "Plugin ... was not
-  found" (the real cause shows with `--info`). If it is occasional, more patience in `~/.gradle/gradle.properties` (outside the
-  repository) can be enough:
-  ```
-  systemProp.org.gradle.internal.repository.max.tentatives=8
-  systemProp.org.gradle.internal.repository.initial.backoff=1000
-  org.gradle.workers.max=2
-  ```
-  If every request is refused (as it was in the sandbox this was written in, see "Build outcome" below), run the build from another
-  network, or use a Maven mirror that you trust through a Gradle init script in `~/.gradle/init.d/`. This repository does not
-  configure a mirror for you.
+* **HTTP 429 from Maven Central.** Maven Central limits downloads per network address. The refusal is a `429` whose body reads
+  "Your ip has exceeded rate limits" and points to https://central.sonatype.org/faq/429-error/ (there is no `Retry-After`
+  header). On a shared address (hosted CI, cloud sandboxes, some company networks) other people's traffic counts too, so a small
+  build can be refused. Sonatype says the blocks are temporary (short at first, lifted automatically), that retrying harder
+  usually makes it worse, and that the lasting fix is a cache or a repository manager. Nothing is wrong with the app. Gradle
+  reports it as "Could not GET ... Received status code 429" or, for a POM file, "Repository MavenRepo is disabled due to earlier
+  error" (add `--gradle-arg --info` to see every attempt). What helps, in this order:
+  1. **Patience, spaced out.** Gradle 9.4.1 does retry a 429, but by default only 3 tries 1 s and 2 s apart, and a failed POM
+     lookup switches the whole repository off for the rest of the build. `npm run build:apk` therefore passes Gradle's own retry
+     settings (10 tries per file, the wait starting at 1.5 s and doubling after each try, so the last try comes about 12 minutes
+     after the first) unless you set them yourself, and it runs Gradle again after a pause when a download was refused:
+     `--retries` (default 2) and `--wait` (default 60 s, doubling). Gradle keeps every file it downloaded, so each run continues
+     where the last one stopped. To set the same for every Gradle build, put this in `~/.gradle/gradle.properties` (outside the
+     repository):
+     ```
+     systemProp.org.gradle.internal.network.retry.max.attempts=10
+     systemProp.org.gradle.internal.network.retry.initial.backOff=1500
+     systemProp.org.gradle.internal.repository.max.tentatives=10
+     systemProp.org.gradle.internal.repository.initial.backoff=1500
+     ```
+     The first pair governs library downloads (`.jar`, `.aar`), the second pair POM and module files. These are the names
+     Gradle 9.4.1 reads (taken from its classes); `...repository.max.retries`, which older notes and a previous version of this
+     file used, is not read at all, and `max.tentatives` alone does not cover library downloads.
+  2. **A local, checksum-verified repository in front of the normal ones.** `scripts/android/prefetch-maven.mjs` downloads exactly the
+     files Gradle could not get (plain `curl`, default User-Agent, one request at a time, waiting after each 429), compares each
+     with the SHA-1 (and SHA-256 when published) that the registry publishes next to it, optionally checks the `.asc` signature
+     (`--signatures`), and only then installs it into `~/ms-maven`. It refuses a file that has no published checksum. Copy
+     `scripts/android/local-maven.init.gradle` to `~/.gradle/init.d/`: it adds that folder as a repository **in front of** the
+     plugin, buildscript and project repositories and removes or disables nothing, so every other file still comes from the normal
+     repositories with the checks they have. Gradle takes a library from the repository that supplied its POM, which is why the tool
+     installs the `.pom` (and `.module`) next to each file. Usage: `node scripts/android/prefetch-maven.mjs --signatures --log
+     <gradle output> [<url>...]`.
+  3. **Another network, or a repository manager you trust** (a home or office connection, or Nexus/Artifactory/another caching proxy
+     configured as a Gradle init script in `~/.gradle/init.d/`). This repository does not configure one for you.
 * R8 shrinking is switched off (`expo-build-properties`), so an APK that could not be run on a device while it was built does
   not also depend on untested keep rules. Turn it on in `app.config.ts` if you want a smaller APK.
 

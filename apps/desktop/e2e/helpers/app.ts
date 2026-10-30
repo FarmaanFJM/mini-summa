@@ -55,8 +55,8 @@ export interface AppHandle {
   kill(): Promise<void>;
 }
 
-interface Registry { handles: Set<AppHandle>; sandboxes: Set<Sandbox>; standIns: Set<StandIn> }
-const registry: Registry = { handles: new Set(), sandboxes: new Set(), standIns: new Set() };
+interface Registry { handles: Set<AppHandle>; sandboxes: Set<Sandbox>; standIns: Set<StandIn>; listeners: Set<PortHolder> }
+const registry: Registry = { handles: new Set(), sandboxes: new Set(), standIns: new Set(), listeners: new Set() };
 
 const require = createRequire(import.meta.url);
 
@@ -165,6 +165,48 @@ function killTree(proc: ChildProcess): void {
 /** The core prefers this port for its address (the window's origin depends on it). */
 export const PREFERRED_CORE_PORT = 47811;
 
+export interface PortHolder {
+  readonly port: number;
+  /** Stops listening and drops every connection. Safe to call more than once. */
+  close(): Promise<void>;
+}
+
+/**
+ * Takes the core's preferred port (47811, on 127.0.0.1) with a throw-away listener that answers nothing, the way another program (or
+ * a second Windows user's Mini-Summa) would hold it. The next launch's core then finds the port busy and falls back to a free one, so
+ * its web origin differs from the last launch's. The listener is closed by `close()` and, whatever the test did, by `cleanupAll()`.
+ * It retries for a moment, because the app that had the port may still be letting go of it.
+ */
+export async function occupyPreferredPort(): Promise<PortHolder> {
+  const net = await import('node:net');
+  const sockets = new Set<import('node:net').Socket>();
+  let last: unknown;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const server = net.createServer((socket) => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.on('error', () => undefined); });
+    try {
+      await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(PREFERRED_CORE_PORT, '127.0.0.1', () => { server.off('error', reject); resolve(); }); });
+    } catch (error) {
+      last = error;
+      await sleep(50);
+      continue;
+    }
+    let closed = false;
+    const holder: PortHolder = {
+      port: PREFERRED_CORE_PORT,
+      async close() {
+        if (closed) return;
+        closed = true;
+        for (const socket of sockets) socket.destroy();
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+        registry.listeners.delete(holder);
+      },
+    };
+    registry.listeners.add(holder);
+    return holder;
+  }
+  throw new Error(`Could not take port ${PREFERRED_CORE_PORT} for the test: ${last instanceof Error ? last.message : String(last)}. Something else on this machine holds it.`);
+}
+
 /** Waits (briefly) until nothing listens on the preferred port, so that the next launch gets the same origin as the last one. */
 async function waitForPreferredPortFree(): Promise<boolean> {
   const net = await import('node:net');
@@ -191,6 +233,7 @@ export async function cleanupAll(): Promise<void> {
     await within('kill app', 15_000, handle.kill()).catch(() => undefined);
     registry.handles.delete(handle);
   }
+  for (const holder of [...registry.listeners]) { await within('close the port listener', 5_000, holder.close()).catch(() => undefined); registry.listeners.delete(holder); }
   for (const standIn of [...registry.standIns]) { await within('close stand-in', 5_000, standIn.close()).catch(() => undefined); registry.standIns.delete(standIn); }
   for (const sandbox of [...registry.sandboxes]) {
     const left = await killSandboxProcesses(sandbox);

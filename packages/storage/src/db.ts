@@ -19,6 +19,16 @@ function loadSqlite(): typeof import('node:sqlite') {
   }
 }
 
+/**
+ * WAL keeps its index in shared memory, which a network file system cannot provide (SQLite's own documentation: "WAL does not work
+ * over a network filesystem"). A UNC path (\\\\server\\share\\..., also \\\\?\\UNC\\...) is a network file system, so a database there uses
+ * the older rollback journal, with the stronger sync it needs. Nothing can be said about a mapped drive letter from its name.
+ */
+export function journalPragmaFor(file: string, platform: NodeJS.Platform = process.platform): string {
+  const onShare = platform === 'win32' && /^(?:[\\/]{2}[?.][\\/]UNC[\\/]|[\\/]{2}(?![?.][\\/]))[^\\/]/i.test(file);
+  return onShare ? 'PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL;' : 'PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;';
+}
+
 export type SqlValue = string | number | bigint | null | Uint8Array;
 export type SqlParams = SqlValue[] | Record<string, SqlValue>;
 
@@ -36,7 +46,7 @@ export class Db {
     const { DatabaseSync: Database } = loadSqlite();
     this.raw = new Database(file, { readOnly: opts.readOnly ?? false });
     this.raw.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
-    if (file !== ':memory:' && !opts.readOnly) this.raw.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
+    if (file !== ':memory:' && !opts.readOnly) this.raw.exec(journalPragmaFor(file));
   }
 
   private stmt(sql: string): StatementSync {

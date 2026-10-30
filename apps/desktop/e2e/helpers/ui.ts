@@ -149,3 +149,6 @@ export async function openReport(page: Page, task: string): Promise<Locator> {
 
 export const reportDetail = (page: Page): Locator => page.getByRole('region', { name: 'Report', exact: true });
 export const handoffCard = (page: Page): Locator => page.getByRole('region', { name: 'Handoff to ChatGPT', exact: true });
+
+/** The handoff strip above the two panes of the workspace (present only while a report of the selected project waits for the person). */
+export const handoffStrip = (page: Page): Locator => page.getByRole('region', { name: /^Report handoff/ });

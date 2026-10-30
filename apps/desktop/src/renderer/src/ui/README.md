@@ -47,7 +47,7 @@ import { useApi, useApp, useNative, useRoute, useUi } from '../../app/runtime';
 - `useApi().call('<route name>', { params, query, body })`: every core route, typed from `@minisumma/shared`. Errors are `ApiError`
   (`status`, `code`, `details`); show `error.message`.
 - `useRoute()`: `view`, `projectId`, `section`, `reportId`, `deliveryId`, `activityId` and `go({ view, projectId, reportId, section, ... })`,
-  `setView`, `selectProject`, `back()`. A notification click arrives as `go(target)`. State is remembered between runs.
+  `setView`, `selectProject`, `back()`. A notification click arrives as `go(target)`. State is remembered between runs: the selected project and view, each project's session tab and conversation, and the setup checklist's flags are kept in the core's settings (`ui`), so they survive the core taking another port (which changes the page origin and empties localStorage); localStorage stays as the fast local copy and the core's copy wins when both exist (`app/uiSync.ts`, `app/uiState.ts`).
 - `useUi(selector)`: window-only state: `openProjectDialog({ mode: 'create' | 'edit', projectId })`, the session tabs.
 - `useNative()`: clipboard, `shell.openExternal`, folder picker, ChatGPT view. Works in a browser too (`kind: 'browser'`).
 - `app/selectors.ts`: `activeProjects`, `resolveProject`, `statsByProject`, `isAwaitingHandoff`, `needsAttention`.

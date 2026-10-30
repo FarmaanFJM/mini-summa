@@ -22,6 +22,10 @@
 //    sessions layer calls it when a UserPromptSubmit hook of the session is ingested (a prompt reached Claude another way).
 //  - On Windows, wsl.exe and cmd.exe are started by full path (windowsPrograms.ts), and a session name cannot carry the
 //    characters that split a Windows command line (normalizeSessionName).
+//  - Every end the user asks for with Stop is recorded as 'killed_by_user', also when Claude leaves by itself on the Ctrl-C
+//    gesture ("You stopped the session."); 'app_exit' is for quitting; a process that leaves unasked is 'exited'.
+//  - On Windows a stop that has to kill ends the whole process tree first (taskkill /T /F, before the parent dies) and then closes the
+//    terminal, and the record has no pid until ConPTY has connected its process (0 from spawn() means "not yet").
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -166,6 +170,24 @@ export interface ManagedManagerExtras {
    * been submitted. `receivedAt` is when the hook ran: text typed AFTER that moment belongs to a newer line and is kept.
    */
   promptSubmitted(key: SessionKey, receivedAt?: string): void;
+  /**
+   * The Claude process of a running terminal now serves another session id (`/clear`, `/resume`, "clear context and proceed"):
+   * the terminal follows it. The PTY, its scrollback and attached sinks, the unsent-input state, the project binding (with its
+   * conversation), the name, the remote-control flag and the start time move to the new key; the old key stays behind as an
+   * ordinary exited record (exit reason `leftBehindReason`, its own `prompted` flag, so it can still be resumed). The new record
+   * points back with `resumedFrom`. One transaction; listeners hear about the new record first, then the old one. Returns the new
+   * record, or null when it is refused (no running PTY under `from`, the new id is run by another live terminal, bad id).
+   */
+  rekey(req: RekeyRequest): ManagedSessionRecord | null;
+}
+
+export interface RekeyRequest {
+  from: SessionKey;
+  toSessionId: string;
+  /** Stored as `exitReason` of the record that is left behind; sessionView.ts turns it into words. */
+  leftBehindReason: string;
+  /** The new session already has a transcript (it is a resume, or a prompt was seen), so `--resume` works for it. */
+  prompted: boolean;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -754,6 +776,67 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager &
     else commitStored(key, { prompted: true });
   };
 
+  const rekey = (req: RekeyRequest): ManagedSessionRecord | null => {
+    if (shutDown) return null;
+    const live = lives.get(req.from);
+    const parsedFrom = live?.pty ? live.record : null;
+    const toSessionId = req.toSessionId.toLowerCase();
+    if (!live || !parsedFrom || !UUID_RE.test(toSessionId)) return null;
+    const env = parsedFrom.env;
+    const toKey = makeSessionKey(env, toSessionId);
+    if (toKey === req.from || lives.get(toKey)?.pty) return null;
+
+    const current = view(live);
+    const now = nowIso(clock);
+    const wasStored = selectOne(toKey);
+    const retired: ManagedSessionRecord = { ...current, status: 'exited', pid: null, exitedAt: now, exitCode: null, exitSignal: null, exitReason: req.leftBehindReason };
+    const next: ManagedSessionRecord = {
+      ...current, key: toKey, sessionId: toSessionId, resumedFrom: req.from, status: 'running', exitedAt: null, exitCode: null, exitSignal: null,
+      exitReason: null, prompted: req.prompted || (wasStored?.prompted ?? false),
+    };
+    const argv = db.get<{ argv_json: string }>('SELECT argv_json FROM managed_sessions WHERE session_key = ?', [req.from])?.argv_json ?? '[]';
+    try {
+      db.tx(() => {
+        writeMutable(retired);
+        db.run(
+          `INSERT INTO managed_sessions (session_key, env, session_id, project_id, root_id, cwd, name, mode, resumed_from, remote_control, status, pid,
+             started_at, exited_at, exit_code, exit_signal, exit_reason, cols, rows, prompted, last_output_at, app_run_id, argv_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, NULL, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(session_key) DO UPDATE SET project_id = excluded.project_id, root_id = excluded.root_id, cwd = excluded.cwd,
+             name = COALESCE(excluded.name, managed_sessions.name), mode = excluded.mode, resumed_from = excluded.resumed_from,
+             remote_control = excluded.remote_control, status = 'running', pid = excluded.pid, started_at = excluded.started_at,
+             exited_at = NULL, exit_code = NULL, exit_signal = NULL, exit_reason = NULL, cols = excluded.cols, rows = excluded.rows,
+             prompted = excluded.prompted, last_output_at = excluded.last_output_at, app_run_id = excluded.app_run_id, argv_json = excluded.argv_json`,
+          [toKey, env, toSessionId, next.projectId, next.rootId, next.cwd, next.name, next.mode, req.from, next.remoteControl ? 1 : 0, next.pid,
+            next.startedAt, next.cols, next.rows, next.prompted ? 1 : 0, next.lastOutputAt, next.appRunId, argv],
+        );
+        // The old key keeps its own binding (its reports and deliveries stay attributed); the new key gets a copy of it.
+        db.run(
+          `INSERT INTO session_bindings (session_key, project_id, conversation_id, source, created_at, updated_at) VALUES (?, ?, ?, 'managed', ?, ?)
+           ON CONFLICT(session_key) DO UPDATE SET project_id = excluded.project_id,
+             conversation_id = COALESCE(excluded.conversation_id, session_bindings.conversation_id), source = 'managed', updated_at = excluded.updated_at`,
+          [toKey, next.projectId, next.conversationId, now, now],
+        );
+      });
+    } catch (err) {
+      log.error('re-keying a managed session failed', { from: req.from, to: toKey, error: String(err) });
+      return null;
+    }
+
+    // Memory: the terminal (PTY, scrollback, sinks, input state) moves; the old key keeps no terminal.
+    lives.delete(req.from);
+    forget(req.from);
+    forget(toKey);
+    live.pendingOutputAt = null;
+    live.record = next;
+    lives.set(toKey, live);
+    log.info('managed terminal now serves another session', { from: req.from, to: toKey, pid: next.pid });
+    const stored = selectOne(toKey) ?? next;
+    emit(stored, wasStored);
+    emit(retired, current);
+    return { ...stored };
+  };
+
   const onChange = (fn: (record: ManagedSessionRecord, previous: ManagedSessionRecord | null) => void): (() => void) => {
     listeners.add(fn);
     return () => { listeners.delete(fn); };
@@ -774,5 +857,5 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager &
     }
   };
 
-  return { init, list, get, start, stop, write, hasUnsentInput, promptSubmitted, typeText, sendKeys, resize, attach, markPrompted, onChange, shutdown };
+  return { init, list, get, start, stop, write, hasUnsentInput, promptSubmitted, rekey, typeText, sendKeys, resize, attach, markPrompted, onChange, shutdown };
 }

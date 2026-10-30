@@ -6,6 +6,12 @@
 // Update = validate and clamp the patch (settings-schema.ts), merge with the shared mergeSettings, persist, then emit
 //         `settings.changed` and call the listeners. Nothing is emitted for a patch that changes nothing.
 // No secrets live here. The Firebase service account is a separate 0600 file (push.ts).
+//
+// `ui` is what the desktop window remembers between runs (selected project and view, each project's session tab and conversation,
+// the setup checklist's flags). It lives here because the window's own storage belongs to the page origin, and the origin changes
+// when the core takes another port. It is optional (absent until the window stores something), bounded, and strict: an update that
+// names a key it does not know is a 400 (settings-schema.ts, checkUiPatch in @minisumma/shared). Its patches merge by key, so two
+// windows writing different choices do not overwrite each other (mergeUi in @minisumma/shared).
 import { defaultSettings, mergeSettings } from '@minisumma/shared';
 import type { Settings, SettingsPatch } from '@minisumma/shared';
 import { fromJson, toJson } from '@minisumma/storage';

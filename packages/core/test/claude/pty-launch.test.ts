@@ -119,6 +119,98 @@ describe('buildLaunchPlan: WSL', () => {
   });
 });
 
+// ---------------------------------------------------------------------------------------------------------------
+// SIMULATED: WSL through a login shell, and what node-pty's Windows command line does to the arguments.
+//
+// quoteLikeNodePty is a copy of argsToCommandLine from @lydell/node-pty-win32-x64 (lib/windowsPtyAgent.js), which turns the
+// argument array into the one command line ConPTY starts. parseWindowsCommandLine is the CommandLineToArgvW rule that a
+// program, and as far as is known wsl.exe for --exec, uses to take it apart again. Together they show that the arguments
+// survive the round trip; they do NOT show how wsl.exe really parses its line (only a real WSL2 can).
+
+function quoteLikeNodePty(file: string, args: string[]): string {
+  const argv = [file, ...args];
+  let result = '';
+  for (let index = 0; index < argv.length; index++) {
+    if (index > 0) result += ' ';
+    const arg = argv[index];
+    const lopsided = (arg[0] !== '"') !== (arg[arg.length - 1] !== '"');
+    const noEnclosing = arg[0] !== '"' && arg[arg.length - 1] !== '"';
+    const quote = arg === '' || ((arg.includes(' ') || arg.includes('\t')) && arg.length > 1 && (lopsided || noEnclosing));
+    if (quote) result += '"';
+    let backslashes = 0;
+    for (const ch of arg) {
+      if (ch === '\\') backslashes++;
+      else if (ch === '"') { result += '\\'.repeat(backslashes * 2 + 1) + '"'; backslashes = 0; }
+      else { result += '\\'.repeat(backslashes) + ch; backslashes = 0; }
+    }
+    result += quote ? '\\'.repeat(backslashes * 2) + '"' : '\\'.repeat(backslashes);
+  }
+  return result;
+}
+
+function parseWindowsCommandLine(line: string): string[] {
+  const out: string[] = [];
+  let i = 0;
+  while (i < line.length) {
+    while (line[i] === ' ' || line[i] === '\t') i++;
+    if (i >= line.length) break;
+    let arg = '';
+    let inQuote = false;
+    while (i < line.length && (inQuote || (line[i] !== ' ' && line[i] !== '\t'))) {
+      let backslashes = 0;
+      while (line[i] === '\\') { backslashes++; i++; }
+      if (line[i] === '"') {
+        arg += '\\'.repeat(Math.floor(backslashes / 2));
+        if (backslashes % 2 === 1) arg += '"'; else inQuote = !inQuote;
+        i++;
+      } else {
+        arg += '\\'.repeat(backslashes);
+        if (i < line.length && (inQuote || (line[i] !== ' ' && line[i] !== '\t'))) arg += line[i++];
+      }
+    }
+    out.push(arg);
+  }
+  return out;
+}
+
+describe('SIMULATED WSL: starting Claude through a login shell', () => {
+  const login = { file: 'sh', prefixArgs: ['-lc', 'exec claude "$@"', 'claude'], wslDistro: 'Ubuntu' };
+  const settings = `/mnt/c/Users/Zoë Müller/AppData/Roaming/Mini-Summa/data/managed-settings/wsl-Ubuntu/${SESSION}.json`;
+  const plan = buildLaunchPlan({
+    claude: login, cwd: '/home/zoë/my project', hostCwd, platform: 'win32', wslExe: 'C:\\Windows\\System32\\wsl.exe',
+    claudeArgs: buildClaudeArgs({ mode: 'new', sessionId: SESSION, settingsPath: settings, name: 'Fix the login page', remoteControl: false }),
+  });
+
+  it('is wsl.exe -d <distro> --cd <cwd> --exec sh -lc \'exec claude "$@"\' claude <args>: the script is fixed, every variable part is an argument', () => {
+    expect(plan.file).toBe('C:\\Windows\\System32\\wsl.exe');
+    expect(plan.cwd).toBe(hostCwd);
+    expect(plan.args).toEqual([
+      '-d', 'Ubuntu', '--cd', '/home/zoë/my project', '--exec', 'sh', '-lc', 'exec claude "$@"', 'claude',
+      '--session-id', SESSION, '--settings', settings, '--name', 'Fix the login page',
+    ]);
+    // the script is the same text whatever the arguments are
+    const other = buildLaunchPlan({ claude: login, cwd: '/x', hostCwd, platform: 'win32', claudeArgs: ['--name', '$(rm -rf ~); `id`'] });
+    expect((other.args as string[]).slice(0, 9)).toEqual(['-d', 'Ubuntu', '--cd', '/x', '--exec', 'sh', '-lc', 'exec claude "$@"', 'claude']);
+  });
+
+  it('arrives whole after node-pty\'s Windows quoting: spaces, non-ASCII, the quotes of the script', () => {
+    const line = quoteLikeNodePty(plan.file, plan.args as string[]);
+    expect(parseWindowsCommandLine(line)).toEqual([plan.file, ...(plan.args as string[])]);
+    expect(line).toContain('"exec claude \\"$@\\""');
+    expect(line).toContain(`"${settings}"`);
+  });
+
+  it('keeps a trailing backslash and an embedded quote of a value whole as well', () => {
+    const args = ['-d', 'Ubuntu', '--exec', 'sh', '-lc', 'exec claude "$@"', 'claude', '--name', 'C:\\dir with space\\', '--x', 'say "hi" there'];
+    expect(parseWindowsCommandLine(quoteLikeNodePty('wsl.exe', args))).toEqual(['wsl.exe', ...args]);
+  });
+
+  it('a plain command is unchanged', () => {
+    const plain = buildLaunchPlan({ claude: { file: 'claude', prefixArgs: [], wslDistro: 'Ubuntu' }, cwd: '/home/me', hostCwd, platform: 'win32', claudeArgs: ['--resume', SESSION] });
+    expect(plain.args).toEqual(['-d', 'Ubuntu', '--cd', '/home/me', '--exec', 'claude', '--resume', SESSION]);
+  });
+});
+
 describe('hostPathToEnvPath / planManagedSettings for WSL', () => {
   const wslLayout: EnvLayout = {
     env: 'wsl:Ubuntu',
@@ -152,5 +244,23 @@ describe('hostPathToEnvPath / planManagedSettings for WSL', () => {
     expect(plan.envPath).toBe(`/mnt/c/Users/me/AppData/Roaming/MiniSumma/managed-settings/wsl-Ubuntu/${SESSION}.json`);
     const command = plan.settings.hooks.SessionStart[0].hooks[0].command;
     expect(command).toBe(`"/usr/bin/node" "${wslLayout.captureScriptInEnv}" --spool "${wslLayout.spoolDirInEnv}" --registry "${wslLayout.registryFileInEnv}" --env wsl:Ubuntu --handler ms-managed SessionStart`);
+  });
+
+  it('SIMULATED: follows the mount root the distribution really uses (wsl.conf [automount] root), as wslpath reported it for the other paths', () => {
+    const custom: EnvLayout = {
+      ...wslLayout,
+      spoolDirInEnv: '/windir/c/Users/me/AppData/Roaming/MiniSumma/spool/wsl-Ubuntu',
+      registryFileInEnv: '/windir/c/Users/me/AppData/Roaming/MiniSumma/registry.json',
+      captureScriptInEnv: '/windir/c/Program Files/MiniSumma/resources/capture.mjs',
+    };
+    const plan = planManagedSettings({ layout: custom, sessionId: SESSION.toUpperCase(), dataDir: 'C:\\Users\\me\\AppData\\Roaming\\MiniSumma' });
+    expect(plan.envPath).toBe(`/windir/c/Users/me/AppData/Roaming/MiniSumma/managed-settings/wsl-Ubuntu/${SESSION}.json`);
+    expect(plan.hostPath).toBe(`C:\\Users\\me\\AppData\\Roaming\\MiniSumma\\managed-settings\\wsl-Ubuntu\\${SESSION}.json`);
+    // a layout whose spool path does not have the expected shape falls back to the default /mnt rule
+    const odd = planManagedSettings({ layout: { ...wslLayout, spoolDirInEnv: '/somewhere/else' }, sessionId: SESSION, dataDir: 'C:\\Users\\me\\AppData\\Roaming\\MiniSumma' });
+    expect(odd.envPath).toBe(`/mnt/c/Users/me/AppData/Roaming/MiniSumma/managed-settings/wsl-Ubuntu/${SESSION}.json`);
+    // a data folder inside the distribution itself (\\wsl$\Ubuntu\...) stays a Linux path
+    const inside: EnvLayout = { ...wslLayout, spoolDirInEnv: '/home/me/ms/spool/wsl-Ubuntu' };
+    expect(planManagedSettings({ layout: inside, sessionId: SESSION, dataDir: '\\\\wsl$\\Ubuntu\\home\\me\\ms' }).envPath).toBe(`/home/me/ms/managed-settings/wsl-Ubuntu/${SESSION}.json`);
   });
 });

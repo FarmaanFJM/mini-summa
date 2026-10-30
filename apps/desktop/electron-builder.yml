@@ -39,6 +39,7 @@ extraResources:
       - icon.png
       - tray.png
       - tray@2x.png
+      - tray.ico
 
 # The pty is native code plus helper programs (conpty.dll, OpenConsole.exe) that must sit on the real disk. Unpacking the
 # whole package keeps its .node files, helper programs and worker scripts together.
@@ -48,6 +49,8 @@ asarUnpack:
   - node_modules/@lydell/node-pty*/**
   - build/native/node_modules/@lydell/node-pty*/**
 
+# minisumma:// links. electron-builder uses this for macOS, Linux and AppX packages but NOT for its NSIS target, so on Windows the
+# scheme is registered by build/installer.nsh (customInstall) and by the app itself on every start (setAsDefaultProtocolClient).
 protocols:
   - name: Mini-Summa link
     schemes:
@@ -81,6 +84,12 @@ nsis:
   artifactName: Mini-Summa-Setup-${version}-${arch}.${ext}
   oneClick: false
   perMachine: false
+  # perMachine: false only makes "only for me" the default. The install-mode page still offers "anyone who uses this computer",
+  # which asks for administrator rights (UAC). allowElevation: false removes that way in: the choice is shown disabled
+  # ("must run as admin") unless the installer was started as an administrator on purpose.
+  allowElevation: false
+  # Windows version check, minisumma:// registration and the note about kept data on uninstall.
+  include: build/installer.nsh
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true

@@ -305,13 +305,13 @@ describe('the manager on a Windows platform', () => {
 // Discovery of a WSL distribution
 
 describe('discovery asks a WSL distribution through the full path of wsl.exe', () => {
-  function discoveryFor(platform: NodeJS.Platform, env: Record<string, string>, exec: ExecJson) {
+  function discoveryFor(platform: NodeJS.Platform, env: Record<string, string>, exec: ExecJson, command: { file: string; prefixArgs: string[] } = { file: 'claude', prefixArgs: [] }) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ms-wsl-discovery-'));
     cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
     const layouts = (['win', 'wsl:Ubuntu'] as const).map((e) => layoutFor({ dataDir: path.join(dir, 'data'), dir }, e));
     for (const l of layouts) fs.mkdirSync(l.spoolDirHost, { recursive: true });
     const environments = createStubEnvironments('win', layouts);
-    environments.commands.set('wsl:Ubuntu', { file: 'claude', prefixArgs: [], wslDistro: 'Ubuntu' });
+    environments.commands.set('wsl:Ubuntu', { ...command, wslDistro: 'Ubuntu' });
     const db = openDatabase(':memory:').db;
     cleanups.push(() => db.close());
     return createDiscovery({
@@ -333,6 +333,17 @@ describe('discovery asks a WSL distribution through the full path of wsl.exe', (
     const discovery = discoveryFor('win32', { SystemRoot: 'D:\\Win' }, async (file, args, o) => { calls.push({ file, args, timeoutMs: o.timeoutMs }); return []; });
     expect(await discovery.runNow('wsl:Ubuntu')).toEqual({ ran: ['wsl:Ubuntu'], errors: [] });
     expect(calls).toEqual([{ file: 'D:\\Win\\System32\\wsl.exe', args: ['-d', 'Ubuntu', '--exec', 'claude', 'agents', '--json'], timeoutMs: 30_000 }]);
+  });
+
+  it('SIMULATED: starts Claude the way the terminal will, so a Claude that only a login shell finds is listed too', async () => {
+    const login = { file: 'sh', prefixArgs: ['-lc', 'exec claude "$@"', 'claude'] };
+    expect(wslAgentsInvocation('D:\\Win\\System32\\wsl.exe', 'Ubuntu', { all: true }, login)).toEqual({
+      file: 'D:\\Win\\System32\\wsl.exe', args: ['-d', 'Ubuntu', '--exec', 'sh', '-lc', 'exec claude "$@"', 'claude', 'agents', '--json', '--all'],
+    });
+    const calls: { file: string; args: string[] }[] = [];
+    const discovery = discoveryFor('win32', { SystemRoot: 'D:\\Win' }, async (file, args) => { calls.push({ file, args }); return []; }, login);
+    expect(await discovery.runNow('wsl:Ubuntu')).toEqual({ ran: ['wsl:Ubuntu'], errors: [] });
+    expect(calls).toEqual([{ file: 'D:\\Win\\System32\\wsl.exe', args: ['-d', 'Ubuntu', '--exec', 'sh', '-lc', 'exec claude "$@"', 'claude', 'agents', '--json'] }]);
   });
 
   it('and reports a failure of that call as a failed discovery', async () => {

@@ -10,7 +10,8 @@
 //   --repo <dir>     the local repository (default: $MINISUMMA_LOCAL_MAVEN, else ~/ms-maven)
 //   --log <file>     a Gradle output file. Every file Gradle failed to get is fetched: "Could not GET '<url>'", the lines
 //                    "Failed to get resource: GET. [HTTP 429: <url>)]" that --info prints, and, from a run with --offline,
-//                    "No cached resource '<url>'" and "No cached version of <group:artifact:version>". Repeatable.
+//                    "No cached resource '<url>'", "No cached version of <group:artifact:version>" and "Could not download
+//                    <file> (<group:artifact:version>): No cached version available for offline mode". Repeatable.
 //   --gav <g:a:v>    a module whose files are wanted: its .pom, its .module (if published) and its main file (.aar when
 //                    the pom says packaging aar, otherwise .jar; nothing for packaging pom). Repeatable.
 //   --signatures     also fetch "<file>.asc" when the registry publishes one and verify it with gpg in a private, temporary
@@ -68,10 +69,16 @@ repoDir = resolve(repoDir);
 // ---- what is wanted ----------------------------------------------------------------------------------------------------
 const URL_IN_LOG = /(?:Could not (?:GET|HEAD) '|Failed to get resource: (?:GET|HEAD)\. \[HTTP \d+: |No cached resource ')(https?:\/\/[^'\s)]+)/g;
 const GAV_IN_LOG = /No cached version of ([\w.-]+:[\w.-]+:[\w.+-]+) available for offline mode/g;
+const FILE_IN_LOG = /Could not download (\S+) \(([\w.-]+:[\w.-]+:[\w.+-]+)\): No cached version available for offline mode/g;
+const explicitFiles = new Map(); // gav -> file names Gradle asked for by name
 for (const f of logs) {
   const text = readFileSync(f, 'utf8');
   for (const m of text.matchAll(URL_IN_LOG)) urls.push(m[1]);
   for (const m of text.matchAll(GAV_IN_LOG)) gavs.push(m[1]);
+  for (const m of text.matchAll(FILE_IN_LOG)) {
+    gavs.push(m[2]);
+    explicitFiles.set(m[2], (explicitFiles.get(m[2]) ?? new Set()).add(m[1]));
+  }
 }
 const wantedUrls = [...new Set(urls)];
 const wantedGavs = [...new Set(gavs)];
@@ -133,6 +140,8 @@ function checkSignature(url, file, tmp) {
       out = v.stdout ?? '';
     }
     if (/\[GNUPG:\] BADSIG/.test(out)) return { state: 'BAD SIGNATURE', bad: true };
+    const stillMissing = /\[GNUPG:\] NO_PUBKEY ([0-9A-F]+)/.exec(out)?.[1];
+    if (stillMissing) return { state: `not verifiable here (key ${stillMissing.slice(-16)} could not be imported: keys.openpgp.org lists it without a verified user ID)` };
     const good = /\[GNUPG:\] VALIDSIG ([0-9A-F]{40})/.exec(out)?.[1];
     return { state: good ? `signed by key ${good} (key ownership not independently established)` : 'not verifiable here (gpg gave no verdict)' };
   } finally { rmSync(home, { recursive: true, force: true }); }
@@ -227,7 +236,10 @@ for (const gav of wantedGavs) {
     const mod = install(base, `${dir}${artifact}-${version}.module`);
     if (mod === 'missing') console.log(`  none     ${artifact}-${version}.module (not published)`);
     const packaging = /<packaging>\s*([\w.-]+)\s*<\/packaging>/.exec(text)?.[1] ?? 'jar';
-    if (packaging !== 'pom') {
+    const named = explicitFiles.get(gav);
+    if (named) {
+      for (const file of named) if (install(base, `${dir}${file}`) === 'missing') problems.push(`${base}${dir}${file}: HTTP 404`);
+    } else if (packaging !== 'pom') {
       const ext = packaging === 'aar' ? 'aar' : 'jar';
       const main = install(base, `${dir}${artifact}-${version}.${ext}`);
       // Kotlin Multiplatform roots and other redirecting modules have a pom but no file of their own: Gradle follows the .module.

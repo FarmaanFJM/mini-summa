@@ -10,6 +10,9 @@
 //              again. Nothing is shown and nothing is logged: the window works on its localStorage copy meanwhile. A refusal
 //              that retrying cannot fix (a 4xx) drops the change.
 //   closing    When the page goes away, whatever is waiting is sent with a request that outlives the page.
+//   restart    A change that the core has not acknowledged yet is also written to localStorage (a list of fact names). On the next
+//              start it counts as newer than the core's copy, so it wins and is sent, instead of an older value of the core's
+//              overriding what the person did just before closing the window.
 //
 // localStorage stays the fast local copy: the route store and the onboarding store keep writing it as they always did.
 import { ApiError } from '@minisumma/shared';
@@ -17,6 +20,8 @@ import type { ServerEvent, UiPrefsPatch } from '@minisumma/shared';
 import type { ApiClient } from './api';
 import type { OnboardingStore } from './onboardingPrefs';
 import type { RouteStore } from './route';
+import { readJson, writeJson } from './storage';
+import type { KeyValueStorage } from './storage';
 import type { AppState, AppStore } from './store';
 import { buildPatch, changedRouteFacts, changedSetupFacts, forgetFact, reconcile, routeMemory, sessionFact, conversationFact } from './uiState';
 import type { FactKey, Memory } from './uiState';
@@ -26,6 +31,8 @@ export interface UiSyncOptions {
   store: AppStore;
   route: RouteStore;
   onboarding: OnboardingStore;
+  /** Where the names of the changes the core has not acknowledged yet are kept, so that they survive a restart. Optional. */
+  storage?: KeyValueStorage;
   /** The quiet period before changes are sent. Default 600 ms. */
   delayMs?: number;
   /** Pauses between tries after a failed write. Defaults: 2 s, doubling up to 60 s. */
@@ -42,18 +49,30 @@ export interface UiSync {
   dispose(): void;
 }
 
+const PENDING_KEY = 'minisumma.uisync.pending.v1';
+const MAX_PENDING = 500;
+
+/** The names of the changes that were waiting for the core when the window last closed; anything else in the value is ignored. */
+function validatePending(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw.filter((v): v is string => typeof v === 'string' && v.length > 0 && v.length < 300).slice(0, MAX_PENDING);
+}
+
 /** A refusal that sending the same thing again cannot fix. */
 export const isPermanentRefusal = (error: unknown): boolean =>
   error instanceof ApiError && error.status >= 400 && error.status < 500 && ![408, 425, 429].includes(error.status);
 
 export function createUiSync(options: UiSyncOptions): UiSync {
-  const { api, store, route, onboarding } = options;
+  const { api, store, route, onboarding, storage } = options;
   const delayMs = options.delayMs ?? 600;
   const retry = options.retry ?? { firstMs: 2000, maxMs: 60_000 };
 
   /** fact -> the version of the change that made it dirty. A fact changed again while a write is in flight keeps waiting. */
   const dirty = new Map<FactKey, number>();
   let version = 0;
+  // Changes the core never acknowledged before the window last closed are still waiting: they are newer than anything it has.
+  for (const fact of (storage ? readJson(storage, PENDING_KEY, validatePending) : null) ?? []) dirty.set(fact, ++version);
+  const remember = (): void => { if (storage) writeJson(storage, PENDING_KEY, [...dirty.keys()].slice(0, MAX_PENDING)); };
   let hydrated = false;
   let applying = false;
   let disposed = false;
@@ -79,6 +98,7 @@ export function createUiSync(options: UiSyncOptions): UiSync {
   function mark(facts: readonly FactKey[]): void {
     if (facts.length === 0) return;
     for (const fact of facts) dirty.set(fact, ++version);
+    remember();
     schedule(delayMs);
   }
 
@@ -88,8 +108,8 @@ export function createUiSync(options: UiSyncOptions): UiSync {
     if (dirty.size === 0) return true;
     const waiting = new Map(dirty);
     const { patch, included } = buildPatch(waiting.keys(), memory());
-    const settle = (): void => { for (const fact of included) if (dirty.get(fact) === waiting.get(fact)) dirty.delete(fact); };
-    if (included.size === 0) { for (const fact of waiting.keys()) dirty.delete(fact); return true; } // nothing here this build can send
+    const settle = (): void => { for (const fact of included) if (dirty.get(fact) === waiting.get(fact)) dirty.delete(fact); remember(); };
+    if (included.size === 0) { for (const fact of waiting.keys()) dirty.delete(fact); remember(); return true; } // nothing here this build can send
     if (Object.keys(patch).length === 0) { settle(); if (dirty.size > 0) schedule(delayMs); return dirty.size === 0; } // nothing here the core would accept
     try {
       await api.call('settings.update', { body: { ui: patch } });
@@ -126,6 +146,7 @@ export function createUiSync(options: UiSyncOptions): UiSync {
     const id = event.id;
     dirty.delete(sessionFact(id));
     dirty.delete(conversationFact(id));
+    remember();
     applying = true;
     try {
       const { selectSession, selectConversation } = route.getState();
@@ -147,6 +168,7 @@ export function createUiSync(options: UiSyncOptions): UiSync {
       if (Object.keys(result.setup).length > 0) onboarding.setState(result.setup);
     } finally { applying = false; }
     for (const fact of result.seed) if (!dirty.has(fact)) dirty.set(fact, ++version);
+    remember();
     schedule(delayMs);
   }
 

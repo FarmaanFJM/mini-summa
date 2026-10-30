@@ -13,6 +13,7 @@ import { createPrivateKey, createSign } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CoreBase, CoreOptions, PushPayload, PushProvider, SettingsService } from '../contracts.ts';
+import { renameSyncWithRetry } from '../claude/fsRetry.ts';
 import { CoreError, badRequest } from '../errors.ts';
 
 export interface FcmDeps {
@@ -304,7 +305,7 @@ export function createFcmProvider(deps: FcmDeps): PushProvider {
         const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
         fs.writeFileSync(tmp, `${JSON.stringify(account, null, 2)}\n`, { mode: 0o600 });
         try { fs.chmodSync(tmp, 0o600); } catch { /* Windows has no POSIX modes; the profile folder's ACL applies */ }
-        fs.renameSync(tmp, file);
+        renameSyncWithRetry(tmp, file);
       } catch (err) {
         log.error('Saving the Firebase service account failed.', { error: err instanceof Error ? err.message : String(err) });
         throw new CoreError(500, 'push_store_failed', `Mini-Summa could not save the service account in ${secretsDir}. Check that the folder is writable and the disk is not full, then try again.`);

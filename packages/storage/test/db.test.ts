@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { Db, MIGRATIONS, SCHEMA_VERSION, migrate, newId, openDatabase } from '../src/index.ts';
+import { Db, MIGRATIONS, SCHEMA_VERSION, journalPragmaFor, migrate, newId, openDatabase } from '../src/index.ts';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ms-storage-'));
 
@@ -94,5 +94,35 @@ describe('newId', () => {
     const ids = new Set(Array.from({ length: 500 }, () => newId('prj')));
     expect(ids.size).toBe(500);
     expect([...ids][0]).toMatch(/^prj_[0-9a-f]{16}$/);
+  });
+});
+
+// SIMULATED Windows: the decision is a function of the path string, so it is tested here with an injected platform. Nothing ran on Windows.
+describe('journalPragmaFor', () => {
+  const WAL = 'PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;';
+  const ROLLBACK = 'PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL;';
+
+  it('SIMULATED Windows: keeps WAL on a drive path, with spaces and non-ASCII letters, and in the long-path form of a drive', () => {
+    for (const file of ['C:\\Users\\Zoë Müller\\AppData\\Roaming\\Mini-Summa\\data\\mini-summa.db', 'd:/data/x.db', '\\\\?\\C:\\data\\x.db', '\\\\.\\C:\\data\\x.db']) {
+      expect(journalPragmaFor(file, 'win32'), file).toBe(WAL);
+    }
+  });
+
+  it('SIMULATED Windows: uses the rollback journal on a network share, whichever way it is written', () => {
+    for (const file of ['\\\\fileserver\\share\\ms\\mini-summa.db', '//fileserver/share/ms/mini-summa.db', '\\\\?\\UNC\\fileserver\\share\\ms\\x.db', '\\\\wsl.localhost\\Ubuntu\\home\\u\\x.db']) {
+      expect(journalPragmaFor(file, 'win32'), file).toBe(ROLLBACK);
+    }
+  });
+
+  it('keeps WAL everywhere else, also for a path that only looks like a share', () => {
+    expect(journalPragmaFor('//server/share/x.db', 'linux')).toBe(WAL);
+    expect(journalPragmaFor('/home/u/.local/share/mini-summa/mini-summa.db', 'linux')).toBe(WAL);
+    expect(journalPragmaFor('/Users/u/Library/Application Support/Mini-Summa/data/x.db', 'darwin')).toBe(WAL);
+  });
+
+  it('a database in a real folder is still opened in WAL mode', () => {
+    const { db } = openDatabase(path.join(tmp(), 'wal.db'));
+    expect(db.get<{ journal_mode: string }>('PRAGMA journal_mode')?.journal_mode).toBe('wal');
+    db.close();
   });
 });

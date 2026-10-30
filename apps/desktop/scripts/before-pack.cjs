@@ -27,7 +27,8 @@ module.exports = async function beforePack(context) {
     problems.push(`The hook script could not be built (npm run build:hook -w @minisumma/claude-integration): ${error.message}`);
   }
   need('../../packages/claude-integration/dist/capture.mjs', 'Run "npm run build:hook -w @minisumma/claude-integration".');
-  for (const icon of ['build/icon.ico', 'build/icon.png', 'resources/icon.png', 'resources/tray.png']) need(icon, 'Run "node apps/desktop/scripts/make-icons.mjs".');
+  for (const icon of ['build/icon.ico', 'build/icon.png', 'resources/icon.png', 'resources/tray.png', 'resources/tray.ico']) need(icon, 'Run "node apps/desktop/scripts/make-icons.mjs".');
+  need('build/installer.nsh', 'It is the NSIS include script that electron-builder.yml names (nsis.include).');
 
   // electron-builder cannot read the Electron version from a hoisted install with a ^range, so it is pinned in
   // electron-builder.yml. Make sure the pin is still what is installed.

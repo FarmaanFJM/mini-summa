@@ -57,8 +57,6 @@ async function main(): Promise<void> {
     overrides: args.claudeBin ? { claudeBin: args.claudeBin } : undefined,
   });
   await core.start();
-  if (args.printConnection) process.stdout.write(`${JSON.stringify({ baseUrl: core.baseUrl, desktopToken: core.desktopToken })}\n`);
-  else process.stderr.write(`Mini-Summa core listening on ${core.baseUrl} (data: ${args.dataDir})\n`);
 
   let stopping = false;
   const stop = async (signal: string) => {
@@ -67,8 +65,13 @@ async function main(): Promise<void> {
     process.stderr.write(`Stopping on ${signal}\n`);
     try { await core.stop(); } finally { process.exit(0); }
   };
-  process.on('SIGINT', () => void stop('SIGINT'));
-  process.on('SIGTERM', () => void stop('SIGTERM'));
+  // Registered before the "ready" line is printed, so whoever waits for that line can signal at once.
+  // SIGTERM never arrives on Windows. There, Ctrl+C is SIGINT, Ctrl+Break is SIGBREAK, and closing the console window is SIGHUP
+  // (Node ends the process a few seconds after it): all of them must stop the terminals Claude runs in, not leave them behind.
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'] as const) process.on(signal, () => void stop(signal));
+
+  if (args.printConnection) process.stdout.write(`${JSON.stringify({ baseUrl: core.baseUrl, desktopToken: core.desktopToken })}\n`);
+  else process.stderr.write(`Mini-Summa core listening on ${core.baseUrl} (data: ${args.dataDir})\n`);
 }
 
 main().catch((err) => {

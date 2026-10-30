@@ -75,7 +75,9 @@ export const nodeHooksFs: HooksFs = {
     try {
       return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buf);
     } catch {
-      throw Object.assign(new Error('settings file is not valid UTF-8 text'), { code: 'ENOTUTF8' });
+      // A file Windows PowerShell wrote with `>` or `Out-File`, or Notepad's "Unicode" option, starts with a UTF-16 byte order mark.
+      const utf16 = buf.length >= 2 && ((buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff));
+      throw Object.assign(new Error('settings file is not valid UTF-8 text'), { code: 'ENOTUTF8', utf16 });
     }
   },
   async statMode(file) {
@@ -512,7 +514,9 @@ export function createHooksService(deps: HooksDeps): HooksService {
       loaded = text === null ? { exists: false, text: '', bom: false, eol: '\n', indent: '  ', finalNewline: true, root: {} } : parseSettings(text, settingsPath);
     } catch (err) {
       problem = err instanceof CoreError ? err
-        : unprocessable(`${settingsPath} could not be read (${errno(err) ?? 'unknown error'}). Check that the folder exists and that Mini-Summa may read it${isWslEnv(env) ? ', and that the WSL distribution is running' : ''}.`, 'settings_unreadable', { settingsPath });
+        : errno(err) === 'ENOTUTF8'
+          ? unprocessable(`${settingsPath} could not be read: it is not saved as UTF-8 text${(err as { utf16?: boolean }).utf16 ? ' but as UTF-16 (the > operator of Windows PowerShell and the "Unicode" option of Notepad write that)' : ''}, and Claude Code reads UTF-8 only. Open the file, save it again as UTF-8, then try again. Mini-Summa has not changed it.`, 'settings_unreadable', { settingsPath })
+          : unprocessable(`${settingsPath} could not be read (${errno(err) ?? 'unknown error'}). Check that the folder exists and that Mini-Summa may read it${isWslEnv(env) ? ', and that the WSL distribution is running' : ''}.`, 'settings_unreadable', { settingsPath });
       issues.unshift(problem.message);
     }
 

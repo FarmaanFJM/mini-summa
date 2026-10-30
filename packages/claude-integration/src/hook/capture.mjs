@@ -104,10 +104,24 @@ function main() {
     fs.writeSync(fd, JSON.stringify(record));
     fs.fsyncSync(fd);
   } finally { fs.closeSync(fd); }
-  fs.renameSync(tmp, path.join(spool, name));
+  renameWithRetry(tmp, path.join(spool, name));
 
   if (payload.hook_event_name === 'SessionStart' && (args.registry ?? process.env.MINI_SUMMA_REGISTRY)) {
     emitSessionStartContext(payload);
+  }
+}
+
+// On Windows a file that was written a moment ago can still be open in an antivirus scanner or the search indexer, and renaming it
+// then fails with EPERM, EBUSY or EACCES. A record that is not renamed into place is a hook event Mini-Summa never hears about, so
+// the rename is retried for about 1.3 seconds (the hook has 5) before the error is given up on and logged as before. Declared as
+// functions with nothing outside them: main() runs before the rest of this file has been evaluated.
+function renameWithRetry(from, to) {
+  for (let attempt = 0; ; attempt++) {
+    try { fs.renameSync(from, to); return; } catch (err) {
+      const transient = err && (err.code === 'EPERM' || err.code === 'EBUSY' || err.code === 'EACCES');
+      if (!transient || attempt >= 7) throw err;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10 * 2 ** attempt); // 10, 20, 40 ... 640 ms
+    }
   }
 }
 

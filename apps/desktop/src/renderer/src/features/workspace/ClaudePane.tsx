@@ -4,6 +4,7 @@ import { useNative } from '../../app/native';
 import { useApi, useApp, useRoute, useRuntime, useTerminals, useUi } from '../../app/runtime';
 import { Button, ConfirmDialog, EmptyState, IconButton, Menu, Tabs, tabPanelProps, toast, setToastAnchor } from '../../ui';
 import type { MenuEntry, TabItem } from '../../ui';
+import { useHandoffStrip } from '../reports/HandoffStrip';
 import { NewSessionDialog } from './NewSessionDialog';
 import { ObservedPanel, SessionNotice } from './SessionPanels';
 import { formatRelative, ORIGIN_LABEL, shortId, tabTitle } from './sessionModel';
@@ -31,6 +32,8 @@ export function ClaudePane({ project, visible, maximized, onToggleMaximize }: Cl
   const { ui } = useRuntime();
   const actions = useSessionActions(project);
   const root = useRef<HTMLElement>(null);
+  // While the handoff strip offers its main button, an empty pane keeps its own quiet: one main action at a time (P15).
+  const stripShown = useHandoffStrip(project.id) !== null;
 
   const tabs = useMemo(() => visibleTabs({ openTabs, dismissed }, project.id, sessions), [openTabs, dismissed, project.id, sessions]);
   const chosen = route.sessionByProject[project.id];
@@ -170,7 +173,7 @@ export function ClaudePane({ project, visible, maximized, onToggleMaximize }: Cl
             center
             action={project.roots.length === 0
               ? <Button onClick={() => openProjectDialog({ mode: 'edit', projectId: project.id })}>Add a folder</Button>
-              : <Button variant="primary" icon="plus" loading={actions.starting} onClick={newSession}>Start a session</Button>}
+              : <Button variant={stripShown ? 'secondary' : 'primary'} icon="plus" loading={actions.starting} onClick={newSession}>Start a session</Button>}
           >
             {project.roots.length === 0
               ? `${project.name} has no repository folder yet. Add one to start Claude in it.`

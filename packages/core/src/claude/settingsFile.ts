@@ -11,6 +11,8 @@ import { UUID_RE, envLabel, isWslEnv, wslDistro } from '@minisumma/shared';
 import type { EnvId } from '@minisumma/shared';
 import type { EnvLayout } from '../contracts.ts';
 import { CoreError } from '../errors.ts';
+import { envTag } from './envPaths.ts';
+import { renameSyncWithRetry } from './fsRetry.ts';
 
 /** Handler id of hooks registered through managed settings files; the user-level install uses its own id. */
 export const MANAGED_HANDLER_ID = 'ms-managed';
@@ -63,6 +65,20 @@ export function hostPathToEnvPath(env: EnvId, hostPath: string): string {
   throw new CoreError(422, 'settings_path_unreachable', `Claude inside ${envLabel(env)} cannot reach Mini-Summa's data folder (${hostPath}). Put the data folder on a Windows drive.`);
 }
 
+/**
+ * The settings file as Claude inside the environment sees it. For WSL, where the distribution mounts the Windows drives is not always
+ * /mnt (wsl.conf [automount] root), and the layout already holds the data folder as the distribution sees it, converted by
+ * `wslpath -u` (spoolDirInEnv = <data folder>/spool/<tag>): the file goes relative to that, like the spool, the registry and the
+ * capture script do. The /mnt/<drive> rule of hostPathToEnvPath is the fallback.
+ */
+function settingsPathInEnv(layout: EnvLayout, hostPath: string, tag: string, sessionId: string): string {
+  if (isWslEnv(layout.env)) {
+    const suffix = `/spool/${envTag(layout.env)}`;
+    if (layout.spoolDirInEnv.endsWith(suffix)) return `${layout.spoolDirInEnv.slice(0, -suffix.length)}/managed-settings/${tag}/${sessionId.toLowerCase()}.json`;
+  }
+  return hostPathToEnvPath(layout.env, hostPath);
+}
+
 /** Decides where the file goes and what it contains, without touching the disk. */
 export function planManagedSettings(input: ManagedSettingsInput): ManagedSettingsPlan {
   const { layout, sessionId, dataDir } = input;
@@ -90,7 +106,7 @@ export function planManagedSettings(input: ManagedSettingsInput): ManagedSetting
   const tag = managedSettingsTag(layout.env);
   const lib = isWindowsPath(dataDir) ? path.win32 : path.posix;
   const hostPath = lib.join(dataDir, 'managed-settings', tag, `${sessionId.toLowerCase()}.json`);
-  return { tag, hostPath, envPath: hostPathToEnvPath(layout.env, hostPath), settings };
+  return { tag, hostPath, envPath: settingsPathInEnv(layout, hostPath, tag, sessionId), settings };
 }
 
 /** Writes `<dataDir>/managed-settings/<tag>/<sessionId>.json` (mode 0600, replaced atomically). */
@@ -100,7 +116,13 @@ export function writeManagedSettings(input: ManagedSettingsInput): ManagedSettin
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const tmp = path.join(dir, `.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   fs.writeFileSync(tmp, `${JSON.stringify(plan.settings, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
-  fs.renameSync(tmp, plan.hostPath);
+  try {
+    // A resumed session replaces the file of its earlier run, which a scanner or an editor may hold for a moment on Windows.
+    renameSyncWithRetry(tmp, plan.hostPath);
+  } catch (err) {
+    try { fs.rmSync(tmp, { force: true }); } catch { /* nothing left to clean */ }
+    throw err;
+  }
   try { fs.chmodSync(plan.hostPath, 0o600); } catch { /* not supported on this file system (Windows) */ }
   return { ...plan, handlerId: input.handlerId ?? MANAGED_HANDLER_ID };
 }

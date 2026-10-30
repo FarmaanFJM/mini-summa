@@ -379,7 +379,10 @@ const isProgram = (file: string, name: 'wsl.exe' | 'cmd.exe'): boolean => file =
 const WSL_DATA = '/mnt/c/Users/me/AppData/Roaming/Mini-Summa/data';
 const utf16 = (text: string, bom = true): Buffer => Buffer.from(`${bom ? '\uFEFF' : ''}${text}`, 'utf16le');
 
-interface Distro { claude?: 'ok' | 'missing' | 'login-only' | 'broken'; node?: boolean; home?: string | null; wslpath?: boolean; down?: boolean }
+// SIMULATED: nothing here ran on WSL2. `login-only` = found by `sh -lc` (~/.profile), `bash-only` = found only by `bash -lic` (~/.bashrc, nvm),
+// `windows-only` = the only `claude` on the PATH is the npm launcher of a Windows install, reached through the appended Windows PATH.
+interface Distro { claude?: 'ok' | 'missing' | 'login-only' | 'bash-only' | 'windows-only' | 'broken'; node?: boolean | 'login-only'; home?: string | null; wslpath?: boolean; down?: boolean }
+const WINDOWS_NPM_CLAUDE = '/mnt/c/Users/me/AppData/Roaming/npm/claude';
 
 function windows(distros: Record<string, Distro>, opts: { listing?: (() => Partial<CommandResult>) | null; files?: string[]; env?: Record<string, string>; dataDir?: string; settings?: FakeSettings } = {}) {
   const files = new Set(opts.files ?? []);
@@ -398,10 +401,21 @@ function windows(distros: Record<string, Distro>, opts: { listing?: (() => Parti
       if (d.down) return { code: null, error: 'Timed out after 20 seconds.' };
       const [cmd, ...rest] = args.slice(3);
       const script = rest[rest.length - 1];
-      if (cmd === 'claude' && rest[0] === '--version') return d.claude === 'ok' ? ok('2.1.314 (Claude Code)\n') : d.claude === 'broken' ? fail('Illegal instruction', 132) : fail('execvpe(claude) failed: No such file or directory');
-      if (cmd === 'node' && rest[0] === '--version') return d.node === false ? fail('execvpe(node) failed: No such file or directory') : ok('v22.12.0\n');
-      if (cmd === 'sh' && rest[0] === '-c' && script === 'command -v claude') return d.claude === 'ok' || d.claude === 'broken' ? ok('/home/me/.local/bin/claude\n') : fail('', 1);
-      if (cmd === 'sh' && rest[0] === '-lc' && script === 'command -v claude') return d.claude === 'login-only' ? ok('/home/me/.local/bin/claude\n') : fail('', 1);
+      if (cmd === 'claude' && rest[0] === '--version') return d.claude === 'ok' || d.claude === 'windows-only' ? ok('2.1.314 (Claude Code)\n') : d.claude === 'broken' ? fail('Illegal instruction', 132) : fail('execvpe(claude) failed: No such file or directory');
+      if (cmd === 'node' && rest[0] === '--version') return d.node === false || d.node === 'login-only' ? fail('execvpe(node) failed: No such file or directory') : ok('v22.12.0\n');
+      if (cmd === 'sh' && rest[0] === '-c' && script === 'command -v claude') return d.claude === 'ok' || d.claude === 'broken' ? ok('/home/me/.local/bin/claude\n') : d.claude === 'windows-only' ? ok(`${WINDOWS_NPM_CLAUDE}\n`) : fail('', 1);
+      // the same lookups through a login shell: `<shell> <flags> 'exec <program> "$@"' <program> <args>` and `<shell> <flags> '<script>'`
+      const login = (cmd === 'sh' && rest[0] === '-lc') || (cmd === 'bash' && rest[0] === '-lic');
+      if (login && rest[1] === 'exec claude "$@"' && rest[2] === 'claude' && rest[3] === '--version') {
+        const found = cmd === 'sh' ? d.claude === 'ok' || d.claude === 'login-only' : d.claude === 'ok' || d.claude === 'login-only' || d.claude === 'bash-only';
+        return d.claude === 'windows-only' ? ok('2.1.314 (Claude Code)\n') : found ? ok('2.1.314 (Claude Code)\n') : fail('sh: 1: exec: claude: not found', 127);
+      }
+      if (login && rest[1] === 'exec node "$@"' && rest[2] === 'node' && rest[3] === '--version') return d.node === false ? fail('sh: 1: exec: node: not found', 127) : ok('v22.12.0\n');
+      if (login && script === 'command -v claude') {
+        if (d.claude === 'windows-only') return ok(`${WINDOWS_NPM_CLAUDE}\n`);
+        const found = cmd === 'sh' ? d.claude === 'ok' || d.claude === 'login-only' : d.claude === 'ok' || d.claude === 'login-only' || d.claude === 'bash-only';
+        return found ? ok('/home/me/.local/bin/claude\n') : fail('', 1);
+      }
       if (cmd === 'sh' && script === 'printf %s "$HOME"') return d.home === null ? fail('', 1) : ok(d.home ?? '/home/me');
       if (cmd === 'wslpath' && rest[0] === '-u') {
         if (d.wslpath === false) return fail('wslpath: not found', 127);
@@ -513,11 +527,64 @@ describe('a WSL distribution', () => {
     expect(await t.svc.claudeCommand('wsl:Debian')).toBeNull();
   });
 
-  it('recognises Claude that only a login shell can find, and says how to make it reachable', async () => {
+  it('SIMULATED: starts a Claude that only a login shell can find through that login shell, and says so', async () => {
     const t = windows({ Ubuntu: { claude: 'login-only' } });
     const ubuntu = (await t.svc.list()).find((e) => e.id === 'wsl:Ubuntu')!;
+    expect(ubuntu.available).toBe(true);
+    expect(ubuntu.claude).toEqual({ path: '/home/me/.local/bin/claude', version: '2.1.314', error: null });
+    expect(ubuntu.notes).toEqual(['Claude Code (/home/me/.local/bin/claude) is not on the default PATH of Ubuntu, so Mini-Summa starts it through a login shell (sh -lc), the way a terminal does.']);
+    // the terminal host builds `wsl.exe -d Ubuntu --cd <cwd> --exec sh -lc 'exec claude "$@"' claude <args>` from this; no user text is in the script
+    expect(await t.svc.claudeCommand('wsl:Ubuntu')).toEqual({ file: 'sh', prefixArgs: ['-lc', 'exec claude "$@"', 'claude'], wslDistro: 'Ubuntu' });
+  });
+
+  it('SIMULATED: falls back to bash -lic (which reads ~/.bashrc, where nvm puts itself) when sh -lc does not find it either', async () => {
+    const t = windows({ Ubuntu: { claude: 'bash-only' } });
+    const ubuntu = (await t.svc.list()).find((e) => e.id === 'wsl:Ubuntu')!;
+    expect(ubuntu.available).toBe(true);
+    expect(ubuntu.notes[0]).toContain('through a login shell (bash -lic)');
+    expect(await t.svc.claudeCommand('wsl:Ubuntu')).toEqual({ file: 'bash', prefixArgs: ['-lic', 'exec claude "$@"', 'claude'], wslDistro: 'Ubuntu' });
+    // the order: the plain lookup, then sh -lc, then bash -lic
+    const shells = t.calls.filter((c) => c.args[0] === '-d' && c.args[3] !== undefined && /^(sh|bash)$/.test(c.args[3]) && c.args[4]?.startsWith('-l')).map((c) => c.args[3]);
+    expect(shells.indexOf('sh')).toBeLessThan(shells.indexOf('bash'));
+  });
+
+  it('SIMULATED: never uses a login shell when the plain lookup finds both Claude and Node.js', async () => {
+    const t = windows({ Ubuntu: { claude: 'ok' } });
+    await t.svc.list();
+    expect(t.calls.some((c) => c.args.includes('-lc') || c.args.includes('-lic'))).toBe(false);
+    expect(await t.svc.claudeCommand('wsl:Ubuntu')).toEqual({ file: 'claude', prefixArgs: [], wslDistro: 'Ubuntu' });
+  });
+
+  it('SIMULATED: starts Claude through the login shell too when only the login shell finds Node.js (the hooks run with Claude\'s PATH)', async () => {
+    const t = windows({ Ubuntu: { claude: 'ok', node: 'login-only' } });
+    const ubuntu = (await t.svc.list()).find((e) => e.id === 'wsl:Ubuntu')!;
+    expect(ubuntu.available).toBe(true);
+    expect(ubuntu.node).toEqual({ path: 'node', version: '22.12.0' });
+    expect(ubuntu.notes.join(' ')).not.toContain('Node.js was not found');
+    expect((await t.svc.layout('wsl:Ubuntu')).runtime).toEqual({ command: 'node', runAsNode: false, version: '22.12.0' });
+    expect(await t.svc.claudeCommand('wsl:Ubuntu')).toEqual({ file: 'sh', prefixArgs: ['-lc', 'exec claude "$@"', 'claude'], wslDistro: 'Ubuntu' });
+  });
+
+  it('SIMULATED: keeps the plain command when Claude is found plain and Node.js is missing everywhere', async () => {
+    const t = windows({ Debian: { claude: 'ok', node: false } });
+    const debian = (await t.svc.list()).find((e) => e.id === 'wsl:Debian')!;
+    expect(debian.notes).toEqual(['Node.js was not found inside Debian, so hooks cannot run there. Install Node.js in that distribution.']);
+    expect(await t.svc.claudeCommand('wsl:Debian')).toEqual({ file: 'claude', prefixArgs: [], wslDistro: 'Debian' });
+  });
+
+  it('SIMULATED: does not take the claude launcher of a Windows install (reached through the appended Windows PATH) for Claude inside the distribution', async () => {
+    const t = windows({ Ubuntu: { claude: 'windows-only' } });
+    const ubuntu = (await t.svc.list()).find((e) => e.id === 'wsl:Ubuntu')!;
     expect(ubuntu.available).toBe(false);
-    expect(ubuntu.notes[0]).toBe('Claude Code is installed at /home/me/.local/bin/claude inside Ubuntu, but it is not on the PATH Mini-Summa starts it with. Make it available in /usr/local/bin (sudo ln -s /home/me/.local/bin/claude /usr/local/bin/claude), then press Refresh.');
+    expect(ubuntu.claude).toEqual({ path: null, version: null, error: 'Claude Code was not found.' });
+    expect(ubuntu.notes[0]).toBe(`The claude that Ubuntu finds (${WINDOWS_NPM_CLAUDE}) is the one installed in Windows, which does not run inside Ubuntu. Install Claude Code inside Ubuntu from https://claude.com/product/claude-code, then press Refresh.`);
+    expect(await t.svc.claudeCommand('wsl:Ubuntu')).toBeNull();
+  });
+
+  it('SIMULATED: asks a distribution that cannot be started only once (no login-shell attempts on top of a timeout)', async () => {
+    const t = windows({ Ubuntu: { down: true } });
+    await t.svc.list();
+    expect(t.calls.some((c) => c.args.includes('-lc') || c.args.includes('-lic'))).toBe(false);
   });
 
   it('reports a claude that is there but does not start', async () => {
@@ -586,6 +653,14 @@ describe('Windows host: finding Claude Code', () => {
     const npm = windows({}, { files: ['C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd'], listing: null });
     expect((await npm.svc.list())[0].claude).toMatchObject({ path: 'C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd', version: '2.1.314' });
     expect(npm.calls.some((c) => isProgram(c.file, 'cmd.exe'))).toBe(true);
+  });
+
+  it('SIMULATED: also knows where winget links claude.exe (a PATH that was read before the install does not list it)', async () => {
+    const link = 'C:\\Users\\me\\AppData\\Local\\Microsoft\\WinGet\\Links\\claude.exe';
+    const winget = windows({}, { files: [link], listing: null, env: { LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local' } });
+    expect((await winget.svc.list())[0].claude).toMatchObject({ path: link, version: '2.1.314', error: null });
+    const without = windows({}, { files: [link], listing: null });
+    expect((await without.svc.list())[0].available).toBe(false); // no LOCALAPPDATA, nothing to look in
   });
 
   it('lays out the host environment with Windows paths and the Windows config directory', async () => {

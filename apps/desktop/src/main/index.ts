@@ -315,6 +315,9 @@ if (!app.requestSingleInstanceLock()) {
   if (app.isPackaged && !app.setAsDefaultProtocolClient(PROTOCOL_SCHEME)) log.warn('could not register the minisumma:// link handler');
   app.on('second-instance', (_event, argv) => {
     const link = findProtocolUrl(argv);
+    // Worth a line in the log: on Windows a link click, a Start menu click and a second launch all arrive here, and "nothing
+    // happened" is otherwise impossible to tell from "the first copy never heard about it".
+    log.info('second instance started', { link: link !== null });
     if (link) handleLink(link);
     else router.reveal();
   });

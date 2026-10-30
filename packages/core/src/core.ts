@@ -45,6 +45,24 @@ export function restrictPermissions(dataDir: string): void {
   for (const f of PRIVATE_FILES) attempt(path.join(dataDir, f), 0o600);
 }
 
+/**
+ * On Windows nothing above applies (no POSIX modes), so what keeps other accounts out of the data directory is the folder's own
+ * permissions. A folder inside the user's profile inherits the profile's, which exclude other users; a folder anywhere else
+ * (another drive, a share) inherits from its drive or share, where "Authenticated Users" can often read. Returns the sentence to log
+ * when the directory is outside the profile (null when it is inside, when the profile is unknown, and on other platforms).
+ */
+export function dataDirAdvice(dataDir: string, env: Readonly<Record<string, string | undefined>>, platform: NodeJS.Platform = process.platform): string | null {
+  if (platform !== 'win32') return null;
+  const profile = env.USERPROFILE?.trim();
+  if (!profile) return null;
+  const rel = path.win32.relative(profile, dataDir);
+  if (rel !== '' && (rel === '..' || rel.startsWith('..\\') || path.win32.isAbsolute(rel))) {
+    const share = /^[\\/]{2}/.test(dataDir);
+    return `The data directory ${dataDir} is outside your Windows profile (${profile}), so it does not get the profile's protection: on Windows Mini-Summa relies on the folder's own permissions to keep other accounts out of the database, the hook spool, the backups and the push key, and a folder on another drive or a share may be readable by other accounts. Use the default folder, or remove access for everyone but your account.${share ? ' It is also on a network share, where the database uses the slower rollback journal because the write-ahead log does not work there.' : ''}`;
+  }
+  return null;
+}
+
 /** Preferred port, so the browser extension and `tailscale serve` can rely on a stable address. */
 export const DEFAULT_PORT = 47811;
 const LOG_ROTATE_BYTES = 5 * 1024 * 1024;
@@ -123,6 +141,8 @@ export async function createCore(options: CoreOptions): Promise<Core> {
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   restrictPermissions(dataDir);
   const log = options.log ?? createFileLogger(dataDir, options.mode === 'headless' ? 'all' : 'warn');
+  const advice = dataDirAdvice(dataDir, process.env);
+  if (advice) log.warn(advice);
   const { db } = openDatabase(path.join(dataDir, 'mini-summa.db'));
   const bus = createEventBus();
   const base: CoreBase = { db, bus, clock, log, version: options.version, mode: options.mode, dataDir };

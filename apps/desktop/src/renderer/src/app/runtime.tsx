@@ -69,7 +69,7 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   const terminals = new TerminalRegistry({ terminal: api.terminal, createAdapter: options.adapterFactory, schedule: options.schedule });
   const loader = createLoader({ api, store });
   // Registered before the loader starts, so it sees the first snapshot before any screen does.
-  const uiSync = createUiSync({ api, store, route, onboarding: onboardingStore(storage), sendOnClose: options.sendOnClose, ...options.uiSync });
+  const uiSync = createUiSync({ api, store, route, onboarding: onboardingStore(storage), storage, sendOnClose: options.sendOnClose, ...options.uiSync });
 
   const cleanups: (() => void)[] = [];
 

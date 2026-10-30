@@ -130,7 +130,7 @@ export function createCommandRunner(deps: CommandRunnerDeps = {}): CommandRunner
           timer = setTimeout(() => {
             timedOut = true;
             const finish = (): void => { try { child.kill(); } catch { /* already gone */ } };
-            if (typeof child.pid === 'number' && child.pid > 0) killTree(child.pid).then(finish, finish); else finish();
+            if (typeof child.pid === 'number' && child.pid > 0) Promise.resolve().then(() => killTree(child.pid as number)).then(finish, finish); else finish();
           }, opts.timeoutMs);
         }
       } catch (err) {

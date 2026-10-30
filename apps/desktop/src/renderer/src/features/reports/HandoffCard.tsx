@@ -1,16 +1,15 @@
 import type { Delivery, DeliveryPartInfo, Report } from '@minisumma/shared';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { useNative } from '../../app/native';
-import { useApi, useApp, useRoute, useUi } from '../../app/runtime';
-import { Button, Icon, toast } from '../../ui';
+import { useApi, useRoute, useUi } from '../../app/runtime';
+import { Button, Icon } from '../../ui';
 import { DestinationDialog } from './DestinationDialog';
 import { useDeliveryEvents, useProjectConversations } from './hooks';
 import {
-  actorWords, characters, COPYABLE, describeDestination, describeEvent, describeOpen, formatWhen, handoffPlan,
+  actorWords, characters, COPYABLE, describeDestination, describeEvent, formatWhen, handoffPlan,
 } from './model';
-import type { HandoffButton, HandoffActionId, OpenReport } from './model';
-import { errorText, useRunner, writeClipboard } from './support';
+import type { HandoffButton, HandoffActionId } from './model';
+import { useHandoffActions, usePrepareParts } from './useHandoffActions';
 
 export interface HandoffCardProps {
   report: Pick<Report, 'id' | 'projectId' | 'sessionKey' | 'taskTitle'>;
@@ -20,9 +19,6 @@ export interface HandoffCardProps {
   onCreated?: (delivery: Delivery) => void;
 }
 
-interface Copied { text: string }
-interface ClipboardFailure { part: number; partCount: number; text: string; reason: string }
-
 /**
  * The handoff of one report to one ChatGPT conversation. It shows exactly where the report goes and what state the
  * handoff is in, and offers only the actions the core accepts in that state. Nothing here says "sent" before the person
@@ -30,36 +26,18 @@ interface ClipboardFailure { part: number; partCount: number; text: string; reas
  */
 export function HandoffCard({ report, delivery, onCreated }: HandoffCardProps) {
   const api = useApi();
-  const native = useNative();
   const route = useRoute();
   const openProjectDialog = useUi((s) => s.openProjectDialog);
-  const runner = useRunner();
   const projectId = delivery?.projectId ?? report.projectId;
   const conversations = useProjectConversations(projectId);
-  const reviewSettings = useApp((s) => s.settings?.review);
-  const [opened, setOpened] = useState<OpenReport | null>(null);
-  const [copied, setCopied] = useState<Copied | null>(null);
-  const [failure, setFailure] = useState<ClipboardFailure | null>(null);
   const [chooser, setChooser] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const { detail } = useDeliveryEvents(delivery);
-
-  // Another delivery, or a state the core moved to, makes earlier results obsolete.
-  const deliveryId = delivery?.id ?? null;
-  const deliveryState = delivery?.state ?? null;
-  useEffect(() => { setOpened(null); setCopied(null); setFailure(null); }, [deliveryId]);
-  useEffect(() => { if (deliveryState === 'user_confirmed_sent' || deliveryState === 'user_discarded') { setCopied(null); setFailure(null); } }, [deliveryState]);
-
-  // Learn how many parts the message has before the person presses anything, so the main button can say which part it copies.
-  // Preparing only stores the message on the handoff; nothing is copied, opened or sent.
-  const needsPrepare = delivery !== null && COPYABLE.includes(delivery.state) && delivery.destination !== null;
-  const noParts = (delivery?.parts.length ?? 0) === 0;
-  const limits = `${reviewSettings?.maxPartChars}|${reviewSettings?.includeSessionRef}|${reviewSettings?.requestTemplate}`;
-  useEffect(() => {
-    if (!deliveryId || !needsPrepare) return;
-    api.call('deliveries.prepare', { params: { id: deliveryId } }).catch(() => { /* the buttons still work; they just cannot name the part */ });
-  }, [api, deliveryId, needsPrepare, noParts, limits]);
+  // The steps themselves (copy and open, I sent it, ...) are shared with the handoff strip in the workspace.
+  const actions = useHandoffActions(delivery);
+  const { runner, opened, copied, failure } = actions;
+  usePrepareParts(delivery);
 
   if (!delivery) {
     return (
@@ -85,71 +63,15 @@ export function HandoffCard({ report, delivery, onCreated }: HandoffCardProps) {
   const facts = destination ? describeDestination(destination, conversations.find((c) => c.id === destination.conversationId), formatWhen) : null;
   const busy = runner.busy;
 
-  // ----- what a result means -----
-
-  const afterCopy = async (result: { part: number; partCount: number; clipboard: 'native' | 'client'; text: string | null }) => {
-    const label = result.partCount > 1 ? `Part ${result.part} of ${result.partCount}` : 'The message';
-    setFailure(null);
-    if (result.clipboard === 'client') {
-      if (typeof result.text !== 'string') {
-        setCopied(null);
-        setFailure({ part: result.part, partCount: result.partCount, text: '', reason: 'Mini-Summa did not send the text to copy.' });
-        return;
-      }
-      const written = await writeClipboard(native, result.text);
-      if (!written.ok) {
-        setCopied(null);
-        setFailure({ part: result.part, partCount: result.partCount, text: result.text, reason: written.reason });
-        return;
-      }
-    }
-    setCopied({ text: `${label} is on your clipboard.` });
-  };
-
-  const handoff = (part?: number) => runner.run('handoff', async () => {
-    setOpened(null);
-    const result = await api.call('deliveries.handoff', { params: { id: delivery.id }, body: part ? { part } : {} });
-    await afterCopy(result);
-    setOpened(describeOpen(result.open));
-  });
-
-  const copyPart = (part?: number) => runner.run(part ? `copy-${part}` : 'copy', async () => {
-    const result = await api.call('deliveries.copy', { params: { id: delivery.id }, body: part ? { part } : {} });
-    await afterCopy(result);
-  });
-
-  const openConversation = () => runner.run('open', async () => {
-    const result = await api.call('deliveries.open', { params: { id: delivery.id } });
-    setOpened(describeOpen(result.open));
-  });
-
-  const wholeMessage = () => runner.run('whole', async () => {
-    const prepared = await api.call('deliveries.prepare', { params: { id: delivery.id } });
-    const written = await writeClipboard(native, prepared.message);
-    if (!written.ok) { setCopied(null); setFailure({ part: 1, partCount: 1, text: prepared.message, reason: written.reason }); return; }
-    setFailure(null);
-    setCopied({ text: `The whole message (${characters(prepared.message.length)}) is on your clipboard. This is not recorded as a handoff step.` });
-  });
-
-  const simple = (key: string, call: () => Promise<unknown>, after?: () => void) => runner.run(key, async () => { await call(); after?.(); });
-
-  const discard = () => simple('discard', async () => {
-    await api.call('deliveries.discard', { params: { id: delivery.id }, body: {} });
-    toast({
-      title: 'Handoff discarded', body: 'It is not recorded as sent.',
-      action: { label: 'Undo', onClick: () => { void api.call('deliveries.reopen', { params: { id: delivery.id }, body: {} }).catch((err: unknown) => toast({ title: 'Could not undo', body: errorText(err), kind: 'error' })); } },
-    });
-  });
-
   const act = (button: HandoffButton): void => {
     const table: Record<HandoffActionId, () => unknown> = {
-      handoff: () => handoff(button.part),
-      open: openConversation,
-      copyAgain: () => copyPart(),
-      confirmSent: () => simple('confirmSent', () => api.call('deliveries.confirmSent', { params: { id: delivery.id }, body: {} })),
-      markUncertain: () => simple('uncertain', () => api.call('deliveries.markUncertain', { params: { id: delivery.id }, body: {} })),
-      discard,
-      reopen: () => simple('reopen', () => api.call('deliveries.reopen', { params: { id: delivery.id }, body: {} })),
+      handoff: () => actions.handoff(button.part),
+      open: actions.openConversation,
+      copyAgain: () => actions.copyPart(),
+      confirmSent: actions.confirmSent,
+      markUncertain: actions.markUncertain,
+      discard: actions.discard,
+      reopen: actions.reopen,
       chooseDestination: () => setChooser(true),
       addConversation: () => { if (projectId) openProjectDialog({ mode: 'edit', projectId }); },
       prepare: () => undefined,
@@ -230,7 +152,7 @@ export function HandoffCard({ report, delivery, onCreated }: HandoffCardProps) {
       ) : null}
 
       {plan.partCount > 1 && COPYABLE.includes(delivery.state) ? (
-        <PartList parts={delivery.parts} busy={busy} onCopy={(part) => { void copyPart(part); }} />
+        <PartList parts={delivery.parts} busy={busy} onCopy={(part) => { void actions.copyPart(part); }} />
       ) : null}
 
       {plan.alternatives.wholeMessage || plan.alternatives.sentAnotherWay ? (
@@ -241,7 +163,7 @@ export function HandoffCard({ report, delivery, onCreated }: HandoffCardProps) {
           </button>
           {showMore ? (
             <div className="ms-x-actions">
-              {plan.alternatives.wholeMessage ? <Button size="sm" icon="copy" disabled={busy !== null && busy !== 'whole'} loading={busy === 'whole'} onClick={() => { void wholeMessage(); }}>Copy the whole message</Button> : null}
+              {plan.alternatives.wholeMessage ? <Button size="sm" icon="copy" disabled={busy !== null && busy !== 'whole'} loading={busy === 'whole'} onClick={() => { void actions.wholeMessage(); }}>Copy the whole message</Button> : null}
               {plan.alternatives.sentAnotherWay ? (
                 <Button size="sm" disabled={busy !== null && busy !== 'confirmSent'} loading={busy === 'confirmSent'} onClick={() => act({ id: 'confirmSent', label: 'I sent it another way' })}>I sent it another way</Button>
               ) : null}

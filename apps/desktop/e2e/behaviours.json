@@ -114,7 +114,7 @@
     {
       "id": "X02",
       "title": "The window reopens on the project that was selected when it was closed",
-      "why": "Regression check for a defect this suite found: the core listened on a random port, so every start had a new web origin and the window lost everything it keeps in localStorage."
+      "why": "Regression check for a defect this suite found: the core listened on a random port, so every start had a new web origin and the window lost everything it keeps in localStorage. The core still has to take another port when 47811 is busy, so the check runs twice: on the same origin, and with 47811 held by another listener for the second launch (a different origin), where the window must restore itself from what the core remembers."
     },
     {
       "id": "X03",
@@ -125,6 +125,11 @@
       "id": "X04",
       "title": "The test sandbox is closed: the app reaches the chatgpt.com stand-in and no other host",
       "why": "Not a product behaviour: it proves the suite's own promise that nothing a test does can reach a real host (other host names do not resolve, from either of the app's network sessions)."
+    },
+    {
+      "id": "X05",
+      "title": "A report is handed over and confirmed from the workspace, without going back to Reports",
+      "why": "Regression check for a known imperfection: after \"Copy and open\" the report card was out of sight, and \"I sent it\" was only on the Reports screen. A strip above the two panes now carries both buttons for the selected project; this proves the whole loop in the real window, that the native ChatGPT view stays under the strip in every layout, and that nothing says \"sent\" before the person does."
     }
   ]
 }

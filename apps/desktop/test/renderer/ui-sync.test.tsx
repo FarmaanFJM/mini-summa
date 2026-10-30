@@ -257,6 +257,68 @@ describe('when a write fails', () => {
   });
 });
 
+describe('a change made just before the window closed', () => {
+  const gmKey = IDS.s.gmWorking as SessionKey;
+  const chooseSecondTab = async (user: ReturnType<typeof userEvent.setup>) => { await user.click(await screen.findByRole('tab', { name: /b7c8d9e0/ })); };
+
+  it('is newer than the core\'s copy: after a restart it wins over an older value there, and is then sent', async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    // The core remembers the first tab (written earlier). The person chooses the second one, and the window closes before the quiet period is over.
+    const seed = seedWith({ route: { projectId: IDS.gitManager, view: 'workspace' }, perProject: { [IDS.gitManager]: { sessionKey: gmKey } } });
+    const first = await renderApp({ seed, storage, uiSync: { delayMs: 60_000, retry: FAST.retry } });
+    await chooseSecondTab(user);
+    expect(first.runtime.uiSync.pending()).toContain(`session:${IDS.gitManager}`);
+    expect(JSON.parse(storage.getItem('minisumma.uisync.pending.v1') ?? '[]')).toContain(`session:${IDS.gitManager}`); // kept for the next start
+    first.runtime.dispose();
+    first.unmount();
+
+    // The next start, on the same window storage: the core still says "first tab", the window knows better.
+    const second = await renderApp({ seed, storage, uiSync: FAST });
+    const tab = await screen.findByRole('tab', { name: /b7c8d9e0/ });
+    await waitFor(() => expect(tab.getAttribute('aria-selected')).toBe('true'));
+    expect(second.runtime.route.getState().sessionByProject[IDS.gitManager]).toBe(IDS.s.gmPermission);
+    await waitFor(() => expect(second.runtime.store.getState().settings?.ui?.perProject?.[IDS.gitManager]?.sessionKey).toBe(IDS.s.gmPermission));
+    await waitFor(() => expect(second.runtime.uiSync.pending()).toEqual([]));
+    expect(JSON.parse(storage.getItem('minisumma.uisync.pending.v1') ?? '[]')).toEqual([]); // acknowledged: nothing waits any more
+  });
+
+  it('is still sent when the core could not be reached before the window closed', async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    const seed = seedWith(undefined);
+    const first = await renderApp({ seed, storage, uiSync: FAST });
+    await first.runtime.uiSync.flush();
+    const original = first.demo.call.bind(first.demo);
+    vi.spyOn(first.demo, 'call').mockImplementation(((name: string, input?: unknown) => (name === 'settings.update' ? Promise.reject(new ApiError(0, 'network', 'down')) : (original as (n: string, i?: unknown) => Promise<unknown>)(name, input))) as never);
+    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await waitFor(() => expect(first.runtime.uiSync.pending()).toContain('route'));
+    first.runtime.dispose();
+    first.unmount();
+
+    const second = await renderApp({ seed, storage, uiSync: FAST });
+    await waitFor(() => expect(second.runtime.store.getState().settings?.ui?.route).toEqual({ projectId: IDS.atlas, view: 'workspace' }));
+    expect(heading()).toBe('Atlas API');
+  });
+
+  it('is not needed when nothing was waiting: the core\'s copy wins, as before', async () => {
+    const storage = createMemoryStorage({ 'minisumma.uisync.pending.v1': '[]', 'minisumma.route.v1': JSON.stringify({ view: 'workspace', projectId: IDS.docs, sessionByProject: {}, conversationByProject: {} }) });
+    const app = await renderApp({ seed: seedWith({ route: { projectId: IDS.atlas, view: 'workspace' } }), storage, uiSync: FAST });
+    await waitFor(() => expect(heading()).toBe('Atlas API'));
+    expect(app.runtime.route.getState().projectId).toBe(IDS.atlas);
+  });
+
+  it('ignores a pending list that is damaged', async () => {
+    for (const bad of ['not json', '{"route":true}', '[1,{"a":2},null]']) {
+      const storage = createMemoryStorage({ 'minisumma.uisync.pending.v1': bad });
+      const app = await renderApp({ seed: seedWith(undefined), storage, uiSync: FAST });
+      expect(app.runtime.uiSync.pending().filter((f) => f !== `session:${IDS.gitManager}`)).toEqual([]);
+      app.runtime.dispose();
+      app.unmount();
+    }
+  });
+});
+
 describe('two windows on one core', () => {
   /** Another window: its own runtime, its own storage, the same core. */
   function otherWindow(first: Awaited<ReturnType<typeof renderApp>>, storage = createMemoryStorage()): Runtime {

@@ -3,7 +3,7 @@ import { migrate } from './migrations.ts';
 import type { MigrationResult } from './migrations.ts';
 import { MIGRATIONS } from './schema.ts';
 
-export { Db, fromJson, toJson, bool, int } from './db.ts';
+export { Db, fromJson, toJson, bool, int, journalPragmaFor } from './db.ts';
 export type { SqlParams, SqlValue } from './db.ts';
 export { migrate } from './migrations.ts';
 export type { Migration, MigrationResult } from './migrations.ts';

@@ -49,6 +49,19 @@ export const directive = {
   say: (text: string): string => dir('say', q(text)),
   /** The process dies at once: no Stop, no SessionEnd. */
   crash: (code = 1): string => `[[fake:crash=${code}]]`,
+  /**
+   * Replaces the conversation inside the running process, as /clear does: SessionEnd (reason clear) for this id, then SessionStart
+   * (source clear) for a brand-new one; `agents --json` lists the new id with the same pid. The turn ends with no Stop.
+   */
+  clear: (): string => '[[fake:clear]]',
+  /** The same for /resume: SessionEnd (reason resume), then SessionStart (source resume) for an earlier session that has a transcript. */
+  resume: (sessionId: string): string => `[[fake:resume=${sessionId}]]`,
+} as const;
+
+/** The same two as typed commands at the terminal (no UserPromptSubmit, like the real CLI). */
+export const typedCommand = {
+  clear: '/clear',
+  resume: (sessionId: string): string => `/resume ${sessionId}`,
 } as const;
 
 // ---------------------------------------------------------------------------------------------------------------

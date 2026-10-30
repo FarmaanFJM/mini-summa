@@ -534,6 +534,34 @@ describe('files it must not touch', () => {
     expect((await c.service.status('posix')).issues[0]).toMatch(/could not be read/);
   });
 
+  it('SIMULATED Windows: says that a UTF-16 settings.json (written by PowerShell\'s > or Notepad\'s "Unicode") is UTF-16, and leaves it alone', async () => {
+    for (const bytes of [
+      Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('{ "model": "opus" }\r\n', 'utf16le')]),
+      Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from('{ "model": "opus" }', 'utf16le').swap16()]),
+    ]) {
+      const c = setup();
+      fs.mkdirSync(c.claudeDir, { recursive: true });
+      fs.writeFileSync(c.settingsPath, bytes);
+      const err = await rejection(c.service.plan('posix', 'install'));
+      expect(err).toMatchObject({ status: 422, code: 'settings_unreadable' });
+      expect(err.message).toContain('UTF-16');
+      expect(err.message).toContain('save it again as UTF-8');
+      expect(err.message).not.toContain('Check that the folder exists');
+      expect((await c.service.status('posix')).issues[0]).toMatch(/could not be read: it is not saved as UTF-8 text but as UTF-16/);
+      expect(fs.readFileSync(c.settingsPath).equals(bytes)).toBe(true);
+    }
+  });
+
+  it('SIMULATED Windows: other bytes that are not UTF-8 get the same plain explanation, without the word UTF-16', async () => {
+    const c = setup();
+    fs.mkdirSync(c.claudeDir, { recursive: true });
+    fs.writeFileSync(c.settingsPath, Buffer.from([0x7b, 0x22, 0xe9, 0x22, 0x3a, 0x31, 0x7d])); // { "é": 1 } in Windows-1252
+    const err = await rejection(c.service.plan('posix', 'install'));
+    expect(err.code).toBe('settings_unreadable');
+    expect(err.message).toContain('not saved as UTF-8 text');
+    expect(err.message).not.toContain('UTF-16');
+  });
+
   it('refuses a settings.json that is a directory', async () => {
     const c = setup();
     fs.mkdirSync(c.settingsPath, { recursive: true });

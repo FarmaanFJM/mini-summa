@@ -124,7 +124,7 @@ export function execWithDeadline(file, args, options, { timeoutMs, platform = pr
       timer = setTimeout(() => {
         timedOut = true;
         const finish = () => { try { child.kill(); } catch { /* already gone */ } };
-        if (Number.isInteger(child.pid) && child.pid > 0) Promise.resolve(killTree(child.pid)).then(finish, finish); else finish();
+        if (Number.isInteger(child.pid) && child.pid > 0) Promise.resolve().then(() => killTree(child.pid)).then(finish, finish); else finish();
       }, timeoutMs);
     }
   });
