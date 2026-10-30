@@ -18,6 +18,11 @@
 //    is presented. Otherwise the hash must match the freshly computed plan.
 //  * HookPlan.status is the status BEFORE the change. HookPlan.backupPath is '' when no backup is needed.
 //  * Uninstall deletes the hook_installs row; install upserts it.
+//  * A settings.json reached through a symbolic link (or a linked config folder) is resolved with realpath at plan time.
+//    The plan warns with both paths, and warns first of all when the real file is outside the Claude config folder or
+//    inside a git work tree. The plan hash covers the resolved target, so `apply` writes only where the plan said and
+//    answers 409 plan_stale if the link now leads elsewhere. A dangling link is refused (never replaced by a file).
+//  * `<dataDir>/backups` is private: the directory is 0700 and every backup file 0600, whatever the original's mode.
 import { createHash, randomBytes } from 'node:crypto';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -43,7 +48,11 @@ export interface HooksFs {
   isDirectory(dir: string): Promise<boolean>;
   /** Resolves symlinks so the rename replaces the target and not the link. Returns `file` when it does not exist. */
   realpath(file: string): Promise<string>;
-  mkdirp(dir: string): Promise<void>;
+  /** True when `file` itself is a symbolic link (a dangling one included). */
+  isSymlink(file: string): Promise<boolean>;
+  /** Creates the directory and missing parents. With `mode` the directory ends up with exactly that mode. */
+  mkdirp(dir: string, mode?: number): Promise<void>;
+  /** Byte-exact copy that is private (0600) from its first byte, whatever the source's mode. Refuses to overwrite. */
   copyFile(from: string, to: string): Promise<void>;
   /** Temp file next to `file`, flushed, then renamed over it. Never leaves a half-written settings file. */
   writeAtomic(file: string, text: string, mode: number): Promise<void>;
@@ -78,8 +87,26 @@ export const nodeHooksFs: HooksFs = {
   async realpath(file) {
     try { return await fsp.realpath(file); } catch { return file; }
   },
-  async mkdirp(dir) { await fsp.mkdir(dir, { recursive: true }); },
-  async copyFile(from, to) { await fsp.copyFile(from, to); },
+  async isSymlink(file) {
+    try { return (await fsp.lstat(file)).isSymbolicLink(); } catch { return false; }
+  },
+  async mkdirp(dir, mode) {
+    await fsp.mkdir(dir, mode === undefined ? { recursive: true } : { recursive: true, mode });
+    // mkdir applies the umask and leaves an existing directory alone; a private directory must be private either way.
+    if (mode !== undefined) await fsp.chmod(dir, mode);
+  },
+  async copyFile(from, to) {
+    // Not fsp.copyFile: that carries over the source's mode, and settings.json is often 0644 and may hold secrets.
+    const data = await fsp.readFile(from);
+    const handle = await fsp.open(to, 'wx', 0o600);
+    try {
+      await handle.writeFile(data);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fsp.chmod(to, 0o600);
+  },
   async exists(file) {
     try { await fsp.access(file); return true; } catch { return false; }
   },
@@ -125,9 +152,22 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
-/** Windows paths (drive letter or UNC) are joined the Windows way even when this process is not on Windows. */
+/** Windows paths (drive letter or UNC) are handled the Windows way even when this process is not on Windows. */
+const pathModule = (p: string): typeof path.posix => (/^[A-Za-z]:[\\/]|^\\\\/.test(p) ? path.win32 : path.posix);
 export function joinHost(dir: string, name: string): string {
-  return /^[A-Za-z]:[\\/]|^\\\\/.test(dir) ? path.win32.join(dir, name) : path.posix.join(dir, name);
+  return pathModule(dir).join(dir, name);
+}
+const dirnameHost = (p: string): string => pathModule(p).dirname(p);
+/** Same place? Windows paths compare without regard to case or trailing separators. */
+function samePath(a: string, b: string): boolean {
+  const m = pathModule(a);
+  const norm = (x: string) => m.normalize(x).replace(/[\\/]+$/, '');
+  return m === path.win32 ? norm(a).toLowerCase() === norm(b).toLowerCase() : norm(a) === norm(b);
+}
+function isInside(root: string, p: string): boolean {
+  const m = pathModule(root);
+  const rel = m.relative(root, p);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${m.sep}`) && !m.isAbsolute(rel));
 }
 
 const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
@@ -367,6 +407,12 @@ function withoutOurs(root: Obj, isOurs: (h: unknown) => boolean): Obj {
 // ---------------------------------------------------------------------------------------------------------------
 // The service
 
+/** Where the bytes really go: the file behind any symbolic link, and which kind of link (if any) leads there. */
+interface Resolved { target: string; fileIsLink: boolean; dirIsLink: boolean; configReal: string }
+
+/** What a plan was computed for. `target` is the real file `apply` must write; the public HookPlan only names the path shown. */
+interface Planned { plan: HookPlan; target: string; existed: boolean; configDir: string }
+
 export interface HooksDeps {
   base: CoreBase;
   environments: EnvironmentsService;
@@ -460,6 +506,9 @@ export function createHooksService(deps: HooksDeps): HooksService {
     let problem: CoreError | null = null;
     try {
       const text = await fs.readText(settingsPath);
+      if (text === null && await fs.isSymlink(settingsPath)) {
+        throw unprocessable(`${settingsPath} is a link to a file that does not exist. Mini-Summa will not replace the link. Create the file it points to, or remove the link, then try again.`, 'settings_dangling_link', { settingsPath });
+      }
       loaded = text === null ? { exists: false, text: '', bom: false, eol: '\n', indent: '  ', finalNewline: true, root: {} } : parseSettings(text, settingsPath);
     } catch (err) {
       problem = err instanceof CoreError ? err
@@ -491,7 +540,26 @@ export function createHooksService(deps: HooksDeps): HooksService {
     return candidate;
   }
 
-  async function planUnlocked(env: EnvId, action: 'install' | 'uninstall'): Promise<HookPlan> {
+  async function resolveTarget(ins: Inspection, exists: boolean): Promise<Resolved> {
+    const configReal = await fs.realpath(ins.configDir);
+    const fileIsLink = exists && await fs.isSymlink(ins.settingsPath);
+    const target = exists ? await fs.realpath(ins.settingsPath) : joinHost(configReal, 'settings.json');
+    return { target, fileIsLink, dirIsLink: !samePath(configReal, ins.configDir), configReal };
+  }
+
+  /** The closest directory at or above `start` that holds a `.git` entry (a folder, or a file for worktrees), or null. */
+  async function findGitRoot(start: string): Promise<string | null> {
+    let dir = start;
+    for (let i = 0; i < 48; i++) {
+      if (await fs.exists(joinHost(dir, '.git'))) return dir;
+      const parent = dirnameHost(dir);
+      if (parent === dir) return null;
+      dir = parent;
+    }
+    return null;
+  }
+
+  async function planInternal(env: EnvId, action: 'install' | 'uninstall'): Promise<Planned> {
     const ins = await inspect(env);
     if (ins.problem || !ins.layout || !ins.loaded) throw ins.problem ?? unprocessable(`Mini-Summa could not look at ${envLabel(env)}.`, 'environment_unavailable');
     const { loaded, settingsPath } = ins;
@@ -508,7 +576,26 @@ export function createHooksService(deps: HooksDeps): HooksService {
     const before = loaded.text;
     const after = noop ? before : serialize(next, loaded);
 
+    let target = settingsPath;
+    let linked = false;
     if (!noop) {
+      // Where the change really lands matters more than anything else in the plan, so these warnings come first.
+      const r = await resolveTarget(ins, loaded.exists);
+      target = r.target;
+      linked = r.fileIsLink || r.dirIsLink;
+      if (r.fileIsLink) {
+        warnings.push(`Check this first: ${settingsPath} is a symbolic link to ${r.target}. Mini-Summa writes through the link, so the file at ${r.target} is the one that changes, and the link stays as it is.`);
+      } else if (r.dirIsLink) {
+        warnings.push(`Check this first: the Claude configuration folder ${ins.configDir} is a link to ${r.configReal}. The file that changes is ${r.target}.`);
+      }
+      if (!isInside(r.configReal, r.target)) {
+        warnings.push(`Check this first: the file that changes, ${r.target}, is outside your Claude configuration folder ${r.configReal}. Other programs or tools may share that file.`);
+      }
+      const gitRoot = await findGitRoot(dirnameHost(r.target));
+      if (gitRoot) {
+        warnings.push(`Check this first: ${r.target} is inside a git work tree (${gitRoot}). The change will show up there as an uncommitted edit, and the hook paths it adds belong to this computer, so do not commit them to a shared repository.`);
+      }
+
       if (!loaded.exists) warnings.push('settings.json does not exist yet. It will be created, so no backup is needed.');
       if (!(await fs.isDirectory(ins.configDir))) warnings.push(`The Claude configuration folder ${ins.configDir} does not exist yet. Mini-Summa will create it.`);
       if (loaded.exists && serialize(loaded.root, loaded) !== loaded.text) {
@@ -532,17 +619,20 @@ export function createHooksService(deps: HooksDeps): HooksService {
     }
 
     const planAction: HookPlan['action'] = noop ? 'noop' : action;
-    const planHash = createHash('sha256').update(env + planAction + settingsPath + before + after).digest('hex');
+    // For a plain file the hash is exactly sha256(env + action + settingsPath + before + after). When a link is involved
+    // the resolved target is part of it too, so consent covers the file that will really change.
+    const planHash = createHash('sha256').update(env + planAction + settingsPath + before + after + (linked ? `\0${target}` : '')).digest('hex');
     let backupPath = '';
     if (!noop && loaded.exists) {
       backupPath = promised.get(planHash) ?? await backupPathFor(env);
       promise(planHash, backupPath);
     }
-    return {
+    const plan: HookPlan = {
       env, settingsPath, planHash, action: planAction, before, after,
       unifiedDiff: unifiedDiff(before, after, settingsPath, { created: !loaded.exists }),
       backupPath, warnings, status: ins.status,
     };
+    return { plan, target, existed: loaded.exists, configDir: ins.configDir };
   }
 
   function recordInstall(plan: HookPlan, backupPath: string | null): void {
@@ -559,16 +649,18 @@ export function createHooksService(deps: HooksDeps): HooksService {
   };
 
   async function applyUnlocked(env: EnvId, action: 'install' | 'uninstall', planHash: string): Promise<HookStatus> {
-    const plan = await planUnlocked(env, action);
+    const { plan, target, existed, configDir } = await planInternal(env, action);
     if (plan.action === 'noop') return plan.status;
     if (plan.planHash !== planHash) {
       throw conflict('settings.json changed since this plan was shown, or the plan is no longer valid. Review the new plan and apply that one.', 'plan_stale');
     }
     const { settingsPath } = plan;
-    const existed = plan.before !== '' || (await fs.exists(settingsPath));
-    const target = existed ? await fs.realpath(settingsPath) : settingsPath;
-    const changedSince = async (): Promise<boolean> => (await fs.readText(settingsPath).catch(() => null)) !== (existed ? plan.before : null);
-    const stale = () => conflict('settings.json changed while it was being updated. Nothing was written. Review the new plan and apply that one.', 'plan_stale');
+    const targetNow = async (): Promise<string> => (existed ? fs.realpath(settingsPath) : joinHost(await fs.realpath(configDir), 'settings.json'));
+    // Stale means: the text differs from what the plan was computed from, or a link now leads somewhere else. The plan is
+    // consent for one file only; the same target is used for the backup and the write below, never looked up again.
+    const changedSince = async (): Promise<boolean> =>
+      (await fs.readText(settingsPath).catch(() => null)) !== (existed ? plan.before : null) || (await targetNow()) !== target;
+    const stale = () => conflict('settings.json, or the file a link leads to, changed while it was being updated. Nothing was written. Review the new plan and apply that one.', 'plan_stale');
 
     let backupPath: string | null = null;
     try {
@@ -576,7 +668,7 @@ export function createHooksService(deps: HooksDeps): HooksService {
       if (existed) {
         backupPath = plan.backupPath || await backupPathFor(env);
         if (await fs.exists(backupPath)) backupPath = await backupPathFor(env);
-        await fs.mkdirp(path.dirname(backupPath));
+        await fs.mkdirp(path.dirname(backupPath), 0o700);
         await fs.copyFile(target, backupPath);
         if ((await fs.readText(backupPath)) !== plan.before) {
           throw unprocessable(`The backup ${backupPath} could not be verified, so settings.json was not changed. Check the free space and permissions of the Mini-Summa data folder.`, 'backup_failed');
@@ -595,7 +687,7 @@ export function createHooksService(deps: HooksDeps): HooksService {
     else base.db.run('DELETE FROM hook_installs WHERE env = ?', [env]);
     const status = (await inspect(env)).status;
     base.bus.emit({ type: 'hooks.changed', env, status });
-    log.info('hooks.applied', { env, action, settingsPath, backupPath });
+    log.info('hooks.applied', { env, action, settingsPath, target, backupPath });
     return status;
   }
 
@@ -612,7 +704,7 @@ export function createHooksService(deps: HooksDeps): HooksService {
       return Promise.all(envs.map((e) => status(e.id)));
     },
     status,
-    plan: (env, action) => serial(() => planUnlocked(env, action)),
+    plan: (env, action) => serial(async () => (await planInternal(env, action)).plan),
     apply: (env, action, planHash) => serial(() => applyUnlocked(env, action, planHash)),
   };
 }

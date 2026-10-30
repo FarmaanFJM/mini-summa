@@ -382,42 +382,108 @@ describe('push', () => {
   });
 });
 
-describe('pairing rate limit', () => {
+describe('pairing rate limit (only failed redemptions are charged)', () => {
   const body = { offerId: 'offer1', code: 'abcdefgh1234', deviceName: 'Pixel', platform: 'android' };
+  const wrongCode = () => { throw new CoreError(400, 'wrong_code', 'That code is wrong. Scan a fresh code on the desktop.'); };
+  const redeem = (hh: Harness, b: unknown = body, headers: Record<string, string> = {}) => api(hh, 'POST', '/pairing/redeem', { body: b, headers });
 
-  it('allows 10 attempts a minute across everyone, then answers 429', async () => {
+  it('cannot be locked out by requests that fail validation: 30 empty or invalid POSTs, then a valid pairing still works', async () => {
     const hh = await boot();
-    for (let i = 0; i < 10; i++) expect((await api(hh, 'POST', '/pairing/redeem', { body })).status, `attempt ${i + 1}`).toBe(200);
-    const blocked = await api(hh, 'POST', '/pairing/redeem', { body });
-    expect(blocked.status).toBe(429);
-    expect(blocked.json().error.code).toBe('rate_limited');
-    expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
-    expect(hh.devices.redeemCalls).toHaveLength(10);
-    // the limit is global, not per caller
-    expect((await api(hh, 'POST', '/pairing/redeem', { body, headers: { 'x-forwarded-for': '100.64.0.9', 'tailscale-user-login': 'other@example.com' } })).status).toBe(429);
+    const invalid: unknown[] = [
+      {}, { offerId: 'offer1' }, { ...body, code: 'short' }, { ...body, deviceName: '' }, { ...body, platform: 'desktop' }, { ...body, offerId: 5 }, { code: 'abcdefgh1234' },
+    ];
+    for (let i = 0; i < 30; i++) {
+      const res = await redeem(hh, invalid[i % invalid.length]);
+      expect(res.status, `invalid request ${i + 1}`).toBe(400);
+      expect(res.json().error.code).toBe('validation_failed');
+    }
+    const notJson = await raw(hh.port, { method: 'POST', path: '/api/v1/pairing/redeem', headers: { 'content-type': 'application/json' }, body: '{' });
+    expect(notJson.status).toBe(400);
+    expect(hh.devices.redeemCalls).toHaveLength(0);
+    const ok = await redeem(hh);
+    expect(ok.status).toBe(200);
+    expect(ok.json().token).toBeTruthy();
+    expect(hh.devices.redeemCalls).toHaveLength(1);
   });
 
-  it('counts failed attempts too, and recovers when the minute is over', async () => {
+  it('does not charge successful pairings either', async () => {
     const hh = await boot();
-    hh.devices.redeemImpl = () => { throw new CoreError(400, 'wrong_code', 'That code is wrong.'); };
-    for (let i = 0; i < 10; i++) expect((await api(hh, 'POST', '/pairing/redeem', { body })).status).toBe(400);
-    expect((await api(hh, 'POST', '/pairing/redeem', { body })).status).toBe(429);
+    for (let i = 0; i < 40; i++) expect((await redeem(hh)).status, `pairing ${i + 1}`).toBe(200);
+    expect(hh.devices.redeemCalls).toHaveLength(40);
+  });
+
+  it('allows 20 failed redemptions a minute across everyone, then answers 429 with Retry-After', async () => {
+    const hh = await boot();
+    hh.devices.redeemImpl = wrongCode;
+    for (let i = 0; i < 20; i++) {
+      const res = await redeem(hh);
+      expect(res.status, `failure ${i + 1}`).toBe(400);
+      expect(res.json().error.code).toBe('wrong_code');
+    }
+    const blocked = await redeem(hh);
+    expect(blocked.status).toBe(429);
+    expect(blocked.json().error.code).toBe('rate_limited');
+    const wait = Number(blocked.headers['retry-after']);
+    expect(wait).toBeGreaterThan(0);
+    expect(wait).toBeLessThanOrEqual(60);
+    expect(hh.devices.redeemCalls).toHaveLength(20);   // the blocked request never reached the service
+    // the budget is global, not per caller, and a correct code is held back as well while the limit applies
+    hh.devices.redeemImpl = null;
+    const other = await redeem(hh, body, { 'x-forwarded-for': '100.64.0.9', 'tailscale-user-login': 'other@example.com' });
+    expect(other.status).toBe(429);
+    expect(hh.devices.redeemCalls).toHaveLength(20);
+    // invalid requests are not refused with a validation error while blocked: the limit answers first
+    expect((await redeem(hh, {})).status).toBe(429);
+  });
+
+  it('recovers when the failures leave the minute', async () => {
+    const hh = await boot();
+    hh.devices.redeemImpl = wrongCode;
+    for (let i = 0; i < 20; i++) await redeem(hh);
+    expect((await redeem(hh)).status).toBe(429);
     hh.clock.advance(59_000);
-    expect((await api(hh, 'POST', '/pairing/redeem', { body })).status).toBe(429);
+    const stillBlocked = await redeem(hh);
+    expect(stillBlocked.status).toBe(429);
+    expect(Number(stillBlocked.headers['retry-after'])).toBe(1);
     hh.clock.advance(1_500);
-    expect((await api(hh, 'POST', '/pairing/redeem', { body })).status).toBe(400);
+    hh.devices.redeemImpl = null;
+    expect((await redeem(hh)).status).toBe(200);
+  });
+
+  it('charges every refusal the service answers (wrong code, unknown or used offer) but not server faults', async () => {
+    const hh = await boot();
+    const answers = [
+      () => { throw new CoreError(400, 'wrong_code', 'That code is wrong.'); },
+      () => { throw new CoreError(404, 'not_found', 'That pairing offer was not found.'); },
+      () => { throw new CoreError(409, 'offer_used', 'That pairing offer was already used.'); },
+      () => { throw new CoreError(422, 'offer_expired', 'That pairing offer has expired.'); },
+    ];
+    for (let i = 0; i < 20; i++) {
+      hh.devices.redeemImpl = answers[i % answers.length];
+      expect([400, 404, 409, 422]).toContain((await redeem(hh)).status);
+    }
+    expect((await redeem(hh)).status).toBe(429);
+
+    const fresh = await boot();
+    for (let i = 0; i < 30; i++) {
+      fresh.devices.redeemImpl = i % 2 === 0 ? () => { throw new Error('database is locked'); } : () => { throw new CoreError(503, 'unavailable', 'Pairing is not available right now.'); };
+      expect([500, 503]).toContain((await redeem(fresh)).status);
+    }
+    fresh.devices.redeemImpl = null;
+    expect((await redeem(fresh)).status).toBe(200);
   });
 
   it('is not spent by other routes', async () => {
     const hh = await boot();
-    for (let i = 0; i < 20; i++) await api(hh, 'GET', '/health');
-    expect((await api(hh, 'POST', '/pairing/redeem', { body })).status).toBe(200);
+    for (let i = 0; i < 30; i++) await api(hh, 'GET', '/health');
+    hh.devices.redeemImpl = wrongCode;
+    for (let i = 0; i < 20; i++) expect((await redeem(hh)).status).toBe(400);
   });
 
   it('tells the service how the request arrived', async () => {
     const hh = await boot({ publicUrl: 'https://box.tail1234.ts.net' });
-    await api(hh, 'POST', '/pairing/redeem', { body });
-    await api(hh, 'POST', '/pairing/redeem', { body, headers: { host: 'box.tail1234.ts.net', 'x-forwarded-for': '100.64.0.9' } });
+    await redeem(hh);
+    await redeem(hh, body, { host: 'box.tail1234.ts.net', 'x-forwarded-for': '100.64.0.9' });
     expect(hh.devices.redeemCalls.map((c) => c.via)).toEqual(['localhost', 'tailscale']);
     expect(hh.devices.redeemCalls[0].req).toEqual(body);
   });
@@ -663,7 +729,8 @@ describe('wording of what the server says', () => {
     take(await api(hh, 'POST', '/push/configure', { token: hh.tokens.desktop, body: { serviceAccountJson: 'x'.repeat(60) } })); // 503
     take(await api(hh, 'POST', '/conversations/c1/verify', { token: hh.tokens.desktop }));                            // 503
     take(await api(hh, 'GET', '/projects/p1', { token: hh.tokens.read }));                                            // 500
-    for (let i = 0; i < 11; i++) await api(hh, 'POST', '/pairing/redeem', { body: { offerId: 'o', code: 'abcdefgh1234', deviceName: 'x', platform: 'android' } });
+    hh.devices.redeemImpl = () => { throw new CoreError(400, 'wrong_code', 'That code is wrong.'); };
+    for (let i = 0; i < 20; i++) await api(hh, 'POST', '/pairing/redeem', { body: { offerId: 'o', code: 'abcdefgh1234', deviceName: 'x', platform: 'android' } });
     take(await api(hh, 'POST', '/pairing/redeem', { body: { offerId: 'o', code: 'abcdefgh1234', deviceName: 'x', platform: 'android' } })); // 429
     await api(hh, 'POST', '/activity/read', { token: hh.tokens.read, body: { all: true }, headers: { 'idempotency-key': 'k' } });
     hh.db.run("INSERT INTO idempotency (key, principal, route, response_status, response_json, created_at) VALUES ('k2','desktop','projects.create',200,'{\"v\":1,\"fp\":\"other\",\"body\":{}}', ?)", [hh.clock.now().toISOString()]);

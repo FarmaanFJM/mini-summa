@@ -20,6 +20,9 @@ export const DECLARED_TEXT: Record<DeclaredStatus, string> = {
   blocked: 'Declared blocked by Claude',
 };
 
+/** The same claim inside a sentence: "declared complete by Claude". */
+export const declaredPhrase = (status: DeclaredStatus): string => `declared ${status} by Claude`;
+
 /** Where a delivery stands, short enough for the queue. Matches the table in docs/HANDOFF.md. */
 export const STATE_LABEL: Record<DeliveryState, string> = {
   report_captured: 'Setting up the handoff',

@@ -55,19 +55,30 @@
 //  - Hook files already waiting when the app starts are ingested before the replay and are reported as `replay: true`.
 //  - Resuming a session starts Claude in the session's own working directory (Claude finds the transcript through it);
 //    the chosen project folder only decides the project attribution.
+//  - APPROVE WHAT YOU SEE. Every PermissionRequest hook the Reducer accepted (not a duplicate delivery, not late or stale) is
+//    handed to onPermissionRequest, also a second one that arrives while the session already waits and so changes no state.
+//    currentPermission(key) is the newest one since the session last left needs_permission (null otherwise, for a terminal
+//    that is starting or restarted after it, and for sessions that are not managed). answerPermission(.., expectRequestKey)
+//    sends nothing when that key is not the open one. Its correlationKey is `perm_<transport id of the hook receipt>`.
+//  - UNSENT INPUT. A person typed at the desktop terminal and has not pressed Enter (ManagedManager.hasUnsentInput, a
+//    heuristic): typeInto and targetCheck refuse, whatever the caller, because the text would be appended to that line.
+//    answerPermission is not held back (the permission dialog takes the keys, and the person may have to answer it there).
+//  - ManagedManager has no method for "a prompt reached Claude", so the sessions layer calls the optional extra
+//    ManagedManagerExtras.promptSubmitted(key, hook time) when it exists (the real manager has it): it clears the unsent flag.
 import { tidOfSpoolName } from '@minisumma/claude-integration';
 import { envLabel, parseSessionKey } from '@minisumma/shared';
 import type { EnvId, Project, SessionKey, SessionState, SessionView } from '@minisumma/shared';
 import { fromJson } from '@minisumma/storage';
 import type {
-  ClaudeEventHandlers, CoreBase, CoreOptions, EnvironmentsService, ManagedManager, ManagedSessionRecord, ProjectsService, SessionsService,
-  SettingsService, StartSessionRequest, TypeIntoResult,
+  ClaudeEventHandlers, CoreBase, CoreOptions, EnvironmentsService, ManagedManager, ManagedSessionRecord, PermissionRequestInfo, ProjectsService,
+  SessionsService, SettingsService, StartSessionRequest, TypeIntoResult,
 } from '../contracts.ts';
 import { nowIso } from '../contracts.ts';
 import { CoreError, badRequest, notFound, unprocessable } from '../errors.ts';
 import { createDiscovery } from './discovery.ts';
 import type { AgentsRunner } from './discovery.ts';
 import { createIngestion } from './ingestion.ts';
+import type { ManagedManagerExtras } from './managed.ts';
 import { attribute } from './projection.ts';
 import type { ApplyResult } from './projection.ts';
 import { createProjection } from './projection.ts';
@@ -119,6 +130,14 @@ const SHUTDOWN_WAIT_MS = 3000;
 // C0 controls except tab, line feed and carriage return, and DEL. An ESC could end a bracketed paste early.
 // eslint-disable-next-line no-control-regex
 const UNSAFE_TEXT = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+const UNSENT_INPUT_PROBLEM = 'Someone typed in that terminal and has not pressed Enter yet. Finish or clear that line first.';
+const STALE_PERMISSION_PROBLEM = 'That permission request is no longer the one that is open. Look at the terminal.';
+
+/** One line a person can read: which tool, and what it was asked to do. */
+function permissionSummary(info: PermissionRequestInfo): string {
+  if (info.toolName && info.inputExcerpt) return `${info.toolName}: ${info.inputExcerpt}`;
+  return info.toolName ?? info.inputExcerpt ?? 'A permission request';
+}
 
 interface ViewChange { view: SessionView; previous: SessionView | null }
 
@@ -141,6 +160,7 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
   const viewJson = new Map<SessionKey, string>();
   // What has already been handed to subscribers in this process (a rebuild must not hand the same thing over again).
   const deliveredDerived = new Set<string>();
+  const deliveredPermissions = new Set<string>();
   const deliveredReports = new Map<string, string | null>();
   const deliveredCandidates = new Map<string, string | null>();
   const offs: (() => void)[] = [];
@@ -285,6 +305,13 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
       const view = views.get(event.sessionKey);
       if (view) callHandlers((h) => h.onDerived?.(event, view));
     }
+    // Every permission request, not only the one that moved the session into needs_permission; each at most once.
+    for (const info of result.permissions) {
+      if (deliveredPermissions.has(info.correlationKey)) continue;
+      deliveredPermissions.add(info.correlationKey);
+      const view = views.get(info.sessionKey);
+      if (view) callHandlers((h) => h.onPermissionRequest?.(info, view));
+    }
     // A report is handed over again only when its project attribution changed (a registry change re-attributes).
     for (const report of result.reports) {
       if (deliveredReports.has(report.reportId) && deliveredReports.get(report.reportId) === report.projectId) continue;
@@ -306,11 +333,24 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
     }
   }
 
+  /** A prompt reached Claude: whatever was typed on the desktop input line before it has been submitted. */
+  function noteSubmissions(result: ApplyResult): void {
+    const extras = managed as ManagedManager & Partial<ManagedManagerExtras>;
+    if (!extras.promptSubmitted) return;
+    for (const submission of result.submissions) {
+      if (submission.replay) continue;
+      // The hook's own clock is comparable with the keystroke time only on this computer; WSL clocks can drift.
+      const sameClock = parseSessionKey(submission.sessionKey)?.env === hostEnv;
+      extras.promptSubmitted(submission.sessionKey, sameClock ? submission.at : undefined);
+    }
+  }
+
   function publish(result: ApplyResult): void {
     const keys = result.rebuilt ? allKeys() : new Set(result.touched);
     commitViews(refreshViews(keys));
     deliver(result);
     syncPrompted(keys);
+    noteSubmissions(result);
   }
 
   function applyAndPublish(opts: { replay: boolean }): void {
@@ -355,25 +395,42 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
     }
   }
 
-  /** The target check, and whether the terminal is one that has not finished starting. */
-  function inspect(key: SessionKey, expectGeneration: number | null): { check: ReturnType<SessionsService['targetCheck']>; starting: boolean } {
+  /** The target check, whether the terminal has not finished starting, and whether a person left text on its input line. */
+  function inspect(key: SessionKey, expectGeneration: number | null): { check: ReturnType<SessionsService['targetCheck']>; starting: boolean; unsent: boolean } {
     const view = views.get(key);
     if (!view) {
-      return { starting: false, check: { managed: false, live: false, generation: null, generationMatches: false, state: null, problem: 'Mini-Summa does not know this session.' } };
+      return { starting: false, unsent: false, check: { managed: false, live: false, generation: null, generationMatches: false, state: null, problem: 'Mini-Summa does not know this session.' } };
     }
     const isManaged = view.origin === 'managed';
     const live = view.availability === 'live';
     const generationMatches = expectGeneration === null || expectGeneration === view.generation;
     const starting = isManaged && live && startingKeys.has(key);
+    const unsent = isManaged && live && !starting && managed.hasUnsentInput(key);
     let problem: string | null = null;
     if (!isManaged) problem = 'Mini-Summa only types into sessions it started itself. This session is observed only.';
     else if (!live) problem = availabilityProblem(view);
     else if (!generationMatches) problem = `This session restarted after the request was made (it is on run ${view.generation} now, the request was for run ${expectGeneration}).`;
     else if (starting) problem = STARTING_PROBLEM;
-    return { starting, check: { managed: isManaged, live, generation: view.generation, generationMatches, state: view.state, problem } };
+    else if (unsent) problem = UNSENT_INPUT_PROBLEM;
+    return { starting, unsent, check: { managed: isManaged, live, generation: view.generation, generationMatches, state: view.state, problem } };
   }
 
   const targetCheck = (key: SessionKey, expectGeneration: number | null): ReturnType<SessionsService['targetCheck']> => inspect(key, expectGeneration).check;
+
+  /**
+   * The permission request that is open now, with the PTY it came from: the projection's newest request since the session last
+   * left needs_permission, unless it was logged before the terminal (re)started or is a hook of the earlier process that was
+   * still waiting in a spool when it did.
+   */
+  function openPermission(key: SessionKey): PermissionRequestInfo | null {
+    const view = views.get(key);
+    if (!view || view.origin !== 'managed' || view.availability !== 'live' || view.state !== 'needs_permission' || startingKeys.has(key)) return null;
+    const open = projection.currentPermission(key);
+    if (!open) return null;
+    const baseline = runBaselines.get(key);
+    if (baseline && (open.info.rawSeq <= baseline.seq || (open.transportId !== null && baseline.waiting.has(open.transportId)))) return null;
+    return open.info;
+  }
 
   function refusal(check: ReturnType<typeof targetCheck>): TypeIntoResult | null {
     const problem = check.problem ?? 'The session cannot receive text right now.';
@@ -526,11 +583,13 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
         throw unprocessable('The text contains control characters (for example from copying terminal output). They cannot be typed safely, so nothing was sent. Remove them and try again.', 'unsafe_text');
       }
       await freshen();
-      const { check, starting } = inspect(key, req.expectGeneration);
+      const { check, starting, unsent } = inspect(key, req.expectGeneration);
       const refused = refusal(check);
       if (refused) return refused;
       // Not even allowedStates can open this door: a terminal that is still starting may be showing a dialog where Enter means "no".
       if (starting) return { ok: false, code: 'state_not_allowed', problem: STARTING_PROBLEM };
+      // Nor can the caller: this text would be appended to what a person typed at the terminal and submitted together with it.
+      if (unsent) return { ok: false, code: 'state_not_allowed', problem: UNSENT_INPUT_PROBLEM };
       if (!req.allowedStates.includes(check.state as SessionState)) {
         return { ok: false, code: 'state_not_allowed', problem: `Claude is "${labelOf(check.state as SessionState)}" right now. Text can only be sent when it is: ${stateWords(req.allowedStates)}.` };
       }
@@ -549,7 +608,12 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
       return { ok: true, submitted: req.submit };
     },
 
-    async answerPermission(key, decision, expectGeneration) {
+    currentPermission(key) {
+      const open = openPermission(key);
+      return open ? { correlationKey: open.correlationKey, summary: permissionSummary(open) } : null;
+    },
+
+    async answerPermission(key, decision, expectGeneration, expectRequestKey) {
       await freshen();
       const { check, starting } = inspect(key, expectGeneration);
       const refused = refusal(check);
@@ -557,6 +621,10 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
       if (starting) return { ok: false, code: 'state_not_allowed', problem: STARTING_PROBLEM };
       if (check.state !== 'needs_permission') {
         return { ok: false, code: 'state_not_allowed', problem: 'Claude is not waiting for a permission answer right now, so nothing was sent.' };
+      }
+      // The person decided on the request they were shown. If a newer one has arrived since, Enter would answer THAT dialog.
+      if (expectRequestKey !== undefined && openPermission(key)?.correlationKey !== expectRequestKey) {
+        return { ok: false, code: 'state_not_allowed', problem: STALE_PERMISSION_PROBLEM };
       }
       const pending = unsettled(key);
       if (pending) {

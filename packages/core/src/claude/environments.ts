@@ -20,6 +20,13 @@
 //    buildLaunchPlan recognises a .cmd/.bat file and builds the safe `cmd.exe /d /s /c "..."` line itself. Only the
 //    version check here goes through `cmd.exe /d /c <shim> --version`.
 //
+//  - On a Windows host the system programs this file starts (wsl.exe, cmd.exe) are started by FULL path
+//    (windowsPrograms.ts), never by a bare name that the process-start code would look for in the current directory first.
+//    PATH entries that are not absolute are ignored for the same reason.
+//  - A .cmd/.bat shim is asked for its version as ONE verbatim command line, `cmd.exe /d /s /c ""<shim>" --version"`, the same
+//    form ptyHost uses to launch it; a shim path with & | < > ^ % ! or a quote in it is refused (it is reported like a Claude
+//    that does not start), because cmd.exe would read that character as syntax.
+//
 // Windows and WSL behaviour is exercised through an injected command runner and file-system probe only. NOT TESTED on
 // a real Windows host or a real WSL2 distribution.
 import fs from 'node:fs';
@@ -35,6 +42,7 @@ import { CoreError } from '../errors.ts';
 import { defaultCommandRunner, parseVersion, parseWslDistroList } from './commandRunner.ts';
 import type { CommandResult, CommandRunner } from './commandRunner.ts';
 import { envTag, windowsPathToWsl, wslPathToWindows } from './envPaths.ts';
+import { cmdShimPathProblem, systemProgramPath } from './windowsPrograms.ts';
 
 export const CLAUDE_INSTALL_URL = 'https://claude.com/product/claude-code';
 const VERSION_TIMEOUT_MS = 10_000;
@@ -146,19 +154,23 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
   const hostEnvId: EnvId = overrides.hostEnv ?? detectEnv(host.platform, host.env);
   const hostIsWindows = hostEnvId === 'win';
 
-  const safeRun = async (file: string, args: string[], timeoutMs: number, env?: Record<string, string>): Promise<CommandResult> => {
+  const safeRun = async (file: string, args: string[], timeoutMs: number, env?: Record<string, string>, verbatim?: boolean): Promise<CommandResult> => {
     try {
-      return await run(file, args, { timeoutMs, env });
+      return await run(file, args, verbatim ? { timeoutMs, env, windowsVerbatimArguments: true } : { timeoutMs, env });
     } catch (err) {
       return { stdout: '', stderr: '', code: null, error: err instanceof Error ? err.message : String(err) };
     }
   };
 
+  /** A system program of a Windows host by full path (see windowsPrograms.ts); the plain name anywhere else. */
+  const systemProgram = (name: 'wsl.exe' | 'cmd.exe'): string => (host.platform === 'win32' ? systemProgramPath(name, host.env) : name);
+
   // ---- Claude on the host ---------------------------------------------------------------------------------------------
 
   const pathDirs = (): string[] => {
     const raw = host.env.PATH ?? host.env.Path ?? '';
-    return raw.split(host.platform === 'win32' ? ';' : ':').map((d) => d.trim().replace(/^"(.*)"$/, '$1')).filter((d) => d !== '');
+    // A relative entry (".", "bin") would be searched from the current directory, which is not where programs are installed.
+    return raw.split(host.platform === 'win32' ? ';' : ':').map((d) => d.trim().replace(/^"(.*)"$/, '$1')).filter((d) => d !== '' && lib.isAbsolute(d));
   };
 
   /** Executable names first, directories second: claude.exe anywhere on PATH beats claude.cmd. */
@@ -207,9 +219,16 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
    */
   const commandFor = (file: string): ClaudeCommand => ({ file, prefixArgs: [], wslDistro: null });
 
-  /** The command line that asks `file` for its version. Only here is a shim started through cmd.exe. */
-  function versionCommand(file: string): { file: string; args: string[] } {
-    if (host.platform === 'win32' && /\.(cmd|bat)$/i.test(file)) return { file: 'cmd.exe', args: ['/d', '/c', file, '--version'] };
+  /**
+   * The command line that asks `file` for its version. Only here is a shim started through cmd.exe: as the same single
+   * verbatim line ptyHost builds for a launch (`/d /s /c "<line>"`, cmd strips the outer quotes), with the path always quoted.
+   */
+  function versionCommand(file: string): { file: string; args: string[]; verbatim?: boolean } | { problem: string } {
+    if (host.platform === 'win32' && /\.(cmd|bat)$/i.test(file)) {
+      const problem = cmdShimPathProblem(file);
+      if (problem) return { problem };
+      return { file: systemProgram('cmd.exe'), args: ['/d', '/s', '/c', `""${file}" --version"`], verbatim: true };
+    }
     return { file, args: ['--version'] };
   }
 
@@ -229,7 +248,8 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
 
     const tryFile = async (file: string): Promise<{ version: string } | { error: string }> => {
       const cmd = versionCommand(file);
-      const r = await safeRun(cmd.file, cmd.args, VERSION_TIMEOUT_MS);
+      if ('problem' in cmd) return { error: cmd.problem };
+      const r = await safeRun(cmd.file, cmd.args, VERSION_TIMEOUT_MS, undefined, cmd.verbatim);
       if (r.code === 0) {
         const version = parseVersion(r.stdout) ?? parseVersion(r.stderr);
         return version ? { version } : { error: 'It did not print a version.' };
@@ -343,7 +363,7 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
   interface Distros { names: string[]; notes: string[] }
 
   async function listDistros(): Promise<Distros> {
-    const r = await safeRun('wsl.exe', ['-l', '-q'], VERSION_TIMEOUT_MS);
+    const r = await safeRun(systemProgram('wsl.exe'), ['-l', '-q'], VERSION_TIMEOUT_MS);
     if (r.code !== 0) {
       base.log.debug('wsl.exe could not list distributions', { error: r.error ?? describeFailure(r) });
       return { names: [], notes: [] };
@@ -359,7 +379,7 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
 
   async function probeWsl(distro: string): Promise<Probe> {
     const env = `wsl:${distro}` as EnvId;
-    const wsl = (args: string[]) => safeRun('wsl.exe', ['-d', distro, '--exec', ...args], WSL_TIMEOUT_MS);
+    const wsl = (args: string[]) => safeRun(systemProgram('wsl.exe'), ['-d', distro, '--exec', ...args], WSL_TIMEOUT_MS);
     const [ver, where, nodeVer, home] = await Promise.all([
       wsl(['claude', '--version']),
       wsl(['sh', '-c', 'command -v claude']),

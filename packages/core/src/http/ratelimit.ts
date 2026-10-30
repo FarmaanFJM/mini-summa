@@ -1,16 +1,23 @@
-/** Sliding-window limiter: at most `max` hits in any `windowMs`. One instance per limited thing (not per caller). */
-export function createSlidingWindowLimiter(opts: { max: number; windowMs: number; now: () => number }) {
-  const hits: number[] = [];
+/**
+ * Sliding window over FAILURES. `retryAfterSec()` says whether the window is full without recording anything, and
+ * `record()` adds one failure. Charging only failures means that requests which cannot guess anything (empty or invalid
+ * bodies) and requests that succeed never use up the budget, so nobody can lock others out without actually trying codes.
+ */
+export function createFailureLimiter(opts: { max: number; windowMs: number; now: () => number }) {
+  const failures: number[] = [];
+  const trim = (now: number): void => { while (failures.length && now - failures[0] >= opts.windowMs) failures.shift(); };
   return {
-    /** Records an attempt. When over the limit the attempt is NOT recorded, and `retryAfterSec` says when to retry. */
-    take(): { ok: true } | { ok: false; retryAfterSec: number } {
+    /** null while attempts are allowed; otherwise the seconds until the oldest failure leaves the window. */
+    retryAfterSec(): number | null {
       const now = opts.now();
-      while (hits.length && now - hits[0] >= opts.windowMs) hits.shift();
-      if (hits.length >= opts.max) {
-        return { ok: false, retryAfterSec: Math.max(1, Math.ceil((hits[0] + opts.windowMs - now) / 1000)) };
-      }
-      hits.push(now);
-      return { ok: true };
+      trim(now);
+      return failures.length >= opts.max ? Math.max(1, Math.ceil((failures[0] + opts.windowMs - now) / 1000)) : null;
+    },
+    record(): void {
+      const now = opts.now();
+      trim(now);
+      failures.push(now);
+      if (failures.length > opts.max * 2) failures.shift();
     },
   };
 }

@@ -1,0 +1,386 @@
+// Real Claude Code confirmation: the Mini-Summa core launches the REAL `claude` CLI as a managed session and the
+// whole chain is checked end to end: PTY launch in the project directory, per-session hook file, state from real hooks,
+// report capture from a real final message, frozen ChatGPT destination, permission approval keystrokes, resume, restart.
+//
+//   npm run verify:claude                                   uses `claude` from PATH and your normal Claude login
+//   npm run verify:claude -- --claude-bin /path/to/claude   a specific executable (or a wrapper script)
+//   npm run verify:claude -- --keep                          keep the temporary data directory and repository
+//
+// It talks to a headless core on a temporary data directory and a temporary git repository. It never opens ChatGPT and
+// never touches your Mini-Summa data. It costs two short model replies. Claude must already be logged in; a fresh
+// CLAUDE_CONFIG_DIR starts logged out and the run stops with a clear message instead of guessing.
+//
+// Results are reported per check as PASS / FAIL / NOT TESTED. A check that was not executed is never shown as PASS.
+import { spawn, spawnSync } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import WebSocket from 'ws';
+import { MiniSummaClient } from '@minisumma/shared';
+import type { Project, SessionKey, SessionView, WebSocketCtor } from '@minisumma/shared';
+
+const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const sleep = (ms: number) => new Promise<void>((r) => { setTimeout(r, ms); });
+
+const argv = process.argv.slice(2);
+const flag = (name: string) => argv.includes(name);
+const option = (name: string) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
+if (flag('--help') || flag('-h')) {
+  process.stdout.write('usage: npm run verify:claude -- [--claude-bin <path>] [--keep] [--step-timeout <seconds>] [--skip-permission]\n');
+  process.exit(0);
+}
+const claudeBin = option('--claude-bin') ?? 'claude';
+const keep = flag('--keep');
+const stepMs = (Number(option('--step-timeout')) || 120) * 1000;
+const skipPermission = flag('--skip-permission');
+
+type Outcome = { name: string; result: 'PASS' | 'FAIL' | 'NOT TESTED'; detail?: string };
+const outcomes: Outcome[] = [];
+const say = (line: string) => process.stdout.write(`${line}\n`);
+
+/** Thrown by a check that could not be exercised in this session; reported as NOT TESTED, never as PASS or FAIL. */
+class NotExercised extends Error {}
+
+async function check(name: string, fn: () => Promise<string | void>): Promise<boolean> {
+  try {
+    const detail = await fn();
+    outcomes.push({ name, result: 'PASS', detail: detail || undefined });
+    say(`PASS        ${name}${detail ? `  (${detail})` : ''}`);
+    return true;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    if (err instanceof NotExercised) {
+      outcomes.push({ name, result: 'NOT TESTED', detail });
+      say(`NOT TESTED  ${name}\n            ${detail}`);
+      return false;
+    }
+    outcomes.push({ name, result: 'FAIL', detail });
+    say(`FAIL        ${name}\n            ${detail.split('\n').join('\n            ')}`);
+    return false;
+  }
+}
+function notTested(name: string, why: string): void {
+  outcomes.push({ name, result: 'NOT TESTED', detail: why });
+  say(`NOT TESTED  ${name}\n            ${why}`);
+}
+function expect(cond: unknown, message: string): asserts cond { if (!cond) throw new Error(message); }
+
+async function until<T>(what: string, probe: () => Promise<T | null | undefined | false> | T | null | undefined | false, ms = stepMs): Promise<T> {
+  const t0 = Date.now();
+  for (;;) {
+    const v = await probe();
+    if (v) return v;
+    if (Date.now() - t0 > ms) throw new Error(`timed out after ${Math.round(ms / 1000)} s waiting for ${what}`);
+    await sleep(300);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Core process
+
+interface CoreProcess { baseUrl: string; desktopToken: string; child: ChildProcess; log: () => string }
+
+/** tsx starts the core as a child process: the whole group is signalled, or the core keeps running. */
+function signalGroup(child: ChildProcess, signal: NodeJS.Signals): void {
+  try { if (child.pid) process.kill(-child.pid, signal); } catch { /* already gone */ }
+}
+
+async function startCore(dataDir: string): Promise<CoreProcess> {
+  const env: Record<string, string | undefined> = { ...process.env };
+  delete env.TSX_TSCONFIG_PATH;
+  const args = ['packages/core/src/cli.ts', '--data-dir', dataDir, '--port', '0', '--print-connection'];
+  if (option('--claude-bin')) args.push('--claude-bin', claudeBin);
+  const child = spawn(join(repoRoot, 'node_modules/.bin/tsx'), args, { cwd: repoRoot, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+  let out = '';
+  let err = '';
+  const first = await new Promise<string>((res, rej) => {
+    const timer = setTimeout(() => rej(new Error(`the core did not print its address in time.\n${err}`)), 60_000);
+    child.stderr!.on('data', (d: Buffer) => { err += d.toString(); });
+    child.stdout!.on('data', (d: Buffer) => { out += d.toString(); const nl = out.indexOf('\n'); if (nl >= 0) { clearTimeout(timer); res(out.slice(0, nl)); } });
+    child.on('exit', (code) => { clearTimeout(timer); rej(new Error(`the core exited with ${code}.\n${err}`)); });
+  });
+  const conn = JSON.parse(first) as { baseUrl: string; desktopToken: string };
+  return { ...conn, child, log: () => err };
+}
+
+async function stopCore(core: CoreProcess): Promise<void> {
+  if (core.child.exitCode !== null) return;
+  const exited = new Promise<void>((r) => core.child.once('exit', () => r()));
+  signalGroup(core.child, 'SIGTERM');
+  await Promise.race([exited, sleep(15_000)]);
+  if (core.child.exitCode === null) signalGroup(core.child, 'SIGKILL');
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Terminal driver: answers the first-run dialogs the way a person would, and nothing else.
+
+// eslint-disable-next-line no-control-regex
+const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]/g;
+const stripAnsi = (s: string) => s.replace(ANSI, '');
+
+class TerminalWatcher {
+  text = '';
+  exited: { code: number | null; reason: string } | null = null;
+  loginRequired = false;
+  answered: string[] = [];
+  private handle: ReturnType<MiniSummaClient['terminal']['attach']> | null = null;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private lastAction = 0;
+  constructor(private readonly client: MiniSummaClient) {}
+
+  attach(key: SessionKey): void {
+    this.handle = this.client.terminal.attach(key, { cols: 120, rows: 40 }, {
+      onAttached: (i) => { this.text = stripAnsi(i.replay).slice(-20_000); },
+      onData: (d) => { this.text = (this.text + stripAnsi(d)).slice(-20_000); },
+      onExit: (i) => { this.exited = { code: i.code, reason: i.reason }; },
+      onError: () => { /* surfaced through the state checks */ },
+    });
+  }
+  input(data: string): void { this.handle?.input(data); }
+  /** Starts answering first-run dialogs: theme, "press Enter", and the folder trust question (Down, Enter = "Yes"). */
+  startAnswering(): void {
+    this.timer = setInterval(() => {
+      const flat = this.text.replace(/\s+/g, '');
+      if (/Selectloginmethod|Pastecodehere|Browserdidn'topen|Pleaserunclaudeandlogin|Invalidapikey/i.test(flat)) this.loginRequired = true;
+      if (Date.now() - this.lastAction < 1500) return;
+      const act = (what: string, keys: () => void) => { this.answered.push(what); keys(); this.lastAction = Date.now(); this.text = ''; };
+      if (/trustthisfolder|Doyoutrust|Yes,Itrust/i.test(flat)) act('trust', () => { this.input('\x1b[B'); setTimeout(() => this.input('\r'), 500); });
+      else if (/PressEntertocontinue|Entertoconfirm/i.test(flat)) act('enter', () => this.input('\r'));
+      else if (/Choosethetextstyle|Syntaxtheme/i.test(flat)) act('theme', () => this.input('\r'));
+    }, 400);
+  }
+  stopAnswering(): void { if (this.timer) clearInterval(this.timer); this.timer = null; }
+  detach(): void { this.stopAnswering(); this.handle?.detach(); this.handle = null; }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+
+async function main(): Promise<void> {
+  const version = spawnSync(claudeBin, ['--version'], { encoding: 'utf8', timeout: 20_000 });
+  if (version.error || version.status !== 0) {
+    say(`Claude Code was not found or did not start: ${claudeBin}\n${version.error?.message ?? version.stderr}`);
+    say('Install Claude Code and log in once with "claude", or pass --claude-bin <path>.');
+    process.exit(2);
+  }
+  say(`claude: ${version.stdout.trim()}   (${claudeBin})`);
+
+  const workDir = mkdtempSync(join(tmpdir(), 'minisumma-realclaude-'));
+  const dataDir = join(workDir, 'data');
+  const repoDir = realpathSync(mkdirSync(join(workDir, 'repo'), { recursive: true }) ?? join(workDir, 'repo'));
+  writeFileSync(join(repoDir, 'README.md'), '# Verification repository\n');
+  spawnSync('git', ['init', '-q'], { cwd: repoDir });
+  const filesBefore = readdirSync(repoDir).sort();
+  say(`work dir: ${workDir}`);
+
+  let core = await startCore(dataDir);
+  let client = new MiniSummaClient({ baseUrl: core.baseUrl, token: core.desktopToken, clientName: 'verify-real-claude', WebSocket: WebSocket as unknown as WebSocketCtor });
+  client.events.connect();
+  const watcher = new TerminalWatcher(client);
+  let project!: Project;
+  let conversationId = '';
+  let conversationUrl = '';
+  let key!: SessionKey;
+  let view!: SessionView;
+  let pid: number | null = null;
+
+  try {
+    await check('core: starts headless and answers /health', async () => {
+      const h = await client.call('system.health');
+      expect(h.ok && h.name === 'mini-summa-core', 'unexpected health answer');
+      return `api v${h.apiVersion}`;
+    });
+
+    await check('project: registered with the repository directory and one mapped ChatGPT conversation', async () => {
+      project = await client.call('projects.create', { body: { name: 'Real Claude check', roots: [{ path: repoDir }] } });
+      conversationUrl = `https://chatgpt.com/c/${randomUUID()}`;
+      const conv = await client.call('conversations.add', { params: { id: project.id }, body: { url: conversationUrl, title: 'Verification conversation', makePreferred: true } });
+      conversationId = conv.id;
+      project = await client.call('projects.get', { params: { id: project.id } });
+      expect(project.roots.length === 1, 'the project has no root');
+      expect(project.preferredConversationId === conversationId, 'the conversation is not the preferred one');
+    });
+
+    const started = await check('session: the real Claude CLI starts as a managed session in the project directory', async () => {
+      view = await client.call('sessions.start', { params: { id: project.id }, body: { mode: 'new', name: 'Real Claude check', cols: 120, rows: 40 } });
+      key = view.key;
+      expect(view.origin === 'managed', `origin is ${view.origin}`);
+      expect(view.projectId === project.id, 'the session is not attributed to the project');
+      expect(view.state === 'unknown', `expected "Starting" (no hook yet), got ${view.state}`);
+      watcher.attach(key);
+      watcher.startAnswering();
+      return key;
+    });
+
+    const live = started && await check('hooks: the first real hook arrives and the session leaves "Starting" with its evidence', async () => {
+      const v = await until('the first hook from the real CLI', async () => {
+        if (watcher.loginRequired) throw new Error('Claude asked to log in. Log in once with "claude" using the same CLAUDE_CONFIG_DIR, then run this again.');
+        if (watcher.exited) throw new Error(`the terminal exited (${watcher.exited.reason}) before any hook arrived. Screen:\n${watcher.text.slice(-800)}`);
+        const s = await client.call('sessions.get', { params: { key } });
+        return s.state !== 'unknown' ? s : null;
+      });
+      watcher.stopAnswering();
+      view = v;
+      pid = v.pid;
+      expect(v.stateEvidence.startsWith('hook:'), `state evidence is "${v.stateEvidence}", not a hook`);
+      expect(v.cwd !== null && realpathSync(v.cwd) === repoDir, `cwd is ${v.cwd}`);
+      return `state ${v.state}, evidence ${v.stateEvidence}, answered: ${watcher.answered.join(',') || 'nothing needed'}`;
+    });
+
+    const sendLine = async (text: string) => { watcher.input(text); await sleep(600); watcher.input('\r'); };
+    const MARKER = '<!-- mini-summa:report status=complete task="Real Claude verification" -->';
+
+    let reportId = '';
+    if (live) {
+      await sendLine(`Do not use any tools. Reply with a short "## Implementation Report" section saying that nothing was changed, and make the very last line of your reply exactly: ${MARKER}`);
+
+      await check('report: the real final message is captured, attributed to the project and session, and is only a declaration', async () => {
+        const r = await until('a captured report', async () => (await client.call('reports.list', { query: { projectId: project.id } })).items[0]);
+        const full = await client.call('reports.get', { params: { id: r.id } });
+        reportId = full.id;
+        expect(full.projectId === project.id, `report project is ${full.projectId}`);
+        expect(full.sessionKey === key, `report session is ${full.sessionKey}`);
+        expect(full.declaredStatus === 'complete', `declared status is ${full.declaredStatus}`);
+        expect(full.verified === false, 'a report must never claim to be verified');
+        expect(full.body.includes('Implementation Report'), 'the stored body is not the model\'s message');
+        return `${full.chars} chars, "${full.taskTitle}"`;
+      });
+
+      await check('delivery: the destination is the mapped conversation, frozen at capture, and nothing was sent anywhere', async () => {
+        const d = await until('a delivery for the report', async () => (await client.call('deliveries.list', { query: { reportId } }))[0]);
+        expect(d.destination !== null, `delivery state is ${d.state}`);
+        expect(d.destination.conversationId === conversationId, 'the destination is not the mapped conversation');
+        expect(d.destination.url === conversationUrl, `destination url is ${d.destination.url}`);
+        expect(['ready_for_handoff', 'destination_unverified'].includes(d.state), `unexpected delivery state ${d.state}`);
+        return `${d.state}, resolved from ${d.destination.resolvedFrom}`;
+      });
+
+      await check('feed and notifications: the real events reached the activity feed and a notification record exists', async () => {
+        const page = await client.call('activity.list', { query: { projectId: project.id, limit: 50 } });
+        const types = new Set(page.items.map((e) => e.type));
+        expect(types.has('report_ready'), `feed has ${[...types].join(', ')}`);
+        const notes = await client.call('notifications.list', { query: { limit: 20 } });
+        expect(notes.some((n) => n.projectId === project.id), 'no notification record for the project');
+        return [...types].join(', ');
+      });
+    } else {
+      notTested('report, delivery, feed', 'the session never produced a hook, so no prompt was sent');
+    }
+
+    if (live && !skipPermission) {
+      await until('the session to be ready for the next prompt', async () => {
+        const s = await client.call('sessions.get', { params: { key } });
+        return ['turn_ended', 'idle', 'report_ready', 'waiting_for_you'].includes(s.state) ? s : null;
+      });
+      await sendLine(`Create a file named hello.txt in the current directory containing the single word hi. Then make the very last line of your reply exactly: ${MARKER}`);
+
+      // Claude may be in a permission mode that never asks (auto, acceptEdits, bypass). That is a property of the session,
+      // not a defect: the dialog and the approve keystroke are then NOT TESTED rather than failed.
+      let actionId = '';
+      let sawDialog = false;
+      await check('permission: the real permission dialog is detected and a pending action describes it', async () => {
+        const found = await until('a permission dialog or the created file', async () => {
+          const a = (await client.call('actions.list', { query: { status: 'pending' } })).find((x) => x.kind === 'permission' && x.sessionKey === key);
+          if (a) return { action: a } as const;
+          return existsSync(join(repoDir, 'hello.txt')) ? { created: true } as const : null;
+        });
+        if ('created' in found) throw new NotExercised('Claude created the file without asking (its permission mode does not prompt for edits here). Run in default permission mode to exercise this.');
+        actionId = found.action.id;
+        sawDialog = true;
+        const s = await client.call('sessions.get', { params: { key } });
+        expect(s.state === 'needs_permission', `session state is ${s.state}`);
+        return found.action.summary;
+      });
+      if (sawDialog) {
+        await check('permission: approving from the core sends the approve keystroke and Claude carries on (file is created)', async () => {
+          await client.call('actions.approve', { params: { id: actionId } });
+          await until('hello.txt', () => existsSync(join(repoDir, 'hello.txt')));
+        });
+      }
+      await check('report: the second real final message is captured under the same project and session', async () => {
+        const done = await until('a second report', async () => {
+          const items = (await client.call('reports.list', { query: { projectId: project.id } })).items;
+          return items.length >= 2 ? items : null;
+        });
+        expect(done.every((r) => r.projectId === project.id && r.sessionKey === key), 'a report was attributed to the wrong place');
+        return `${done.length} reports under the project`;
+      });
+    } else if (live) {
+      notTested('permission dialog and approval keystroke', 'skipped with --skip-permission');
+    }
+
+    // Resume: the same session id comes back as a managed session in a new generation.
+    if (live) {
+      await check('stop: the managed session ends and the Claude process is gone', async () => {
+        await client.call('sessions.stop', { params: { key }, body: {} });
+        await until('the terminal to exit', () => watcher.exited);
+        if (pid) await until('the process to disappear', () => { try { process.kill(pid!, 0); return false; } catch { return true; } }, 15_000);
+        const s = await client.call('sessions.get', { params: { key } });
+        expect(s.availability !== 'live', `availability is still ${s.availability}`);
+        return `availability ${s.availability}, resumable ${s.resumable}`;
+      });
+      watcher.detach();
+
+      await check('restart: reports, deliveries and activity survive a core restart without re-notifying', async () => {
+        const beforeReports = (await client.call('reports.list', { query: { projectId: project.id } })).items.map((r) => r.id).sort();
+        const beforeNotes = (await client.call('notifications.list', { query: { limit: 200 } })).length;
+        const beforeActivity = (await client.call('activity.list', { query: { projectId: project.id, limit: 200 } })).items.length;
+        client.close();
+        await stopCore(core);
+        core = await startCore(dataDir);
+        client = new MiniSummaClient({ baseUrl: core.baseUrl, token: core.desktopToken, clientName: 'verify-real-claude', WebSocket: WebSocket as unknown as WebSocketCtor });
+        const afterReports = (await client.call('reports.list', { query: { projectId: project.id } })).items.map((r) => r.id).sort();
+        expect(JSON.stringify(afterReports) === JSON.stringify(beforeReports), 'the reports changed across the restart');
+        const d = (await client.call('deliveries.list', { query: { projectId: project.id } }))[0];
+        expect(d?.destination?.conversationId === conversationId, 'the delivery lost its frozen destination');
+        await sleep(2000);
+        const afterNotes = (await client.call('notifications.list', { query: { limit: 200 } })).length;
+        const afterActivity = (await client.call('activity.list', { query: { projectId: project.id, limit: 200 } })).items.length;
+        expect(afterNotes === beforeNotes, `notifications went from ${beforeNotes} to ${afterNotes}`);
+        expect(afterActivity >= beforeActivity, 'activity shrank');
+        const s = await client.call('sessions.get', { params: { key } });
+        expect(s.availability !== 'live', `the old session shows as ${s.availability} after a restart`);
+        return `${afterReports.length} reports, ${afterNotes} notifications, session ${s.availability}`;
+      });
+
+      client.events.connect();
+      const resumeWatcher = new TerminalWatcher(client);
+      await check('resume: `claude --resume` brings the same session back as managed, in a new generation', async () => {
+        const before = await client.call('sessions.get', { params: { key } });
+        const r = await client.call('sessions.start', { params: { id: project.id }, body: { mode: 'resume', resumeKey: key, cols: 120, rows: 40 } });
+        expect(r.key === key, `resume produced ${r.key}`);
+        resumeWatcher.attach(key);
+        resumeWatcher.startAnswering();
+        const s = await until('the resumed session to report a hook', async () => {
+          if (resumeWatcher.exited) throw new Error(`the resumed terminal exited (${resumeWatcher.exited.reason}). Screen:\n${resumeWatcher.text.slice(-800)}`);
+          const x = await client.call('sessions.get', { params: { key } });
+          return x.origin === 'managed' && x.availability === 'live' && x.state !== 'unknown' && x.generation > before.generation ? x : null;
+        });
+        resumeWatcher.stopAnswering();
+        return `generation ${before.generation} -> ${s.generation}, state ${s.state}`;
+      });
+      await client.call('sessions.stop', { params: { key }, body: {} }).catch(() => undefined);
+      await sleep(1500);
+      resumeWatcher.detach();
+    }
+
+    await check('repository: Mini-Summa wrote nothing into the project directory', async () => {
+      const after = readdirSync(repoDir).sort().filter((f) => f !== 'hello.txt');
+      expect(JSON.stringify(after) === JSON.stringify(filesBefore), `before: ${filesBefore.join(', ')}  after: ${after.join(', ')}`);
+    });
+  } finally {
+    watcher.detach();
+    client.close();
+    await stopCore(core);
+    if (keep) say(`kept: ${workDir}`);
+    else rmSync(workDir, { recursive: true, force: true });
+  }
+
+  const count = (r: Outcome['result']) => outcomes.filter((o) => o.result === r).length;
+  say(`\n${count('PASS')} passed, ${count('FAIL')} failed, ${count('NOT TESTED')} not tested`);
+  if (count('FAIL') > 0) process.exitCode = 1;
+}
+
+main().catch((err) => { say(`verify-real-claude: ${err instanceof Error ? err.stack ?? err.message : String(err)}`); process.exit(1); });

@@ -204,8 +204,12 @@ export function HandoffCard({ report, delivery, onCreated }: HandoffCardProps) {
         {delivery.lastError && !closed ? <p className="ms-x-error">Last problem: {delivery.lastError}</p> : null}
       </div>
 
-      {opened ? <p className="ms-x-result" data-tone={opened.tone} role="status">{opened.text}</p> : null}
-      {copied ? <p className="ms-x-result" data-tone="ok" role="status">{copied.text}</p> : null}
+      {opened || copied ? (
+        <div className="ms-x-result" data-tone={opened?.tone ?? 'ok'} role="status">
+          {copied ? <p>{copied.text}</p> : null}
+          {opened ? <p>{opened.text}</p> : null}
+        </div>
+      ) : null}
       {failure ? (
         <div className="ms-x-result" data-tone="error" role="alert">
           <p>

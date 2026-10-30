@@ -180,7 +180,27 @@ export interface ClaudeDerivedEvent {
   replay: boolean;
 }
 
+/** One PermissionRequest hook, whether or not it changed the session state. Each is its own question to the person. */
+export interface PermissionRequestInfo {
+  /** Stable id of this very request (from its hook receipt). Replays reproduce it. */
+  correlationKey: string;
+  sessionKey: SessionKey;
+  generation: number;
+  toolName: string | null;
+  /** Redacted excerpt of the tool input, at most about 200 characters. */
+  inputExcerpt: string | null;
+  rawSeq: number;
+  at: string;
+  replay: boolean;
+}
+
 export interface ClaudeEventHandlers {
+  /**
+   * Called for EVERY PermissionRequest hook of a session, including a second one that arrives while the session already
+   * waits for permission (which changes no state and therefore produces no derived event). Approval items are built
+   * from this, so what a person approves is always the request that is actually open.
+   */
+  onPermissionRequest?(info: PermissionRequestInfo, view: SessionView): void;
   /** A session's view changed (any field). Called after the change was persisted and emitted on the bus. */
   onSession?(view: SessionView, previous: SessionView | null): void;
   onDerived?(event: ClaudeDerivedEvent, view: SessionView): void;
@@ -230,12 +250,21 @@ export interface SessionsService {
   refreshDiscovery(env?: EnvId): Promise<DiscoveryRefreshResult>;
   discoveryStatus(): { env: EnvId; ok: boolean; lastRunAt: string | null; error: string | null }[];
 
+  /**
+   * The permission request that is open right now in this managed session (the newest PermissionRequest since the
+   * session last left needs_permission), or null. Answering a permission dialog is only allowed for exactly this one.
+   */
+  currentPermission(key: SessionKey): { correlationKey: string; summary: string } | null;
   /** Would typing into this session be safe right now? Never throws; reports the problem in words. */
   targetCheck(key: SessionKey, expectGeneration: number | null): TargetCheck;
   /** Type user-authored text into a verified managed session. Re-verifies the target at call time. */
   typeInto(key: SessionKey, req: { text: string; submit: boolean; expectGeneration: number | null; allowedStates: SessionState[] }): Promise<TypeIntoResult>;
-  /** Answer a pending permission prompt of a managed session with the keystrokes Claude Code expects. */
-  answerPermission(key: SessionKey, decision: 'approve' | 'reject', expectGeneration: number | null): Promise<TypeIntoResult>;
+  /**
+   * Answer a pending permission prompt of a managed session with the keystrokes Claude Code expects. When
+   * `expectRequestKey` is given it must equal `currentPermission(key)?.correlationKey`, otherwise nothing is sent: the dialog
+   * the person saw is no longer the one that is open.
+   */
+  answerPermission(key: SessionKey, decision: 'approve' | 'reject', expectGeneration: number | null, expectRequestKey?: string): Promise<TypeIntoResult>;
 
   terminal: {
     attach(key: SessionKey, size: { cols: number; rows: number }, sink: TerminalSink): TerminalAttachment | { error: string };
@@ -307,6 +336,11 @@ export interface ManagedManager {
   stop(key: SessionKey, opts: { force?: boolean }): Promise<ManagedSessionRecord>;
   /** Raw bytes typed by the user at the desktop terminal. */
   write(key: SessionKey, data: string): boolean;
+  /**
+   * True when a person typed into this terminal since the last submitted prompt, so its input line may hold text that
+   * was not sent. Programmatic typing is refused while it does, because it would be appended to that text.
+   */
+  hasUnsentInput(key: SessionKey): boolean;
   /** Programmatic user-authored text: bracketed paste for multi-line text, Enter only when `submit` is true. */
   typeText(key: SessionKey, text: string, opts: { submit: boolean }): Promise<boolean>;
   /** Keystrokes that answer Claude Code's permission dialog. */
@@ -513,7 +547,8 @@ export interface TailscaleService {
   /** Public base URL phones should use (the Serve URL) or null. */
   publicUrl(): string | null;
   init(): void;
-  shutdown(): void;
+  /** Switches off the Serve entry this app created (best effort, bounded) so nothing else can receive its traffic. */
+  shutdown(): void | Promise<void>;
 }
 
 export interface ExtensionBridge {

@@ -115,13 +115,15 @@ export const isOurProxy = (proxy: string | null, port: number): boolean => {
 };
 
 export interface ServeMatch {
-  /** Serve publishes Mini-Summa's port. */
+  /** Serve publishes the port Mini-Summa listens on right now. */
   configured: boolean;
   url: string | null;
   /** The proxy target that is published for us. null when Serve does not publish Mini-Summa's port. */
   target: string | null;
-  /** Something that is not Mini-Summa's port is published at `/` of the HTTPS port we would use. */
+  /** Something that is not Mini-Summa's current port is published at `/` of the HTTPS port we would use (for display). */
   foreignTarget: string | null;
+  /** That same entry, so the caller can decide whether it is an old entry of Mini-Summa's own or somebody else's. */
+  occupant: ServeEntry | null;
   funnel: string[];
 }
 
@@ -133,11 +135,20 @@ export function matchServe(info: ServeInfo, port: number, dnsName: string | null
   const funnel = info.funnel.filter((hp) => dnsName === null || (splitHostPort(hp)?.host ?? '') === dnsName.toLowerCase());
   if (ours) {
     const url = `https://${dnsName ?? ours.host}${ours.port === HTTPS_PORT ? '' : `:${ours.port}`}`;
-    return { configured: true, url, target: ours.proxy, foreignTarget: null, funnel };
+    return { configured: true, url, target: ours.proxy, foreignTarget: null, occupant: null, funnel };
   }
-  const occupant = ofThisHost.find((e) => e.port === HTTPS_PORT && e.path === '/');
+  const occupant = ofThisHost.find((e) => e.port === HTTPS_PORT && e.path === '/') ?? null;
   const foreignTarget = occupant ? occupant.proxy ?? '(files or text)' : null;
-  return { configured: false, url: null, target: null, foreignTarget, funnel };
+  return { configured: false, url: null, target: null, foreignTarget, occupant, funnel };
+}
+
+/**
+ * The entry at `/` of the HTTPS port that forwards to loopback:`port`. Used for an entry Mini-Summa recorded as its own:
+ * it is only that entry if it still forwards to the recorded port. `dnsName` null = any host (Serve is per machine).
+ */
+export function findOwnedEntry(info: ServeInfo, port: number, dnsName: string | null): ServeEntry | null {
+  const host = dnsName?.toLowerCase() ?? null;
+  return info.entries.find((e) => e.port === HTTPS_PORT && e.path === '/' && isOurProxy(e.proxy, port) && (host === null || e.host === host)) ?? null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -170,6 +181,10 @@ export const problems = {
     `Tailscale Funnel is turned on for this PC (${hostPorts.join(', ')}). Funnel makes services reachable from the whole internet. Mini-Summa never uses Funnel and will not turn on remote access while it is on. Turn it off by running "tailscale funnel reset" in a terminal, then refresh.`,
   foreignServe: (target: string) =>
     `Tailscale Serve already publishes something else on port 443 (${target}), not this Mini-Summa. Mini-Summa will not replace it. If it is an old Mini-Summa setting or you no longer need it, run "tailscale serve --https=443 off" in a terminal, then turn remote access on again.`,
+  staleServe: (oldPort: number, newPort: number) =>
+    `Tailscale Serve still forwards phone traffic to port ${oldPort}, which Mini-Summa used in an earlier run. Mini-Summa now listens on port ${newPort}, and another program could be listening on port ${oldPort}. Turn remote access on again to point Serve at the right port, or run "tailscale serve --https=443 off" in a terminal.`,
+  portNotReady: () =>
+    'Mini-Summa has not started its local server yet, so remote access cannot be set up. Wait a moment, then try again.',
   serveUnreadable: (detail: string) =>
     `Mini-Summa could not read which services Tailscale Serve publishes${detail ? ` (${detail})` : ''}. Update Tailscale, or run "tailscale serve status" in a terminal to check.`,
   serveNotShown: () =>

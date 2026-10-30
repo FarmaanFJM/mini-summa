@@ -80,7 +80,8 @@ cd android && ./gradlew assembleRelease
 A release APK must be signed before Android installs it. Unless you provide a key, the script creates a **throwaway local
 key** under `~/.android-build-keys/` with a random password that only exists in the script's memory, signs, verifies, and
 deletes the key. That APK is for sideloading on your own phone only. Because the key is gone, a later build has a different
-signature: uninstall the old app first (you will pair again). To keep one identity so updates install over the old app:
+signature: uninstall the old app first (you will pair again). This signing step has **not been run yet**, because no build got far
+enough to produce an APK (see "Build outcome" below). To keep one identity so updates install over the old app:
 
 ```bash
 MINISUMMA_KEYSTORE=/path/to/your.jks MINISUMMA_KEYSTORE_PASSWORD=... MINISUMMA_KEY_ALIAS=yourAlias npm run build:apk
@@ -93,7 +94,8 @@ Keep that keystore out of the repository. Do not add a `google-services.json` un
 * **CPU:** the default is `arm64-v8a` only, which keeps the native build short. For other CPUs set
   `MINISUMMA_ARCHS=arm64-v8a,armeabi-v7a,x86_64` (a much longer build).
 * **Gradle** is downloaded by the wrapper (9.4.1), and Android Gradle Plugin 9.2.1 and the React Native artifacts come from
-  Google Maven, Maven Central, the Gradle Plugin Portal and JitPack. A first build downloads about 2 GB.
+  Google Maven, Maven Central, the Gradle Plugin Portal and JitPack. A first build downloads a lot: Gradle's cache was already
+  406 MB after the configuration step, before anything was compiled.
 * **HTTP 429 from Maven Central.** Some networks (shared addresses, cloud sandboxes) get `429 Too Many Requests` from
   `repo.maven.apache.org`, and then Gradle stops with "Could not GET ... Received status code 429" or, for plugins, "Plugin ... was not
   found" (the real cause shows with `--info`). If it is occasional, more patience in `~/.gradle/gradle.properties` (outside the
@@ -216,26 +218,46 @@ refusal of a prompt for an unknown session, a 403 for a missing scope that does 
 
 ### Build outcome: no APK was produced here
 
-`npm run build:apk` got as far as `./gradlew assembleRelease` and stopped while Gradle was configuring the build, before any code
-was compiled:
+`npm run build:apk` passed its prerequisite check (Java 21 and the SDK packages above) and `expo prebuild`, then stopped at
+`./gradlew assembleRelease` while Gradle was still configuring the build, before any code was compiled:
 
 ```
 $ ./gradlew assembleRelease --no-daemon --console=plain       (in apps/android/android)
+
+* Where:
+Settings file '/home/user/mini-summa/apps/android/android/settings.gradle' line: 22
+
 * What went wrong:
 Error resolving plugin [id: 'expo-autolinking-settings']
-> Could not resolve org.jetbrains.kotlin:kotlin-native-utils:1.9.24.
-   > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-native-utils/1.9.24/kotlin-native-utils-1.9.24.pom'.
-     Received status code 429 from server: Too Many Requests
+> A problem occurred configuring project ':expo-gradle-plugin:expo-autolinking-plugin-shared'.
+   > Could not resolve all artifacts for configuration 'classpath'.
+      > Could not resolve org.jetbrains.kotlin:kotlin-native-utils:1.9.24.
+         > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-native-utils/1.9.24/kotlin-native-utils-1.9.24.pom'.
+           Received status code 429 from server: Too Many Requests
 ```
 
-Cause: from this sandbox's shared network address Maven Central refused JVM clients. A plain `java.net.http.HttpClient` request for
-that file got 429 on 8 of 8 tries, while `curl` got 200 on about 5 of 6. Gradle's own retries (eight tries with doubling waits, three
-build attempts over twenty minutes) did not change that. Nothing in the app or in the generated project is known to be wrong:
-the same Gradle run had already resolved the first plugin after retries and then stopped on the next artifact. A mirror of Maven Central was
-deliberately not configured here.
+(Shortened: the "Required by" lines are left out. One of the two runs that ended this way also listed
+`kotlin-tooling-core:1.9.24`, with the same status.)
+
+Likely cause: from this sandbox's shared network address, Maven Central answered the Java HTTP client with 429. A plain
+`java.net.http.HttpClient` request for that file got 429 on 8 of 8 tries, while `curl` got 200 on 5 of 6. I did not find out why the
+two differ, so this is the most likely cause and not a proven one. What happened, by the sandbox clock (15:18 to 15:52, seven Gradle
+runs, with Gradle's retry settings raised in steps in `~/.gradle/gradle.properties`, which is outside the repository):
+
+* Two runs with Gradle's defaults stopped after 36 s and 14 s with `Plugin [id: 'org.gradle.toolchains.foojay-resolver-convention',
+  version: '1.0.0'] was not found`. The second was `./gradlew help --info`; the HTTP 429 behind that message shows with `--info`.
+* A `./gradlew help` run with ten tries per file (3 s first wait, doubling) got past that plugin after several 429s on one file. I
+  cut it off at my own 400 s limit.
+* Two full builds ended with the error above, after 2 min 37 s (eight tries, 1 s first wait) and 3 min 25 s (seven tries, 3 s).
+* Two full builds were stopped by me after about 7 minutes each, while Gradle was still waiting between retries (thread dumps showed
+  the Gradle daemon asleep in its retry code).
+
+No mirror of Maven Central was configured: the sandbox's policy refused a Gradle init script that redirected Maven Central, and I did
+not look for another way around that. Nothing in the app or in the generated project is known to be wrong.
 
 What you need to do: run `npm run build:apk` from a network where Maven Central answers Gradle (a home or office connection), with the
 Android SDK packages from the table above. Everything else is already in place and checked by the script's prerequisite step. If
+the throttling is only occasional, running the command again can get further, because Gradle keeps what it already downloaded. If
 your network throttles Maven Central too, use a mirror you trust (see Build notes).
 
 No APK exists, so no APK path, size or signature is claimed. The signing step in `scripts/build-apk.mjs` (throwaway local key,

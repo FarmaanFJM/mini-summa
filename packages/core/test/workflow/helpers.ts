@@ -2,8 +2,8 @@
 // the real schema, with fakes for the services it depends on. Nothing here is imported by production code.
 import { defaultNotificationPrefs, defaultSettings, mergeSettings, parseChatGptUrl, unavailableBridge } from '@minisumma/shared';
 import type {
-  ActivityEvent, ChatGptOpenResult, Conversation, ConversationVerification, Device, NativeBridge, NativeCapabilities, NativeNotification, NavigationTarget,
-  PendingAction, Project, ProjectNotificationPrefs, Report, ServerEvent, SessionKey, SessionView, SettingsPatch, TargetCheck,
+  ActivityEvent, ChatGptOpenResult, Conversation, ConversationVerification, DeliveryDetail, Device, NativeBridge, NativeCapabilities, NativeNotification, NavigationTarget,
+  PendingAction, Project, ProjectNotificationPrefs, Report, ReportSummary, ServerEvent, SessionKey, SessionView, SettingsPatch, TargetCheck,
 } from '@minisumma/shared';
 import { fromJson, openDatabase, toJson } from '@minisumma/storage';
 import type { Db } from '@minisumma/storage';
@@ -213,7 +213,7 @@ export function sessionView(over: Partial<SessionView> = {}): SessionView {
 }
 
 type TypeCall = { key: SessionKey; req: Parameters<SessionsService['typeInto']>[1] };
-type AnswerCall = { key: SessionKey; decision: 'approve' | 'reject'; expectGeneration: number | null };
+type AnswerCall = { key: SessionKey; decision: 'approve' | 'reject'; expectGeneration: number | null; expectRequestKey?: string };
 
 /** Behaves like the real SessionsService contract: targetCheck never throws, typeInto re-verifies before typing. */
 export class FakeSessions {
@@ -223,6 +223,8 @@ export class FakeSessions {
   readonly typed: { key: SessionKey; text: string; submit: boolean }[] = [];
   readonly answerCalls: AnswerCall[] = [];
   readonly answers: { key: SessionKey; decision: 'approve' | 'reject' }[] = [];
+  /** The permission request that is open in a session right now (what the real session layer derives from the hooks). */
+  readonly permissions = new Map<SessionKey, { correlationKey: string; summary: string }>();
   /** Force the outcome of typeInto / answerPermission (a result, or a function that may throw or wait). */
   typeHook: ((call: TypeCall) => TypeIntoResult | Promise<TypeIntoResult>) | null = null;
   answerHook: ((call: AnswerCall) => TypeIntoResult | Promise<TypeIntoResult>) | null = null;
@@ -241,6 +243,7 @@ export class FakeSessions {
 
   readonly get = (key: SessionKey): SessionView | null => this.views.get(key) ?? null;
   readonly conversationBinding = (key: SessionKey): string | null => this.bindings.get(key) ?? null;
+  currentPermission: SessionsService['currentPermission'] = (key) => this.permissions.get(key) ?? null;
 
   /** Replaceable in a test (for example to make the session layer word a problem differently). */
   targetCheck: SessionsService['targetCheck'] = (key, expectGeneration): TargetCheck => {
@@ -268,14 +271,17 @@ export class FakeSessions {
     return { ok: true, submitted: req.submit };
   };
 
-  readonly answerPermission = async (key: SessionKey, decision: 'approve' | 'reject', expectGeneration: number | null): Promise<TypeIntoResult> => {
-    const call = { key, decision, expectGeneration };
+  readonly answerPermission = async (key: SessionKey, decision: 'approve' | 'reject', expectGeneration: number | null, expectRequestKey?: string): Promise<TypeIntoResult> => {
+    const call: AnswerCall = { key, decision, expectGeneration, expectRequestKey };
     this.answerCalls.push(call);
     if (this.answerHook) return this.answerHook(call);
     const v = this.views.get(key);
     if (!v || v.origin !== 'managed') return { ok: false, code: 'not_managed', problem: 'This session was not started by Mini-Summa.' };
     if (v.availability !== 'live') return { ok: false, code: 'not_live', problem: 'This session is not running right now.' };
     if (expectGeneration !== null && expectGeneration !== v.generation) return { ok: false, code: 'generation_changed', problem: 'This session was restarted.' };
+    if (expectRequestKey !== undefined && expectRequestKey !== this.permissions.get(key)?.correlationKey) {
+      return { ok: false, code: 'state_not_allowed', problem: 'That is not the permission request that is open.' };
+    }
     if (v.state !== 'needs_permission') return { ok: false, code: 'state_not_allowed', problem: 'Claude is not asking for permission right now.' };
     this.answers.push({ key, decision });
     return { ok: true, submitted: true };
@@ -419,6 +425,17 @@ export function recordingActivity(env: Env): { service: ActivityService; recorde
   };
   return { service, recorded, resolved };
 }
+
+export const deliveryDetail = (over: Partial<DeliveryDetail> = {}): DeliveryDetail => ({
+  id: 'dlv_1', reportId: 'rep_1', projectId: 'prj_gm', projectName: 'GitManager', sessionKey: KEY_A, taskTitle: 'Fix login', state: 'user_confirmed_sent', destination: null,
+  review: 'follow_up_drafted', includeReviewRequest: true, messageSha256: null, messageChars: null, parts: [], followUpDraft: null, attempts: 1, lastError: null,
+  stateChangedAt: '2026-10-30T09:00:00.000Z', createdAt: '2026-10-30T09:00:00.000Z', updatedAt: '2026-10-30T09:00:00.000Z', events: [], ...over,
+});
+
+export const reportSummary = (over: Partial<ReportSummary> = {}): ReportSummary => ({
+  id: 'rep_1', projectId: 'prj_gm', projectName: 'GitManager', sessionKey: KEY_A, env: 'win', sessionId: 'a1b2c3d4-1111-4111-8111-111111111111', generation: 1,
+  taskTitle: 'Fix login', declaredStatus: 'complete', source: 'marker', capturedAt: '2026-10-30T09:59:00.000Z', late: false, read: false, chars: 10, excerpt: 'x', delivery: null, ...over,
+});
 
 export const activityEvent = (over: Partial<ActivityEvent> = {}): ActivityEvent => ({
   id: 'drv_1', at: '2026-10-30T10:00:00.000Z', projectId: null, projectName: null, source: 'claude', sessionKey: null, type: 'report_ready', severity: 'attention',

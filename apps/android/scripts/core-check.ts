@@ -1,6 +1,8 @@
 // Integration check: the phone's real pairing, connection and send code against the REAL headless core (not a fake).
 //
-//   From the repository root, after `npm install` there (the core and tsx come from the root install):
+//   After `npm install` in the repository root (the core and tsx come from the root install), from apps/android:
+//     npm run check:core
+//   or from the repository root:
 //     node_modules/.bin/tsx --tsconfig apps/android/tsconfig.json apps/android/scripts/core-check.ts
 //
 // It starts `packages/core/src/cli.ts` on a temporary data directory, plays the desktop with the desktop token, plays the
@@ -45,7 +47,11 @@ function killCore(child: ChildProcess): void {
 }
 
 async function startCore(dataDir: string): Promise<{ baseUrl: string; desktopToken: string; child: ChildProcess }> {
-  const child = spawn(join(repoRoot, 'node_modules/.bin/tsx'), ['packages/core/src/cli.ts', '--data-dir', dataDir, '--port', '0', '--print-connection'], { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+  // The core runs the way it does on the desktop. It must not inherit this script's own `--tsconfig` (tsx passes it on in
+  // TSX_TSCONFIG_PATH, and `npm run check:core` gives it as a path relative to apps/android, which means nothing in the repo root).
+  const coreEnv: Record<string, string | undefined> = { ...process.env };
+  delete coreEnv.TSX_TSCONFIG_PATH;
+  const child = spawn(join(repoRoot, 'node_modules/.bin/tsx'), ['packages/core/src/cli.ts', '--data-dir', dataDir, '--port', '0', '--print-connection'], { cwd: repoRoot, env: coreEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   let out = '';
   const line = await new Promise<string>((res, rej) => {
     const timer = setTimeout(() => rej(new Error(`the core did not print its address in time. stderr: ${err}`)), 30_000);

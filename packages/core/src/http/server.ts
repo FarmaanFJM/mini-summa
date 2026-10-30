@@ -1,8 +1,9 @@
 // Hono + @hono/node-server on 127.0.0.1, the WebSocket upgrade, static UI and the guards in front of all of it.
 //
-// Every request passes, in this order: Host check, Origin check (non-GET), authentication and scope, the pairing rate
-// limit, query/body validation, the idempotency store, and only then the handler. Nothing here has behaviour of its
-// own beyond that; services do the work (see handlers.ts).
+// Every request passes, in this order: Funnel refusal (public-internet traffic is never served), Host check, Origin
+// check (non-GET), authentication and scope, the pairing block (only while too many redemptions failed), query/body
+// validation, the idempotency store, and only then the handler. Nothing here has behaviour of its own beyond that;
+// services do the work (see handlers.ts).
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
@@ -16,14 +17,15 @@ import type { RouteName, Scope } from '@minisumma/shared';
 import type { Principal } from '../contracts.ts';
 import { CoreError } from '../errors.ts';
 import {
-  anonymousPrincipal, authenticateBearer, describeSecurity, hasExtensionScope, hostAllowed, hostNotAllowed, originNotAllowed,
+  FUNNEL_HEADER, anonymousPrincipal, authenticateBearer, describeSecurity, funnelNotAllowed, hasExtensionScope, hostAllowed, hostNotAllowed,
+  isFunnelRequest, originNotAllowed,
 } from './auth.ts';
 import type { HostPolicy, RequestSecurity } from './auth.ts';
 import { createConversationActions } from './conversations.ts';
 import { createHandlers } from './handlers.ts';
 import { IDEMPOTENCY_KEY_RE, createIdempotencyStore, requestFingerprint } from './idempotency.ts';
 import type { StoredResponse } from './idempotency.ts';
-import { createSlidingWindowLimiter } from './ratelimit.ts';
+import { createFailureLimiter } from './ratelimit.ts';
 import { errorBody, jsonResponse, resultOfError, responseOf, validationFailed } from './responses.ts';
 import { applySecurityHeaders } from './security.ts';
 import { createStaticUi } from './static.ts';
@@ -84,7 +86,8 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
   const policy: HostPolicy = { port: () => listening?.port ?? 0, publicUrl };
 
   const idem = createIdempotencyStore({ db: base.db, clock: base.clock, log, ttlMs: tuning.idempotencyTtlMs });
-  const redeemLimiter = createSlidingWindowLimiter({ max: tuning.redeemPerMinute, windowMs: 60_000, now: () => base.clock.now().getTime() });
+  // Only failed redemptions are charged (see ratelimit.ts); the service still burns an offer after five wrong codes.
+  const redeemFailures = createFailureLimiter({ max: tuning.redeemFailuresPerMinute, windowMs: 60_000, now: () => base.clock.now().getTime() });
   const hub = createWsHub({ base, devices: services.devices, sessions: services.sessions, tuning });
   const ui = createStaticUi(deps.uiDir);
   const handlers = createHandlers({
@@ -150,11 +153,11 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
     }
 
     if (name === 'pairing.redeem') {
-      const taken = redeemLimiter.take();
-      if (!taken.ok) {
+      const wait = redeemFailures.retryAfterSec();
+      if (wait !== null) {
         return responseOf({
-          status: 429, headers: { 'retry-after': String(taken.retryAfterSec) },
-          body: errorBody('rate_limited', `Too many pairing attempts. Wait ${taken.retryAfterSec} seconds, then scan the code again.`),
+          status: 429, headers: { 'retry-after': String(wait) },
+          body: errorBody('rate_limited', `Too many failed pairing attempts. Wait ${wait} seconds, then scan the code again.`),
         });
       }
     }
@@ -189,6 +192,9 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
       return jsonResponse(response.status, response.body, replayed ? { 'idempotent-replay': 'true' } : {});
     }
     const out = await run();
+    // A code or offer the service refused counts against the pairing budget. Success, an invalid body (thrown before the
+    // handler) and a server fault (5xx) do not.
+    if (name === 'pairing.redeem' && out.status >= 400 && out.status < 500) redeemFailures.record();
     return jsonResponse(out.status, out.body);
   }
 
@@ -200,6 +206,9 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
     const incoming = c.env.incoming;
     const hostHeader = incoming.headers.host;
     const pathname = c.req.path;
+    if (isFunnelRequest(c.req.raw.headers)) {
+      return applySecurityHeaders(responseOf(resultOfError(funnelNotAllowed(), log, 'guard')), pathname);
+    }
     if (!hostAllowed(hostHeader, policy)) {
       return applySecurityHeaders(responseOf(resultOfError(hostNotAllowed(), log, 'guard')), pathname);
     }
@@ -238,6 +247,10 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
   function onUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): void {
     try {
       if (req.headers.upgrade?.toLowerCase() !== 'websocket') return rejectUpgrade(socket, 400, 'bad_request', 'Only WebSocket upgrades are supported here.');
+      if (req.headers[FUNNEL_HEADER] !== undefined) {
+        const e = funnelNotAllowed();
+        return rejectUpgrade(socket, e.status, e.code, e.message);
+      }
       const hostHeader = req.headers.host;
       if (!hostAllowed(hostHeader, policy)) {
         const e = hostNotAllowed();

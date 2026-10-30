@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, startHarness } from './harness.ts';
 import type { Harness } from './harness.ts';
@@ -16,6 +18,16 @@ describe('core boot', () => {
     expect(state.projects).toEqual([]);
     expect(state.system).toMatchObject({ mode: 'headless', version: '0.0.0-test' });
     expect(state.settings.chatgpt.mode).toBe('embedded');
+  });
+
+  it.skipIf(process.platform === 'win32')('keeps the data directory and the database private to the owner', async () => {
+    const h = await boot();
+    await h.project('GitManager');
+    const mode = (p: string) => fs.statSync(p).mode & 0o777;
+    expect(mode(h.dataDir)).toBe(0o700);
+    expect(mode(path.join(h.dataDir, 'mini-summa.db'))).toBe(0o600);
+    for (const sub of ['logs', 'spool']) if (fs.existsSync(path.join(h.dataDir, sub))) expect(mode(path.join(h.dataDir, sub))).toBe(0o700);
+    for (const f of ['mini-summa.db-wal', 'mini-summa.db-shm']) if (fs.existsSync(path.join(h.dataDir, f))) expect(mode(path.join(h.dataDir, f))).toBe(0o600);
   });
 
   it('keeps projects, conversations and settings across a restart', async () => {

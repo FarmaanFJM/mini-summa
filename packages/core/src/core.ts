@@ -22,6 +22,29 @@ import { createOrchestrator } from './orchestrator.ts';
 import type { Orchestrator } from './orchestrator.ts';
 import { createActionsService, createActivityService, createDeliveriesService, createNotificationsService, createReportsService } from './workflow/index.ts';
 
+const PRIVATE_SUBDIRS = ['spool', 'logs', 'backups', 'managed-settings', 'secrets', 'electron-profile'];
+const PRIVATE_FILES = ['mini-summa.db', 'mini-summa.db-wal', 'mini-summa.db-shm', 'registry.json'];
+
+/**
+ * Reports, prompts, tool inputs and push tokens live here, so on POSIX systems only the owner may read the data
+ * directory. (On Windows the directory sits in the user's own profile, whose NTFS permissions already exclude other
+ * users, and POSIX modes do not apply.)
+ */
+export function restrictPermissions(dataDir: string): void {
+  if (process.platform === 'win32') return;
+  const attempt = (p: string, mode: number) => { try { fs.chmodSync(p, mode); } catch { /* does not exist yet */ } };
+  const dirs = (root: string, depth: number) => {
+    attempt(root, 0o700);
+    if (depth <= 0) return;
+    let entries: fs.Dirent[] = [];
+    try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) if (e.isDirectory() && !e.isSymbolicLink()) dirs(path.join(root, e.name), depth - 1);
+  };
+  attempt(dataDir, 0o700);
+  for (const d of PRIVATE_SUBDIRS) dirs(path.join(dataDir, d), 3);
+  for (const f of PRIVATE_FILES) attempt(path.join(dataDir, f), 0o600);
+}
+
 /** Preferred port, so the browser extension and `tailscale serve` can rely on a stable address. */
 export const DEFAULT_PORT = 47811;
 const LOG_ROTATE_BYTES = 5 * 1024 * 1024;
@@ -97,7 +120,8 @@ export function composeNative(host: NativeBridge, settings: Pick<SettingsService
 export async function createCore(options: CoreOptions): Promise<Core> {
   const clock = options.clock ?? systemClock;
   const dataDir = path.resolve(options.dataDir);
-  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  restrictPermissions(dataDir);
   const log = options.log ?? createFileLogger(dataDir, options.mode === 'headless' ? 'all' : 'warn');
   const { db } = openDatabase(path.join(dataDir, 'mini-summa.db'));
   const bus = createEventBus();
@@ -125,7 +149,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
   let orchestrator: Orchestrator | null = null;
   const reports = createReportsService({ base, onCreated: (report, ctx) => orchestrator?.onReportCreated(report, ctx) });
   const deliveries = createDeliveriesService({ base, settings, projects, reports, sessions, native });
-  const actions = createActionsService({ base, settings, sessions, activity, devices, deliveries, recordPermissionActivity: false });
+  const actions = createActionsService({ base, settings, sessions, activity, devices, deliveries, reports, recordPermissionActivity: false });
   orchestrator = createOrchestrator({ base, settings, sessions, reports, deliveries, activity, notifications, actions });
   const hooks = createHooksService({ base, environments });
 
@@ -212,6 +236,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       started = true;
       stopOrchestrator = orchestrator!.start();
       await sessions.init();
+      restrictPermissions(dataDir);
       orchestrator!.reconcile();
       deliveries.recoverAfterRestart();
       actions.init();
@@ -219,6 +244,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       port = bound.port;
       baseUrl = bound.baseUrl;
       bridge = server!.extensionBridge;
+      restrictPermissions(dataDir);
       tailscale.init();
       emitCountsSoon();
       log.info('core started', { baseUrl, mode: options.mode, version: options.version });
@@ -230,12 +256,13 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       if (countsTimer) clearTimeout(countsTimer);
       offCounts();
       try { await server?.stop(); } catch (err) { log.warn('http server did not stop cleanly', { error: String(err) }); }
-      tailscale.shutdown();
+      try { await tailscale.shutdown(); } catch (err) { log.warn('tailscale did not shut down cleanly', { error: String(err) }); }
       actions.shutdown();
       stopOrchestrator?.();
       try { await sessions.shutdown(); } catch (err) { log.warn('sessions did not shut down cleanly', { error: String(err) }); }
       (environments as { dispose?: () => void }).dispose?.();
       db.close();
+      restrictPermissions(dataDir);
       log.info('core stopped');
     },
   };

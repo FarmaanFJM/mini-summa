@@ -19,7 +19,7 @@ function requestFor(name: RouteName) {
 
 describe('auth matrix over every route of the shared table', () => {
   let h: Harness;
-  beforeAll(async () => { h = await startHarness({ push: fakePush, tuning: { redeemPerMinute: 1000 } }); });
+  beforeAll(async () => { h = await startHarness({ push: fakePush }); });
   afterAll(async () => { await h.stop(); });
 
   const tokenOf = (scope: Scope): string => h.tokens[scope as 'desktop' | 'read' | 'notify' | 'prompt' | 'approve' | 'extension'];
@@ -313,5 +313,65 @@ describe('no CORS, security headers everywhere', () => {
     expect(res.status).toBe(404);
     expect(res.json().error.code).toBe('not_found');
     expect(res.headers['content-type']).toContain('application/json');
+  });
+});
+
+describe('Tailscale Funnel traffic is refused before anything else', () => {
+  let h: Harness;
+  beforeAll(async () => { h = await startHarness({ publicUrl: 'https://box.tail1234.ts.net' }); });
+  afterAll(async () => { await h.stop(); });
+  const funnel = { 'tailscale-funnel-request': '?1' };
+
+  it('answers 403 funnel_not_allowed for public routes, authenticated routes, pairing, the UI and unknown paths', async () => {
+    const authBefore = h.devices.authCalls.length;
+    const redeemBefore = h.devices.redeemCalls.length;
+    const requests: [string, string, string | null, unknown][] = [
+      ['GET', '/api/v1/health', null, undefined],
+      ['GET', '/api/v1/counts', h.tokens.read, undefined],
+      ['POST', '/api/v1/projects', h.tokens.desktop, { name: 'x' }],
+      ['POST', '/api/v1/pairing/redeem', null, samples['pairing.redeem'].body],
+      ['GET', '/ui/', null, undefined],
+      ['GET', '/', null, undefined],
+      ['GET', '/nothing/here', null, undefined],
+    ];
+    for (const [method, path, token, body] of requests) {
+      const res = await raw(h.port, {
+        method, path,
+        headers: { ...funnel, host: 'box.tail1234.ts.net', 'x-forwarded-for': '203.0.113.9', ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body ? { 'content-type': 'application/json' } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      expect(res.status, `${method} ${path}`).toBe(403);
+      const { error } = res.json();
+      expect(error.code).toBe('funnel_not_allowed');
+      expect(error.message).toMatch(/Funnel/);
+      expect(error.message).toMatch(/Serve/);
+      expect(error.message).toMatch(/Turn Funnel off/);
+      expect(error.message).not.toMatch(/\u2014|\u2013/);
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(Object.keys(res.headers).filter((k) => k.startsWith('access-control-'))).toEqual([]);
+    }
+    // refused before authentication and before any service saw the request
+    expect(h.devices.authCalls.length).toBe(authBefore);
+    expect(h.devices.redeemCalls.length).toBe(redeemBefore);
+    expect(h.calls.filter((c) => c.service === 'projects')).toEqual([]);
+  });
+
+  it.each([
+    ['an empty header value', { 'Tailscale-Funnel-Request': '' }],
+    ['any value', { 'tailscale-funnel-request': 'true' }],
+    ['upper-case spelling', { 'TAILSCALE-FUNNEL-REQUEST': '?1' }],
+    ['a local host name', { 'tailscale-funnel-request': '?1', host: 'PORT_LOCAL' }],
+    ['a host name that is not allowed', { 'tailscale-funnel-request': '?1', host: 'evil.example' }],
+  ])('refuses %s', async (_what, headers) => {
+    const hh: Record<string, string> = { ...headers };
+    if (hh.host === 'PORT_LOCAL') hh.host = `127.0.0.1:${h.port}`;
+    const res = await raw(h.port, { path: '/api/v1/health', headers: hh });
+    expect(res.status).toBe(403);
+    expect(res.json().error.code).toBe('funnel_not_allowed');
+  });
+
+  it('still serves private Serve traffic, which never carries that header', async () => {
+    const res = await api(h, 'GET', '/counts', { token: h.tokens.read, headers: { host: 'box.tail1234.ts.net', 'x-forwarded-for': '100.64.0.7', 'tailscale-user-login': 'me@example.com' } });
+    expect(res.status).toBe(200);
   });
 });

@@ -5,6 +5,7 @@
 //  2. Origin header: a browser page may only call us from our own origin. chrome-extension:// is allowed, but the
 //     caller must then turn out to hold the `extension` scope (decided after authentication).
 //  3. Bearer token: authenticated by the DevicesService, then checked against the route's minimum scope.
+// Before all of them: anything that came in through Tailscale Funnel (public internet) is refused outright.
 // Tokens are never logged and never echoed.
 import type { Scope } from '@minisumma/shared';
 import { scopeAllows } from '@minisumma/shared';
@@ -122,6 +123,16 @@ export function authenticateBearer(devices: DevicesService, header: string | nul
 /** The extension scope counts only when it was granted itself; `desktop` does not stand in for it. */
 export const hasExtensionScope = (principal: Pick<Principal, 'scopes'>): boolean => principal.scopes.includes('extension');
 export const hasDesktopScope = (principal: Pick<Principal, 'scopes'>): boolean => principal.scopes.includes('desktop');
+
+/** Tailscale adds this header to every request that reaches us through Funnel (public internet) and never to Serve. */
+export const FUNNEL_HEADER = 'tailscale-funnel-request';
+
+export const isFunnelRequest = (headers: { has(name: string): boolean }): boolean => headers.has(FUNNEL_HEADER);
+
+export function funnelNotAllowed(): CoreError {
+  return new CoreError(403, 'funnel_not_allowed',
+    'This request came in through Tailscale Funnel, which makes Mini-Summa reachable from the whole internet. Mini-Summa only accepts private Tailscale Serve connections. Turn Funnel off for this computer, then try again.');
+}
 
 export function originNotAllowed(): CoreError {
   return new CoreError(403, 'origin_not_allowed',

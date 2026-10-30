@@ -582,6 +582,22 @@ describe('Host and Origin at upgrade', () => {
     expect((await raw(hh.port, { path: '/ws', headers: { ...wsHeaders, origin: 'https://evil.example' } })).status).toBe(403);
   });
 
+  it('refuses a handshake that carries the Tailscale Funnel header, before any authentication', async () => {
+    const hh = await boot({ publicUrl: 'https://box.tail1234.ts.net' });
+    const before = hh.devices.authCalls.length;
+    await expect(openWs(hh, { headers: { 'Tailscale-Funnel-Request': '?1' } })).rejects.toMatchObject({ status: 403 });
+    await expect(openWs(hh, { headers: { 'Tailscale-Funnel-Request': '?1', Host: 'box.tail1234.ts.net', 'X-Forwarded-For': '203.0.113.9' }, origin: 'https://box.tail1234.ts.net' })).rejects.toMatchObject({ status: 403 });
+    const wsHeaders = { connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-key': 'dGhlIHNhbXBsZSBub25jZQ==', 'sec-websocket-version': '13' };
+    const res = await raw(hh.port, { path: '/ws', headers: { ...wsHeaders, 'tailscale-funnel-request': '?1' } });
+    expect(res.status).toBe(403);
+    expect(res.json().error.code).toBe('funnel_not_allowed');
+    expect(res.json().error.message).toMatch(/Turn Funnel off/);
+    expect(hh.devices.authCalls.length).toBe(before);
+    // the same handshake over Serve (no Funnel header) is fine
+    const { ready } = await connect(hh, hh.tokens.read, {}, { headers: { Host: 'box.tail1234.ts.net', 'X-Forwarded-For': '100.64.0.7' }, origin: 'https://box.tail1234.ts.net' });
+    expect(ready.t).toBe('ready');
+  });
+
   it('serves /ws with a query string', async () => {
     const hh = await boot();
     const c = await openWs({ wsUrl: `${hh.wsUrl}?client=test` });

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ActivityEvent, Delivery, PendingAction, ReportSummary, SessionView } from '@minisumma/shared';
 import { createEventBus } from '../src/bus.ts';
-import type { ActivityInput, ClaudeDerivedEvent, ClaudeEventHandlers, CoreBase } from '../src/contracts.ts';
+import type { ActivityInput, ClaudeDerivedEvent, ClaudeEventHandlers, CoreBase, PermissionRequestInfo } from '../src/contracts.ts';
 import { createOrchestrator } from '../src/orchestrator.ts';
 
 const KEY = 'win|11111111-1111-4111-8111-111111111111' as const;
@@ -16,6 +16,11 @@ const view = (over: Partial<SessionView> = {}): SessionView => ({
 const derived = (over: Partial<ClaudeDerivedEvent>): ClaudeDerivedEvent => ({
   derivedId: 'd1', kind: 'transition', sessionKey: KEY, generation: 1, from: 'working', to: 'idle', notify: false, requiresUser: false,
   rawSeq: 1, at: '2026-10-30T10:00:00.000Z', replay: false, ...over,
+});
+
+const request = (over: Partial<PermissionRequestInfo> = {}): PermissionRequestInfo => ({
+  correlationKey: 'perm1', sessionKey: KEY, generation: 1, toolName: 'Bash', inputExcerpt: 'rm -rf build', rawSeq: 2,
+  at: '2026-10-30T10:00:00.000Z', replay: false, ...over,
 });
 
 function harness() {
@@ -72,19 +77,39 @@ const summary = (id: string, over: Partial<ReportSummary> = {}): ReportSummary =
 });
 
 describe('orchestrator: Claude events', () => {
-  it('turns a permission prompt into an entry, an approval item and one notification', () => {
+  it('turns a permission prompt into one entry and one notification, and the request into its own approval item', () => {
     const h = harness();
     const ev = derived({ derivedId: 'perm1', from: 'working', to: 'needs_permission', notify: true, requiresUser: true, permission: { toolName: 'Bash', inputExcerpt: 'rm -rf build' } });
     h.handlers().onDerived!(ev, view({ state: 'needs_permission' }));
+    h.handlers().onPermissionRequest!(request(), view({ state: 'needs_permission' }));
     expect([...h.entries.values()].map((a) => [a.type, a.requiresAction, a.title])).toEqual([['needs_permission', true, 'Needs permission: GitManager / 11111111']]);
     expect(h.entries.get('drv_perm1')!.description).toBe('Bash: rm -rf build');
     expect(h.permission).toEqual([{ sessionKey: KEY, generation: 1, summary: 'Bash: rm -rf build', correlationKey: 'perm1', projectId: 'p1' }]);
     expect(h.notified).toEqual([{ id: 'drv_perm1', kind: 'permission', target: { view: 'workspace', projectId: 'p1', sessionKey: KEY } }]);
   });
 
+  it('raises an item for every request, so a second dialog replaces the first and the approval names the one on screen', () => {
+    const h = harness();
+    h.handlers().onPermissionRequest!(request({ correlationKey: 'first', inputExcerpt: 'ls' }), view({ state: 'needs_permission' }));
+    // A second PermissionRequest while the session already waits changes no state, so there is no derived event for it.
+    h.handlers().onPermissionRequest!(request({ correlationKey: 'second', inputExcerpt: 'rm -rf build', rawSeq: 3 }), view({ state: 'needs_permission' }));
+    expect(h.permission).toEqual([
+      { sessionKey: KEY, generation: 1, summary: 'Bash: ls', correlationKey: 'first', projectId: 'p1' },
+      { sessionKey: KEY, generation: 1, summary: 'Bash: rm -rf build', correlationKey: 'second', projectId: 'p1' },
+    ]);
+    expect(h.notified).toEqual([]);
+  });
+
+  it('words an unnamed tool request plainly instead of inventing detail', () => {
+    const h = harness();
+    h.handlers().onPermissionRequest!(request({ toolName: null, inputExcerpt: null }), view({ state: 'needs_permission' }));
+    expect(h.permission).toMatchObject([{ summary: 'Permission requested' }]);
+  });
+
   it('never notifies or raises approvals for replayed history, and a second delivery of the same event is silent', () => {
     const h = harness();
     h.handlers().onDerived!(derived({ derivedId: 'old', to: 'needs_permission', notify: true, replay: true }), view());
+    h.handlers().onPermissionRequest!(request({ correlationKey: 'old', replay: true }), view());
     expect(h.notified).toEqual([]);
     expect(h.permission).toEqual([]);
     h.handlers().onDerived!(derived({ derivedId: 'live', to: 'needs_input', notify: true }), view());
@@ -95,6 +120,7 @@ describe('orchestrator: Claude events', () => {
   it('does not raise a typing approval for a session Mini-Summa does not own', () => {
     const h = harness();
     h.handlers().onDerived!(derived({ to: 'needs_permission', notify: true }), view({ origin: 'external' }));
+    h.handlers().onPermissionRequest!(request(), view({ origin: 'external' }));
     expect(h.permission).toEqual([]);
     expect(h.notified).toHaveLength(1);
   });

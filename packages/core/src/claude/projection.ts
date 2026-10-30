@@ -10,12 +10,19 @@
 // insertion order) into the contract types. Time stamps always come from the raw entries (never from the clock), so a
 // replay reproduces the same values. Attribution (project) is: the session binding (managed, then manual), then the
 // registry match the Reducer made from the working directory. It never looks at what is focused.
+//
+// Permission requests: EVERY PermissionRequest hook the Reducer accepted as live evidence is reported (ApplyResult.permissions),
+// including a second one that arrives while the session already waits (which changes no state and so has no derived event),
+// and the newest one since the session last left needs_permission is remembered (currentPermission). "Accepted" means not a
+// duplicate delivery of a request already seen through another registration and not late or stale (the Reducer keeps those as
+// history: they say nothing about the dialog that is open now). The memory is dropped the moment the Reducer's state is no
+// longer needs_permission or its generation changed, in log order, so a replay rebuilds exactly the same answer.
 import { Reducer, redactString } from '@minisumma/claude-integration';
 import type { Candidate, DerivedEvent, RawEntry, ReducerEntry, ReducerSession, RegistryResolver, Report, SessionEnv } from '@minisumma/claude-integration';
 import { makeSessionKey } from '@minisumma/shared';
 import type { EnvId, ProjectResolution, SessionKey, SessionState } from '@minisumma/shared';
 import type { Db } from '@minisumma/storage';
-import type { CapturedCandidate, CapturedReport, Clock, ClaudeDerivedEvent, Logger, ProjectsService } from '../contracts.ts';
+import type { CapturedCandidate, CapturedReport, Clock, ClaudeDerivedEvent, Logger, PermissionRequestInfo, ProjectsService } from '../contracts.ts';
 import type { RawStore } from './rawStore.ts';
 import { readBindings } from './sessionBindings.ts';
 import type { BindingRow } from './sessionBindings.ts';
@@ -67,12 +74,30 @@ export interface SessionFacts {
   endedAt: string | null;
 }
 
+/** A UserPromptSubmit hook that was applied: a prompt of this session reached Claude. */
+export interface PromptSubmission {
+  sessionKey: SessionKey;
+  /** When the hook ran (the hook process's own clock). */
+  at: string;
+  replay: boolean;
+}
+
+/** The PermissionRequest that is open in a session, and the hook invocation (spool file) it came from. */
+export interface OpenPermission {
+  info: PermissionRequestInfo;
+  transportId: string | null;
+}
+
 export interface ApplyResult {
   /** Raw entries applied in this call. */
   applied: number;
   derived: ClaudeDerivedEvent[];
   reports: CapturedReport[];
   candidates: CapturedCandidate[];
+  /** Every accepted PermissionRequest hook, in log order. */
+  permissions: PermissionRequestInfo[];
+  /** Every UserPromptSubmit hook, in log order. */
+  submissions: PromptSubmission[];
   /** Sessions whose Reducer-derived data may have changed. */
   touched: Set<SessionKey>;
   /** The Reducer was replaced: every view has to be refreshed. */
@@ -89,6 +114,8 @@ export interface Projection {
   facts(key: SessionKey): SessionFacts | undefined;
   /** The Reducer saw a UserPromptSubmit for this session (so Claude saved a transcript and --resume can work). */
   isPrompted(key: SessionKey): boolean;
+  /** The newest PermissionRequest since the session last left needs_permission, or null (also when it is not waiting). */
+  currentPermission(key: SessionKey): OpenPermission | null;
   /** Reads the session bindings now. Cheap; call once per pass. */
   attributionContext(): AttributionContext;
   attribute(key: SessionKey, ctx: AttributionContext): Attribution;
@@ -147,6 +174,7 @@ interface State {
   sessionCount: number;
   facts: Map<SessionKey, SessionFacts>;
   byKey: Map<SessionKey, ReducerSession>;
+  permissions: Map<SessionKey, OpenPermission>;
   applyErrors: number;
 }
 
@@ -155,6 +183,8 @@ interface Accumulator {
   derived: ClaudeDerivedEvent[];
   reports: CapturedReport[];
   candidates: CapturedCandidate[];
+  permissions: PermissionRequestInfo[];
+  submissions: PromptSubmission[];
   touched: Set<SessionKey>;
   touchedEnvs: Set<EnvId>;
 }
@@ -175,7 +205,7 @@ export function createProjection(deps: ProjectionDeps): Projection {
     const registry = projects.registry() as unknown as RegistryResolver;
     return {
       reducer: new Reducer({ registry }), lastSeq: 0, derivedIndex: 0, reportCount: 0, candidateCount: 0, sessionCount: 0,
-      facts: new Map(), byKey: new Map(), applyErrors: 0,
+      facts: new Map(), byKey: new Map(), permissions: new Map(), applyErrors: 0,
     };
   }
 
@@ -317,13 +347,48 @@ export function createProjection(deps: ProjectionDeps): Projection {
     }
   }
 
+  /** A permission request or a submitted prompt, as far as the Reducer accepted it (see the header). */
+  function noteHookEffects(s: State, entry: RawEntry, late: boolean, out: Accumulator, replay: boolean): void {
+    if (entry.kind !== 'hook') return;
+    const p = entry.payload;
+    if (!p?.session_id) return;
+    const key = keyOf(entry.transport?.env_id, p.session_id);
+    if (p.hook_event_name === 'UserPromptSubmit') {
+      out.submissions.push({ sessionKey: key, at: atOf(entry), replay });
+      return;
+    }
+    if (p.hook_event_name !== 'PermissionRequest' || late) return;
+    const session = s.byKey.get(key);
+    // An accepted request always leaves the session waiting; if it does not, something else is going on and nothing is claimed.
+    if (!session || session.state !== 'needs_permission') return;
+    const transportId = (entry.transport as { transport_id?: string } | undefined)?.transport_id ?? null;
+    const detail = permissionOf(entry);
+    const info: PermissionRequestInfo = {
+      correlationKey: transportId ? `perm_${transportId}` : `perm_seq${entry.seq}`, sessionKey: key, generation: session.gen.n,
+      toolName: detail.toolName, inputExcerpt: detail.inputExcerpt, rawSeq: entry.seq, at: atOf(entry), replay,
+    };
+    s.permissions.set(key, { info, transportId });
+    out.permissions.push(info);
+  }
+
+  /** Forgets the open request of every session that is no longer waiting for permission, or is in another generation. */
+  function dropClosedPermissions(s: State): void {
+    for (const [key, open] of s.permissions) {
+      const session = s.byKey.get(key);
+      if (!session || session.state !== 'needs_permission' || session.gen.n !== open.info.generation) s.permissions.delete(key);
+    }
+  }
+
   function applyEntries(s: State, entries: RawEntry[], out: Accumulator, ctx: AttributionContext, replay: boolean): void {
     const reducer = s.reducer;
     for (const entry of entries) {
+      const duplicatesBefore = reducer.duplicates.length;
+      let failed = false;
       try {
         reducer.apply(entry as ReducerEntry);
       } catch (err) {
         // A reducer bug on one odd entry must not wedge the pipeline: the entry stays in the log, and the failure is visible.
+        failed = true;
         s.applyErrors++;
         log?.error('The Claude event reducer failed on a raw event; it was skipped.', { seq: entry.seq, error: err instanceof Error ? err.message : String(err) });
       }
@@ -340,13 +405,18 @@ export function createProjection(deps: ProjectionDeps): Projection {
         out.touchedEnvs.add(envOf(entry.transport?.env_id));
       }
 
+      let late = false;
       for (; s.derivedIndex < reducer.derived.length; s.derivedIndex++) {
         const d = reducer.derived[s.derivedIndex];
         const event = convertDerived(d, entry, replay);
         factsFromDerived(s, d, event);
         out.derived.push(event);
         out.touched.add(event.sessionKey);
+        if (d.kind === 'late_event' && d.raw_seq === entry.seq) late = true;
       }
+      dropClosedPermissions(s);
+      // A duplicate delivery of a hook already seen through another registration is the same question, not a new one.
+      if (!failed && reducer.duplicates.length === duplicatesBefore) noteHookEffects(s, entry, late, out, replay);
       if (reducer.reports.size > s.reportCount) {
         const at = atOf(entry);
         let i = 0;
@@ -367,7 +437,9 @@ export function createProjection(deps: ProjectionDeps): Projection {
     s.sessionCount = s.reducer.sessions.size;
   }
 
-  const newAccumulator = (): Accumulator => ({ applied: 0, derived: [], reports: [], candidates: [], touched: new Set(), touchedEnvs: new Set() });
+  const newAccumulator = (): Accumulator => ({
+    applied: 0, derived: [], reports: [], candidates: [], permissions: [], submissions: [], touched: new Set(), touchedEnvs: new Set(),
+  });
 
   function finish(s: State, out: Accumulator, rebuilt: boolean): ApplyResult {
     indexSessions(s);
@@ -375,7 +447,10 @@ export function createProjection(deps: ProjectionDeps): Projection {
     for (const env of out.touchedEnvs) {
       for (const [key, rs] of s.byKey) if (envOf(rs.env) === env) out.touched.add(key);
     }
-    return { applied: out.applied, derived: out.derived, reports: out.reports, candidates: out.candidates, touched: out.touched, rebuilt };
+    return {
+      applied: out.applied, derived: out.derived, reports: out.reports, candidates: out.candidates, permissions: out.permissions,
+      submissions: out.submissions, touched: out.touched, rebuilt,
+    };
   }
 
   return {
@@ -385,7 +460,7 @@ export function createProjection(deps: ProjectionDeps): Projection {
       const s = state;
       let chunk = rawStore.since(s.lastSeq, chunkSize);
       // The common case (a poll with nothing new) costs one indexed query.
-      if (chunk.length === 0) return { applied: 0, derived: [], reports: [], candidates: [], touched: new Set(), rebuilt: false };
+      if (chunk.length === 0) return { applied: 0, derived: [], reports: [], candidates: [], permissions: [], submissions: [], touched: new Set(), rebuilt: false };
       const out = newAccumulator();
       const ctx = attributionContext();
       for (;;) {
@@ -420,6 +495,7 @@ export function createProjection(deps: ProjectionDeps): Projection {
       const rs = state.byKey.get(key);
       return Boolean(rs && (rs.tasks.size > 0 || rs.current_prompt_id !== null));
     },
+    currentPermission: (key) => state.permissions.get(key) ?? null,
     attributionContext,
     attribute: (key, ctx) => attributeKey(state, key, ctx),
     stats: () => ({

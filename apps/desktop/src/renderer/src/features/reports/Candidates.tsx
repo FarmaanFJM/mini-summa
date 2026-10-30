@@ -21,7 +21,15 @@ export function useCandidates(active: boolean): { items: ReportCandidate[] | nul
   return { items, error, reload };
 }
 
-export const candidateTitle = (c: ReportCandidate): string => c.taskTitle?.trim() || c.body.replace(/^[\s#>*-]+/, '').split('\n')[0].slice(0, 90) || 'Final message';
+/** A title for a message that has none: its first line, cut at a word. */
+export function titleFromBody(body: string, max = 80): string {
+  const line = body.replace(/^[\s#>*-]+/, '').split('\n')[0].trim();
+  if (line.length <= max) return line || 'Final message';
+  const cut = line.slice(0, max);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), 20))}...`;
+}
+
+export const candidateTitle = (c: ReportCandidate): string => c.taskTitle?.trim() || titleFromBody(c.body);
 
 export interface CandidateListProps {
   items: ReportCandidate[] | null;
@@ -89,13 +97,13 @@ export function CandidateDetail({ candidate, onPromoted }: CandidateDetailProps)
   return (
     <section className="ms-view ms-rep-detail" aria-label="Final message">
       <header className="ms-view__head">
-        <h1 className="ms-view__title ms-truncate">{candidateTitle(candidate)}</h1>
+        <h1 className="ms-view__title ms-truncate" title={candidateTitle(candidate)}>{candidateTitle(candidate)}</h1>
         <div className="ms-x-head-actions">
           <Button variant="primary" icon="file-text" onClick={() => setAsking(true)}>Make this a report</Button>
         </div>
       </header>
-      <div className="ms-view__body ms-rep-scroll">
-        <div className="ms-rep-doc">
+      <div className="ms-view__body ms-rep-scroll ms-rep-scroll--solo">
+        <div className="ms-rep-doc ms-rep-doc--solo">
           <div className="ms-notice" data-tone="attention"><span className="ms-notice__text">Not a report: {candidate.reason} Mini-Summa kept the message, and you decide whether it counts as a report.</span></div>
           <dl className="ms-x-kv">
             <dt>Project</dt><dd>{candidate.projectName ?? 'No project'}</dd>

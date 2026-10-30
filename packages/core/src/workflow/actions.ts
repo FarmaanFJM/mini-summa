@@ -12,21 +12,34 @@
 //    `raisePermission` records an `action_pending` entry (id act_<id>) unless `recordPermissionActivity` is false; the
 //    orchestrator already records a needs_permission entry for the same moment, so pass false to avoid two lines.
 //    The "prompt waiting for approval" entry of a device prompt is the glue's (it uses the same id scheme), not recorded here.
-//  * A failed action's entry has requiresAction and nothing in the contract resolves it. See the report.
+//  * A failed action's entry has requiresAction and stays open until the person reads it: ActivityService.markRead
+//    acknowledges open `error` and `action_result` entries.
 //  * reject() is synchronous in the contract. For a permission request it also answers "no" in the terminal through
 //    sessions.answerPermission, in the background and only if the session is still waiting for permission; if that
 //    fails an error entry is recorded. Rejecting a prompt types nothing.
 //  * Prompts from a device are always submitted (`submit: false` is a desktop-only option and is refused for devices),
 //    because a waiting action has nowhere to remember it.
 //  * A system actor can neither create nor decide anything (403 actor_not_allowed): only a person may authorize typing.
-//  * Approving a permission request whose session is no longer waiting for permission marks it `superseded` and
-//    types nothing.
+//  * Approve what you see: only the newest permission request of a session can be answered. Raising a request
+//    supersedes every other open one of that session; approve and reject check `sessions.currentPermission` first and,
+//    if the request is not the open one, mark it `superseded` and refuse with 409 `permission_changed`. The request's
+//    key is passed to `answerPermission` as `expectRequestKey`, so the session layer refuses it too.
+//  * Links: a prompt from a non-desktop actor never keeps a report or delivery id (they are dropped). For the desktop the
+//    ids must exist (404) and the delivery must belong to the target session's project (422 `delivery_project_mismatch`).
+//    A delivery's follow-up counts as sent only when the typed text equals its stored draft exactly and the target is
+//    the delivery's own session. Without the `deliveries` / `reports` deps ids cannot be checked and are dropped.
+//  * A removed or revoked device (bus `device.upserted` with revokedAt, or `device.removed`) loses its pending prompts:
+//    they are rejected with "The device that asked was removed." and approving one refuses with 409 `device_revoked`.
+//  * Non-desktop actors cannot send text that starts with ! or / (422 `command_not_allowed`), also after invisible
+//    characters: that is a Claude Code command, not a prompt.
 //  * list defaults to status 'open' (pending or approved but not finished) and returns at most 500 rows.
-import type { ActorRef, LinkTarget, PendingAction, PendingActionKind, PendingActionStatus, SessionKey, SessionState, TargetCheck } from '@minisumma/shared';
+import type { ActorRef, LinkTarget, PendingAction, PendingActionKind, PendingActionStatus, ServerEvent, SessionKey, SessionState, TargetCheck } from '@minisumma/shared';
 import { shortSessionId } from '@minisumma/shared';
 import type { SqlValue } from '@minisumma/storage';
 import { fromJson, newId, toJson } from '@minisumma/storage';
-import type { ActionsService, ActivityInput, ActivityService, CoreBase, DeliveriesService, DevicesService, SessionsService, SettingsService, TypeIntoResult } from '../contracts.ts';
+import type {
+  ActionsService, ActivityInput, ActivityService, CoreBase, DeliveriesService, DevicesService, ReportsService, SessionsService, SettingsService, TypeIntoResult,
+} from '../contracts.ts';
 import { nowIso } from '../contracts.ts';
 import { badRequest, conflict, forbidden, notFound, unprocessable } from '../errors.ts';
 import { addMinutes, clampInt, existingProjectId, firstLine, isUniqueViolation, placeholders } from './util.ts';
@@ -34,11 +47,14 @@ import { addMinutes, clampInt, existingProjectId, firstLine, isUniqueViolation, 
 export interface ActionsServiceDeps {
   base: CoreBase;
   settings: Pick<SettingsService, 'get'>;
-  sessions: Pick<SessionsService, 'get' | 'targetCheck' | 'typeInto' | 'answerPermission'>;
+  sessions: Pick<SessionsService, 'get' | 'targetCheck' | 'typeInto' | 'answerPermission' | 'currentPermission'>;
   activity: Pick<ActivityService, 'record' | 'resolve'>;
-  /** Needed only to know whether a device is trusted. Without it no device is. */
+  /** To know whether a device is trusted, and whether the device that asked is still there. Without it no device is trusted. */
   devices?: Pick<DevicesService, 'get'>;
-  deliveries?: Pick<DeliveriesService, 'markFollowUpSent'>;
+  /** To check a delivery a desktop prompt names, and to mark its follow-up as sent. */
+  deliveries?: Pick<DeliveriesService, 'get' | 'markFollowUpSent'>;
+  /** To check a report a desktop prompt names. */
+  reports?: Pick<ReportsService, 'summary'>;
   /** Record an `action_pending` feed entry for each permission request. Default true. */
   recordPermissionActivity?: boolean;
 }
@@ -71,9 +87,22 @@ const SWEEP_MS = 30_000;
 const LIST_CAP = 500;
 
 const EXTERNAL_HINT = 'Mini-Summa only observes sessions it did not start, so it never types into them. Remote Control can control this session from the Claude app.';
+const COMMAND_NOT_ALLOWED = 'Text that starts with ! or / is a Claude Code command, not a prompt, and cannot be sent from a phone.';
+const PERMISSION_CHANGED = 'That request is no longer the one that is open. Look at the terminal.';
+const DEVICE_REMOVED = 'The device that asked was removed.';
 
 const reasonOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const sentence = (text: string): string => text.trim().replace(/[.!?]*$/, '.');
+
+// Characters that show nothing in front of the first real one: whitespace, control and format characters (byte order
+// mark, zero-width space and joiners, bidi marks, soft hyphen, tag characters) and other separators.
+const INVISIBLE_PREFIX = /^[\s\p{Cc}\p{Cf}\p{Z}]+/u;
+
+/** Would Claude Code read this text as a slash command or as a shell command (`!`) rather than as a prompt? */
+function startsLikeCommand(text: string): boolean {
+  const first = text.replace(INVISIBLE_PREFIX, '').charAt(0);
+  return first === '!' || first === '/';
+}
 
 function targetProblem(check: TargetCheck): { code: string; message: string } | null {
   if (!check.managed) {
@@ -193,9 +222,16 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
     if (!row) return toAction(rowOrThrow(id));
     const action = announce(row);
     recordResult(row, 'executed');
-    if (row.delivery_id && deps.deliveries) {
-      const { markFollowUpSent } = deps.deliveries;
-      safely('mark the follow-up as sent', () => { markFollowUpSent(row.delivery_id!, row.id); });
+    const deliveries = deps.deliveries;
+    if (row.kind === 'claude_prompt' && row.delivery_id && row.text !== null && deliveries) {
+      safely('mark the follow-up as sent', () => {
+        const delivery = deliveries.get(row.delivery_id!);
+        // Only the exact text that was drafted, typed into the very session the report came from, is "the follow-up sent".
+        // A prompt that merely names a delivery proves nothing about its review.
+        if (delivery && delivery.followUpDraft !== null && delivery.followUpDraft === row.text && delivery.sessionKey === row.session_key) {
+          deliveries.markFollowUpSent(delivery.id, row.id);
+        }
+      });
     }
     return action;
   }
@@ -235,11 +271,32 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
     }
     let result: TypeIntoResult;
     try {
-      result = await sessions.answerPermission(row.session_key, 'approve', row.generation);
+      // The request key travels with the answer: the session layer refuses it if another dialog is open by now.
+      result = await sessions.answerPermission(row.session_key, 'approve', row.generation, row.correlation_key ?? undefined);
     } catch (err) {
       return fail(id, `Answering failed unexpectedly (${reasonOf(err)}). Look at the terminal.`);
     }
     return result.ok ? succeed(id) : fail(id, result.problem);
+  }
+
+  /**
+   * Approve what you see: only the request that is open right now may be answered. If this action is not that one,
+   * it becomes `superseded` and the call is refused, so a click on an old item can never answer a newer dialog.
+   */
+  function requireOpenRequest(row: ActionRow): void {
+    let current: { correlationKey: string } | null = null;
+    try {
+      current = sessions.currentPermission(row.session_key);
+    } catch (err) {
+      log.warn('could not read the open permission request; treating it as changed', { session: row.session_key, error: reasonOf(err) });
+    }
+    if (current !== null && current.correlationKey === row.correlation_key) return;
+    const moved = move(row.id, ['pending'], 'superseded', { decidedAt: nowIso(clock), decidedBy: SYSTEM });
+    if (moved) {
+      announce(moved);
+      resolveEntry(row.id);
+    }
+    throw conflict(PERMISSION_CHANGED, 'permission_changed');
   }
 
   /** The person said no to a permission request: tell Claude so, in the background, only if it is still asking. */
@@ -255,7 +312,7 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
       try {
         const check = checkOf(row.session_key, row.generation);
         if (targetProblem(check) || (check.state !== null && check.state !== 'needs_permission')) return;
-        const result = await sessions.answerPermission(row.session_key, 'reject', row.generation);
+        const result = await sessions.answerPermission(row.session_key, 'reject', row.generation, row.correlation_key ?? undefined);
         if (!result.ok) failed(result.problem);
       } catch (err) {
         failed(`Answering failed unexpectedly (${reasonOf(err)}).`);
@@ -276,11 +333,46 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
 
   const ttlMinutes = (): number => clampInt(deps.settings.get().mobile.promptActionTtlMinutes, 1, 1440, 60);
 
+  /**
+   * The report and delivery a prompt may be linked to. Anyone but the desktop cannot link anything: their ids are dropped,
+   * so an unrelated prompt can never touch someone else's review. The desktop's ids must exist, and the delivery must
+   * belong to the target session's project.
+   */
+  function checkedLinks(input: Parameters<ActionsService['createPrompt']>[0], projectId: string | null): { reportId: string | null; deliveryId: string | null } {
+    const none = { reportId: null, deliveryId: null };
+    if (input.actor.kind !== 'desktop') return none;
+    let deliveryId: string | null = null;
+    let reportId: string | null = null;
+    if (input.deliveryId !== undefined) {
+      if (!deps.deliveries) {
+        log.warn('a delivery id was dropped because deliveries cannot be checked here', { delivery: input.deliveryId });
+      } else {
+        const delivery = deps.deliveries.get(input.deliveryId);
+        if (!delivery) throw notFound('Delivery');
+        // A delivery of a project-less report may only be linked to the very session it came from.
+        if (delivery.projectId !== projectId || (projectId === null && delivery.sessionKey !== input.sessionKey)) {
+          throw unprocessable('That handoff belongs to another project, so it cannot be linked to a prompt for this session.', 'delivery_project_mismatch');
+        }
+        deliveryId = delivery.id;
+      }
+    }
+    if (input.reportId !== undefined) {
+      if (!deps.reports) {
+        log.warn('a report id was dropped because reports cannot be checked here', { report: input.reportId });
+      } else {
+        if (!deps.reports.summary(input.reportId)) throw notFound('Report');
+        reportId = input.reportId;
+      }
+    }
+    return { reportId, deliveryId };
+  }
+
   // ---- public methods ------------------------------------------------------------------------------------------
   async function createPrompt(input: Parameters<ActionsService['createPrompt']>[0]): Promise<PendingAction> {
     const { actor, sessionKey } = input;
     refuseSystem(actor);
     if (typeof input.text !== 'string' || input.text.trim() === '') throw badRequest('Write something to send first.', undefined, 'empty_prompt');
+    if (actor.kind !== 'desktop' && startsLikeCommand(input.text)) throw unprocessable(COMMAND_NOT_ALLOWED, 'command_not_allowed');
     if (actor.kind === 'device' && input.submit === false) {
       throw badRequest('A prompt from another device is always submitted. Typing without pressing Enter is only available on the desktop.', undefined, 'submit_not_allowed');
     }
@@ -291,6 +383,7 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
     const problem = targetProblem(check);
     if (problem) throw unprocessable(problem.message, problem.code, { target: check });
     const generation = expected ?? check.generation ?? view?.generation ?? 0;
+    const links = checkedLinks(input, view?.projectId ?? null);
 
     const now = nowIso(clock);
     const immediate = actor.kind === 'desktop' || isTrusted(actor);
@@ -300,7 +393,7 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
                                     created_by_json, approvable_by, decided_at, decided_by_json, executed_at, failure, expires_at, correlation_key)
        VALUES (?, 'claude_prompt', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, NULL)`,
       [id, immediate ? 'approved' : 'pending', existingProjectId(db, view?.projectId), sessionKey, generation, input.text, firstLine(input.text, 160),
-        input.reportId ?? null, input.deliveryId ?? null, now, toJson(actor), actor.kind === 'desktop' ? 'desktop' : 'desktop_or_other_device',
+        links.reportId, links.deliveryId, now, toJson(actor), actor.kind === 'desktop' ? 'desktop' : 'desktop_or_other_device',
         immediate ? now : null, immediate ? toJson(actor) : null, addMinutes(now, ttlMinutes())],
     );
     const created = announce(rowOrThrow(id));
@@ -316,19 +409,37 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
     const now = nowIso(clock);
     const id = newId('act');
     const projectId = existingProjectId(db, input.projectId ?? sessions.get(input.sessionKey)?.projectId);
+    const older: ActionRow[] = [];
     try {
-      db.run(
-        `INSERT INTO pending_actions (id, kind, status, project_id, session_key, generation, text, summary, report_id, delivery_id, created_at,
-                                      created_by_json, approvable_by, decided_at, decided_by_json, executed_at, failure, expires_at, correlation_key)
-         VALUES (?, 'permission', 'pending', ?, ?, ?, NULL, ?, NULL, NULL, ?, ?, 'any_approver', NULL, NULL, NULL, NULL, ?, ?)`,
-        [id, projectId, input.sessionKey, input.generation, input.summary.trim() === '' ? 'Permission requested' : input.summary.trim(), now,
-          toJson(SYSTEM), addMinutes(now, ttlMinutes()), input.correlationKey],
-      );
+      db.tx(() => {
+        // Only the newest request of a session is the one on screen. Every other open one stops being answerable now,
+        // in the same step that makes the new one exist.
+        const open = db.all<ActionRow>(
+          `SELECT * FROM pending_actions WHERE session_key = ? AND kind = 'permission' AND status = 'pending' AND correlation_key IS NOT ?
+           ORDER BY created_at, rowid`,
+          [input.sessionKey, input.correlationKey],
+        );
+        for (const o of open) {
+          const moved = move(o.id, ['pending'], 'superseded', { decidedAt: now, decidedBy: SYSTEM });
+          if (moved) older.push(moved);
+        }
+        db.run(
+          `INSERT INTO pending_actions (id, kind, status, project_id, session_key, generation, text, summary, report_id, delivery_id, created_at,
+                                        created_by_json, approvable_by, decided_at, decided_by_json, executed_at, failure, expires_at, correlation_key)
+           VALUES (?, 'permission', 'pending', ?, ?, ?, NULL, ?, NULL, NULL, ?, ?, 'any_approver', NULL, NULL, NULL, NULL, ?, ?)`,
+          [id, projectId, input.sessionKey, input.generation, input.summary.trim() === '' ? 'Permission requested' : input.summary.trim(), now,
+            toJson(SYSTEM), addMinutes(now, ttlMinutes()), input.correlationKey],
+        );
+      });
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
       const raced = db.get<ActionRow>('SELECT * FROM pending_actions WHERE correlation_key = ?', [input.correlationKey]);
       if (raced) return toAction(raced);
       throw err;
+    }
+    for (const o of older) {
+      announce(o);
+      resolveEntry(o.id);
     }
     const row = rowOrThrow(id);
     const action = announce(row);
@@ -342,7 +453,7 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
   }
 
   function supersedeOpenFor(sessionKey: SessionKey, _reason: string): void {
-    const open = db.all<ActionRow>(`SELECT * FROM pending_actions WHERE session_key = ? AND kind = 'permission' AND status = 'pending'`, [sessionKey]);
+    const open = db.all<ActionRow>(`SELECT * FROM pending_actions WHERE session_key = ? AND kind = 'permission' AND status = 'pending' ORDER BY created_at, rowid`, [sessionKey]);
     for (const row of open) {
       const moved = move(row.id, ['pending'], 'superseded', { decidedAt: nowIso(clock), decidedBy: SYSTEM });
       if (!moved) continue;
@@ -362,10 +473,15 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
         throw forbidden('A device cannot approve its own prompt. Approve it on the desktop or from another device.', 'self_approval');
       }
     }
+    if (creatorRemoved(row)) {
+      rejectRemoved(row);
+      throw conflict('The device that asked was removed, so nothing was typed.', 'device_revoked');
+    }
     if (row.expires_at <= nowIso(clock)) {
       expireRow(row);
       throw conflict('This request has expired, so nothing was typed. Send it again if you still want it.', 'action_expired');
     }
+    if (row.kind === 'permission') requireOpenRequest(row);
     const claimed = move(id, ['pending'], 'approved', { decidedAt: nowIso(clock), decidedBy: actor });
     if (!claimed) throw conflict('This request was just decided by someone else.', 'action_not_pending');
     announce(claimed);
@@ -378,6 +494,7 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
     refuseSystem(actor);
     if (row.status !== 'pending') throw conflict(`This request is already ${row.status}, so it cannot be rejected.`, 'action_not_pending', { status: row.status });
     if (row.approvable_by === 'desktop' && actor.kind !== 'desktop') throw forbidden('Only the desktop can reject this.', 'desktop_only');
+    if (row.kind === 'permission') requireOpenRequest(row); // "no" is an answer too: it must go to the dialog the person saw
     const moved = move(id, ['pending'], 'rejected', { decidedAt: nowIso(clock), decidedBy: actor });
     if (!moved) throw conflict('This request was just decided by someone else.', 'action_not_pending');
     const action = announce(moved);
@@ -395,6 +512,43 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
     recordResult(moved, 'expired');
     return true;
   }
+
+  // ---- devices that go away ------------------------------------------------------------------------------------
+  /** Was this action asked for by a device that is revoked, or no longer known? Without a device list nothing can be said. */
+  function creatorRemoved(row: ActionRow): boolean {
+    if (!deps.devices) return false;
+    const creator = fromJson<ActorRef>(row.created_by_json, SYSTEM);
+    if (creator.kind !== 'device') return false;
+    const device = deps.devices.get(creator.deviceId);
+    return !device || Boolean(device.revokedAt);
+  }
+
+  function rejectRemoved(row: ActionRow): boolean {
+    const moved = move(row.id, ['pending'], 'rejected', { decidedAt: nowIso(clock), decidedBy: SYSTEM, failure: DEVICE_REMOVED });
+    if (!moved) return false;
+    announce(moved);
+    resolveEntry(row.id);
+    recordResult(moved, 'rejected', DEVICE_REMOVED);
+    return true;
+  }
+
+  /** Everything a removed device was still waiting to get approved is rejected: nobody is left to stand behind it. */
+  function dropPendingOf(deviceId: string): number {
+    const rows = db.all<ActionRow>(
+      `SELECT * FROM pending_actions WHERE status = 'pending' AND json_extract(created_by_json, '$.kind') = 'device' AND json_extract(created_by_json, '$.deviceId') = ?
+       ORDER BY created_at, rowid`,
+      [deviceId],
+    );
+    let dropped = 0;
+    for (const row of rows) if (rejectRemoved(row)) dropped++;
+    return dropped;
+  }
+
+  const onBusEvent = (_seq: number, event: ServerEvent): void => {
+    if (event.type === 'device.upserted' && event.device.revokedAt) safely('drop the prompts of a revoked device', () => { dropPendingOf(event.device.id); });
+    else if (event.type === 'device.removed') safely('drop the prompts of a removed device', () => { dropPendingOf(event.id); });
+  };
+  let unsubscribe: (() => void) | null = bus.subscribe(onBusEvent);
 
   function expireDue(): number {
     const due = db.all<ActionRow>(`SELECT * FROM pending_actions WHERE status = 'pending' AND expires_at <= ?`, [nowIso(clock)]);
@@ -432,6 +586,7 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
     get: (id) => { const row = rowOf(id); return row ? toAction(row) : null; },
     expireDue,
     init() {
+      if (!unsubscribe) unsubscribe = bus.subscribe(onBusEvent); // after a shutdown
       if (timer) return;
       safely('settle interrupted actions', settleInterrupted);
       safely('expire overdue actions', () => { expireDue(); });
@@ -441,6 +596,8 @@ export function createActionsService(deps: ActionsServiceDeps): ActionsService {
     shutdown() {
       if (timer) clearInterval(timer);
       timer = null;
+      unsubscribe?.();
+      unsubscribe = null;
     },
   };
 }

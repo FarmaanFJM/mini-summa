@@ -34,7 +34,7 @@ const until = async (check: () => boolean, ms = 4000) => {
 
 describe('typed calls', () => {
   it('every route of the table can be called through the SDK with the desktop token', async () => {
-    const hh = await boot({ push: { name: 'fcm', configured: () => true, configureFromJson: () => ({ firebaseProject: 'demo' }), clear: () => undefined, send: async () => [] }, tuning: { redeemPerMinute: 1000 } });
+    const hh = await boot({ push: { name: 'fcm', configured: () => true, configureFromJson: () => ({ firebaseProject: 'demo' }), clear: () => undefined, send: async () => [] }});
     const client = clientFor(hh, hh.tokens.desktop);
     // The desktop token has no device row, so it cannot register a push token (a phone token can: see the auth matrix).
     const statusFor: Partial<Record<RouteName, number>> = { ...expectedStatus, 'devices.registerPush': 400 };

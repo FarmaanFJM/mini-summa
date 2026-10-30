@@ -52,8 +52,15 @@ function fakeEnvironments(layouts: Record<string, EnvLayout>, available: Record<
   };
 }
 
+/** Real file access, except that a `.git` outside the test directory is invisible, so the machine running the tests cannot change a result. */
+const hermetic = (root: string, inner: HooksFs = nodeHooksFs): HooksFs => ({
+  ...inner,
+  exists: (p) => (path.basename(p) === '.git' && !p.startsWith(`${root}${path.sep}`) ? Promise.resolve(false) : inner.exists(p)),
+});
+
 function setup(opts: { fs?: HooksFs; layouts?: (root: string) => Record<string, EnvLayout>; available?: Record<string, boolean> } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ms-hooks-'));
+  // realpath: on macOS the temp directory is itself behind a link, which would look like a linked config folder
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ms-hooks-')));
   dirs.push(root);
   const dataDir = path.join(root, 'data');
   const layouts: Record<string, EnvLayout> = (opts.layouts ?? ((r) => ({ posix: posixLayout(r) })))(root);
@@ -65,7 +72,7 @@ function setup(opts: { fs?: HooksFs; layouts?: (root: string) => Record<string, 
   const logs: string[] = [];
   const log = { debug: () => undefined, info: (m: string) => logs.push(m), warn: (m: string) => logs.push(m), error: (m: string) => logs.push(m) };
   const base: CoreBase = { db, bus, clock: { now: () => new Date(NOW) }, log, version: 'test', mode: 'headless', dataDir };
-  const service = createHooksService({ base, environments: fakeEnvironments(layouts, opts.available), fs: opts.fs });
+  const service = createHooksService({ base, environments: fakeEnvironments(layouts, opts.available), fs: hermetic(root, opts.fs) });
   const claudeDir = path.join(root, 'home', '.claude');
   return { root, dataDir, claudeDir, settingsPath: path.join(claudeDir, 'settings.json'), layouts, db, bus, events, logs, service };
 }
@@ -847,5 +854,296 @@ describe('wording', () => {
       expect(t, t).not.toMatch(/\u2014|\u2013/);
       expect(t.trim().length).toBeGreaterThan(10);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Symbolic links (a dotfiles setup): the plan names the real file, and apply writes only there
+
+describe('a settings.json behind a symbolic link', () => {
+  const posixOnly = process.platform === 'win32' ? it.skip : it;
+  const careful = (plan: HookPlan) => plan.warnings.filter((w) => w.startsWith('Check this first:'));
+  const link = (target: string, at: string) => { fs.mkdirSync(path.dirname(at), { recursive: true }); fs.symlinkSync(target, at); };
+  const isLink = (p: string) => fs.lstatSync(p).isSymbolicLink();
+
+  posixOnly('resolves the real file, warns with both paths, and writes through the link without replacing it', async () => {
+    const c = setup();
+    const real = path.join(c.claudeDir, 'shared', 'base-settings.json');
+    const original = canon(userSettings());
+    write(real, original);
+    link(real, c.settingsPath);
+
+    const plan = await c.service.plan('posix', 'install');
+    expect(plan.settingsPath).toBe(c.settingsPath);
+    expect(plan.before).toBe(original);
+    const first = careful(plan);
+    expect(first).toHaveLength(1);
+    expect(first[0]).toContain(c.settingsPath);
+    expect(first[0]).toContain(real);
+    expect(first[0]).toMatch(/symbolic link/);
+    expect(first[0]).toMatch(/the link stays as it is/);
+    expect(plan.warnings[0]).toBe(first[0]);                       // before everything else
+    expect(plan.warnings.join(' ')).not.toMatch(/outside your Claude configuration folder/);
+    expect(plan.warnings.join(' ')).not.toMatch(/git work tree/);
+    // the target is part of what the hash covers
+    expect(plan.planHash).toBe(sha256(`posixinstall${c.settingsPath}${plan.before}${plan.after}\0${real}`));
+    expect(plan.planHash).not.toBe(sha256(`posixinstall${c.settingsPath}${plan.before}${plan.after}`));
+
+    await c.service.apply('posix', 'install', plan.planHash);
+    expect(isLink(c.settingsPath)).toBe(true);
+    expect(fs.readlinkSync(c.settingsPath)).toBe(real);
+    expect(read(real)).toBe(plan.after);
+    expect(read(c.settingsPath)).toBe(plan.after);
+    expect(read(plan.backupPath)).toBe(original);
+    expect(fs.readdirSync(path.dirname(real)).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+
+    // the same warning when the hooks are taken out again; a noop plan says nothing
+    const un = await c.service.plan('posix', 'uninstall');
+    expect(careful(un)[0]).toContain(real);
+    await c.service.apply('posix', 'uninstall', un.planHash);
+    expect(read(real)).toBe(original);
+    const idle = await c.service.plan('posix', 'uninstall');
+    expect(idle).toMatchObject({ action: 'noop', warnings: [] });
+  });
+
+  posixOnly('warns prominently when the real file is outside the Claude folder, and when it sits in a git work tree', async () => {
+    const c = setup();
+    const repo = path.join(c.root, 'dotfiles');
+    const real = path.join(repo, 'claude', 'settings.json');
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+    write(real, canon({ model: 'opus' }));
+    link(real, c.settingsPath);
+
+    const plan = await c.service.plan('posix', 'install');
+    const first = careful(plan);
+    expect(first).toHaveLength(3);
+    expect(plan.warnings.slice(0, 3)).toEqual(first);
+    expect(first[0]).toMatch(/symbolic link/);
+    expect(first[1]).toContain('outside your Claude configuration folder');
+    expect(first[1]).toContain(real);
+    expect(first[1]).toContain(c.claudeDir);
+    expect(first[2]).toContain('inside a git work tree');
+    expect(first[2]).toContain(repo);
+    expect(first[2]).toMatch(/do not commit them to a shared repository/);
+    await c.service.apply('posix', 'install', plan.planHash);
+    expect(isLink(c.settingsPath)).toBe(true);
+    expect(JSON.parse(read(real)).hooks.Stop).toHaveLength(1);
+  });
+
+  posixOnly('warns about the outside location even when there is no git repository', async () => {
+    const c = setup();
+    const real = path.join(c.root, 'shared-config', 'settings.json');
+    write(real, canon({ model: 'opus' }));
+    link(real, c.settingsPath);
+    const plan = await c.service.plan('posix', 'install');
+    const first = careful(plan);
+    expect(first).toHaveLength(2);
+    expect(first[1]).toContain('outside your Claude configuration folder');
+    expect(plan.warnings.join(' ')).not.toMatch(/git work tree/);
+  });
+
+  posixOnly('recognises a git worktree or submodule, where .git is a file', async () => {
+    const c = setup();
+    const repo = path.join(c.root, 'worktree');
+    write(path.join(repo, '.git'), 'gitdir: /somewhere/else/.git/worktrees/w1\n');
+    const real = path.join(repo, 'deep', 'er', 'settings.json');
+    write(real, canon({}));
+    link(real, c.settingsPath);
+    const plan = await c.service.plan('posix', 'install');
+    expect(careful(plan).some((w) => w.includes('inside a git work tree') && w.includes(repo))).toBe(true);
+  });
+
+  posixOnly('warns about a git work tree around an ordinary settings.json too (a repository in the home folder)', async () => {
+    const c = setup();
+    const home = path.join(c.root, 'home');
+    fs.mkdirSync(path.join(home, '.git'), { recursive: true });
+    write(c.settingsPath, canon({ model: 'opus' }));
+    const plan = await c.service.plan('posix', 'install');
+    const first = careful(plan);
+    expect(first).toHaveLength(1);
+    expect(first[0]).toContain('inside a git work tree');
+    expect(first[0]).toContain(home);
+    expect(first[0]).toContain(c.settingsPath);
+    // and says nothing about links or location
+    expect(plan.warnings.join(' ')).not.toMatch(/symbolic link|outside your Claude/);
+  });
+
+  posixOnly('gives a plain file no link or location warnings at all', async () => {
+    const c = setup();
+    write(c.settingsPath, canon(userSettings()));
+    const plan = await c.service.plan('posix', 'install');
+    expect(careful(plan)).toEqual([]);
+    expect(plan.planHash).toBe(sha256(`posixinstall${c.settingsPath}${plan.before}${plan.after}`));
+  });
+
+  posixOnly('treats a linked Claude config folder like a linked file: both paths, and the dotfiles repository', async () => {
+    const c = setup();
+    const repo = path.join(c.root, 'dotfiles');
+    const realDir = path.join(repo, 'claude');
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+    write(path.join(realDir, 'settings.json'), canon({ model: 'opus' }));
+    fs.mkdirSync(path.dirname(c.claudeDir), { recursive: true });
+    fs.symlinkSync(realDir, c.claudeDir);
+
+    const plan = await c.service.plan('posix', 'install');
+    const first = careful(plan);
+    expect(first).toHaveLength(2);
+    expect(first[0]).toContain(c.claudeDir);
+    expect(first[0]).toContain(realDir);
+    expect(first[0]).toMatch(/is a link to/);
+    expect(first[1]).toContain('inside a git work tree');
+    expect(plan.warnings.join(' ')).not.toMatch(/outside your Claude configuration folder/);
+    expect(plan.planHash).toBe(sha256(`posixinstall${c.settingsPath}${plan.before}${plan.after}\0${path.join(realDir, 'settings.json')}`));
+    await c.service.apply('posix', 'install', plan.planHash);
+    expect(isLink(c.claudeDir)).toBe(true);
+    expect(JSON.parse(read(path.join(realDir, 'settings.json'))).hooks.Stop).toHaveLength(1);
+  });
+
+  posixOnly('creates a new settings.json inside a linked config folder, in the real folder', async () => {
+    const c = setup();
+    const realDir = path.join(c.root, 'dotfiles', 'claude');
+    fs.mkdirSync(realDir, { recursive: true });
+    fs.mkdirSync(path.dirname(c.claudeDir), { recursive: true });
+    fs.symlinkSync(realDir, c.claudeDir);
+    const plan = await c.service.plan('posix', 'install');
+    expect(careful(plan).some((w) => w.includes(realDir))).toBe(true);
+    await c.service.apply('posix', 'install', plan.planHash);
+    expect(fs.existsSync(path.join(realDir, 'settings.json'))).toBe(true);
+    expect(isLink(c.claudeDir)).toBe(true);
+  });
+
+  posixOnly('refuses with 409 plan_stale, and writes nothing, when the link now leads somewhere else', async () => {
+    const c = setup();
+    const a = path.join(c.root, 'stuff', 'a.json');
+    const b = path.join(c.root, 'stuff', 'b.json');
+    const same = canon({ model: 'opus' });
+    write(a, same);
+    write(b, same);                                        // identical content: only the target differs
+    link(a, c.settingsPath);
+    const plan = await c.service.plan('posix', 'install');
+    fs.unlinkSync(c.settingsPath);
+    fs.symlinkSync(b, c.settingsPath);
+
+    const err = await rejection(c.service.apply('posix', 'install', plan.planHash));
+    expect(err).toMatchObject({ status: 409, code: 'plan_stale' });
+    expect(read(a)).toBe(same);
+    expect(read(b)).toBe(same);
+    expect(fs.readlinkSync(c.settingsPath)).toBe(b);
+    expect(fs.existsSync(path.join(c.dataDir, 'backups'))).toBe(false);
+    expect(c.events).toEqual([]);
+    expect(c.db.get('SELECT * FROM hook_installs')).toBeUndefined();
+
+    // a link that now leads to a file with other content is stale as well
+    write(b, canon({ model: 'sonnet' }));
+    expect(await rejection(c.service.apply('posix', 'install', plan.planHash))).toMatchObject({ status: 409, code: 'plan_stale' });
+
+    // the plan for the new target applies, to the new target only
+    const fresh = await c.service.plan('posix', 'install');
+    expect(careful(fresh)[0]).toContain(b);
+    await c.service.apply('posix', 'install', fresh.planHash);
+    expect(JSON.parse(read(b)).hooks.Stop).toHaveLength(1);
+    expect(read(a)).toBe(same);
+  });
+
+  posixOnly('refuses an old plan once settings.json became a link, or stopped being one', async () => {
+    const c = setup();
+    write(c.settingsPath, canon({ model: 'opus' }));
+    const plan = await c.service.plan('posix', 'install');
+    const moved = path.join(c.root, 'moved.json');
+    fs.renameSync(c.settingsPath, moved);
+    fs.symlinkSync(moved, c.settingsPath);                  // same content, but now a link
+    expect(await rejection(c.service.apply('posix', 'install', plan.planHash))).toMatchObject({ status: 409, code: 'plan_stale' });
+    expect(read(moved)).toBe(canon({ model: 'opus' }));
+  });
+
+  posixOnly('notices a link that was re-pointed while the backup was being made', async () => {
+    let repoint: (() => void) | null = null;
+    const c = setup({ fs: { ...nodeHooksFs, copyFile: async (from, to) => { await nodeHooksFs.copyFile(from, to); repoint?.(); } } });
+    const a = path.join(c.root, 'stuff', 'a.json');
+    const b = path.join(c.root, 'stuff', 'b.json');
+    write(a, canon({ model: 'opus' }));
+    write(b, canon({ model: 'opus' }));
+    link(a, c.settingsPath);
+    const plan = await c.service.plan('posix', 'install');
+    repoint = () => { fs.unlinkSync(c.settingsPath); fs.symlinkSync(b, c.settingsPath); };
+    expect(await rejection(c.service.apply('posix', 'install', plan.planHash))).toMatchObject({ status: 409, code: 'plan_stale' });
+    expect(read(a)).toBe(canon({ model: 'opus' }));
+    expect(read(b)).toBe(canon({ model: 'opus' }));
+  });
+
+  posixOnly('never replaces a link whose target does not exist (422 settings_dangling_link)', async () => {
+    const c = setup();
+    const missing = path.join(c.root, 'dotfiles', 'not-yet-created.json');
+    link(missing, c.settingsPath);
+    for (const action of ['install', 'uninstall'] as const) {
+      const err = await rejection(c.service.plan('posix', action));
+      expect(err).toMatchObject({ status: 422, code: 'settings_dangling_link' });
+      expect(err.message).toMatch(/will not replace the link/);
+    }
+    expect(await rejection(c.service.apply('posix', 'install', 'a'.repeat(64)))).toMatchObject({ code: 'settings_dangling_link' });
+    expect(isLink(c.settingsPath)).toBe(true);
+    expect(fs.existsSync(missing)).toBe(false);
+    const status = await c.service.status('posix');
+    expect(status.installed).toBe(false);
+    expect(status.issues[0]).toMatch(/link to a file that does not exist/);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Backups are private
+
+describe('the backup directory', () => {
+  const posixOnly = process.platform === 'win32' ? it.skip : it;
+  const mode = (p: string) => fs.statSync(p).mode & 0o777;
+
+  posixOnly('is created with mode 0700 and every backup with 0600, whatever the original\'s mode', async () => {
+    const c = setup();
+    write(c.settingsPath, canon({ ...userSettings(), env: { API_KEY: 'sk-not-for-other-users' } }));
+    fs.chmodSync(c.settingsPath, 0o644);
+    const plan = await c.service.plan('posix', 'install');
+    await c.service.apply('posix', 'install', plan.planHash);
+    const dir = path.join(c.dataDir, 'backups');
+    expect(mode(dir)).toBe(0o700);
+    expect(mode(plan.backupPath)).toBe(0o600);
+    expect(read(plan.backupPath)).toBe(plan.before);
+    expect(mode(c.settingsPath)).toBe(0o644);                      // the settings file keeps its own mode
+
+    const un = await c.service.plan('posix', 'uninstall');
+    await c.service.apply('posix', 'uninstall', un.planHash);
+    expect(fs.readdirSync(dir)).toHaveLength(2);
+    for (const f of fs.readdirSync(dir)) expect(mode(path.join(dir, f))).toBe(0o600);
+    expect(mode(dir)).toBe(0o700);
+  });
+
+  posixOnly('is tightened to 0700 when it already exists with looser permissions', async () => {
+    const c = setup();
+    fs.mkdirSync(path.join(c.dataDir, 'backups'), { recursive: true, mode: 0o755 });
+    fs.chmodSync(path.join(c.dataDir, 'backups'), 0o755);
+    write(c.settingsPath, canon(userSettings()));
+    const plan = await c.service.plan('posix', 'install');
+    await c.service.apply('posix', 'install', plan.planHash);
+    expect(mode(path.join(c.dataDir, 'backups'))).toBe(0o700);
+  });
+
+  posixOnly('stays private under a permissive umask', async () => {
+    const c = setup();
+    write(c.settingsPath, canon(userSettings()));
+    fs.chmodSync(c.settingsPath, 0o666);
+    const previous = process.umask(0o000);
+    try {
+      const plan = await c.service.plan('posix', 'install');
+      await c.service.apply('posix', 'install', plan.planHash);
+      expect(mode(path.join(c.dataDir, 'backups'))).toBe(0o700);
+      expect(mode(plan.backupPath)).toBe(0o600);
+    } finally {
+      process.umask(previous);
+    }
+  });
+
+  it('is not created at all when there is nothing to back up', async () => {
+    const c = setup();
+    const plan = await c.service.plan('posix', 'install');
+    await c.service.apply('posix', 'install', plan.planHash);
+    expect(fs.existsSync(path.join(c.dataDir, 'backups'))).toBe(false);
   });
 });

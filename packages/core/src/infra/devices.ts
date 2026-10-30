@@ -76,10 +76,35 @@ function parseScopes(json: string): Scope[] {
   return out;
 }
 
-function cleanDeviceName(v: unknown): string {
-  const s = typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '';
-  if (s === '') throw badRequest('A device needs a name. Enter a name such as "My phone".', { field: 'deviceName' }, 'invalid_name');
-  if (s.length > 80) throw badRequest('The device name is too long (at most 80 characters). Shorten it and try again.', { field: 'deviceName' }, 'invalid_name');
+/**
+ * Characters that must not reach a screen inside a device name: control characters, bidirectional overrides (a name
+ * that ends in U+202E would make whatever is printed after it read backwards), and invisible format characters.
+ * Zero-width joiner and non-joiner stay because some scripts and emoji sequences need them.
+ */
+const INVISIBLE = /[\u00AD\u061C\u180E\u200B\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]/gu;
+
+/** The text of a name as it may be stored and shown: no control or invisible characters, single spaces, trimmed. */
+export function sanitizeName(raw: string): string {
+  return raw
+    .replace(/[\s\u0085]+/gu, ' ') // tabs, line breaks, no-break and other spaces become one plain space
+    .replace(/[\p{Cc}\p{Cs}]/gu, '') // what is left of the control characters, and lone surrogates
+    .replace(INVISIBLE, '')
+    .replace(/ {2,}/g, ' ')
+    .trim();
+}
+
+export function cleanDeviceName(v: unknown): string {
+  const raw = typeof v === 'string' ? v : '';
+  const s = sanitizeName(raw);
+  // Nothing visible left (empty, or only invisible characters and spaces).
+  if (!/[^\p{Cf}\p{Z}\p{Cc}\p{Cs}]/u.test(s)) {
+    throw badRequest(
+      raw.trim() === '' ? 'A device needs a name. Enter a name such as "My phone".' : 'That device name has nothing left once control and invisible characters are removed. Enter a name such as "My phone".',
+      { field: 'deviceName' },
+      'invalid_name',
+    );
+  }
+  if ([...s].length > 80) throw badRequest('The device name is too long (at most 80 characters). Shorten it and try again.', { field: 'deviceName' }, 'invalid_name');
   return s;
 }
 
@@ -113,7 +138,7 @@ function cleanUrls(input: unknown): string[] {
 
 export function createDevicesService(deps: DevicesDeps): DevicesService {
   const { db, bus, clock, log } = deps.base;
-  const machineName = (deps.machineName ?? os.hostname()).trim() || 'Mini-Summa';
+  const machineName = [...sanitizeName(deps.machineName ?? os.hostname())].slice(0, 80).join('') || 'Mini-Summa';
   const desktopToken = newToken('msd_');
   const desktopDigest = sha256(desktopToken);
 

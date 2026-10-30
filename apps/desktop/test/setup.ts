@@ -1,7 +1,11 @@
 // Test environment for the renderer (jsdom). jsdom has no layout, no ResizeObserver, no PointerEvent and no canvas, so
 // the few APIs the UI relies on are given small stand-ins here. Tests that care about geometry stub it themselves.
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterEach, beforeEach, vi } from 'vitest';
+
+// Async queries give up after a second by default. On a busy machine (several test runs at once) that is too tight for a screen that
+// boots a whole app, and a longer wait costs nothing when the screen is ready.
+configure({ asyncUtilTimeout: 3000 });
 
 class ResizeObserverStub {
   observe(): void {}

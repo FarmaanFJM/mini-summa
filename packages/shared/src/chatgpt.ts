@@ -95,6 +95,10 @@ const AUTH_HOSTS = [
 ];
 
 export function classifyNavigation(url: string): NavigationClass {
+  // Browsers treat a backslash as a slash and drop tabs and newlines, so `https://evil.example\@chatgpt.com/` has the host
+  // evil.example while a plain string split sees chatgpt.com. Anything that could be read two ways is refused outright.
+  // eslint-disable-next-line no-control-regex
+  if (/[\\\u0000-\u0020\u007f-\u009f\u2028\u2029]/.test(url.trim())) return 'blocked';
   const m = /^([a-z][a-z0-9+.-]*):(?:\/\/([^/?#]*))?/i.exec(url.trim());
   if (!m) return 'blocked';
   const scheme = m[1].toLowerCase();

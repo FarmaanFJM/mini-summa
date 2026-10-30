@@ -32,13 +32,19 @@
 .ms-rep-layout { display: grid; grid-template-columns: minmax(0, 1fr) 400px; height: 100%; min-height: 0; }
 .ms-rep-doc { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; padding: var(--sp-5); overflow: auto; }
 .ms-rep-side { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; padding: var(--sp-5) var(--sp-5) var(--sp-5) 0; overflow: auto; }
-.ms-rep-detail > .ms-view__body.ms-rep-scroll > .ms-rep-doc { height: 100%; }
 @container report (max-width: 940px) {
   .ms-rep-scroll { overflow: auto; }
   .ms-rep-layout { display: flex; flex-direction: column; height: auto; }
   .ms-rep-doc { overflow: visible; padding-bottom: var(--sp-3); }
   .ms-rep-side { order: -1; overflow: visible; padding: var(--sp-5) var(--sp-5) 0; }
 }
+
+.ms-rep-doctabs { padding: 2px 0; }
+.ms-rep-panel { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.ms-rep-panel:focus { outline: none; }
+.ms-rep-doc .ms-notice { border-radius: var(--r); }
+.ms-rep-scroll--solo { overflow: auto; }
+.ms-rep-doc--solo { max-width: 920px; overflow: visible; }
 
 /* The report itself: monospace, selectable, formatting kept. */
 .ms-rep-text { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4) 18px; border-radius: var(--r-lg); background: var(--s1); font-size: 12.5px; line-height: 1.6; user-select: text; cursor: text; min-width: 0; }
@@ -86,8 +92,8 @@
 .ms-rep-history__meta { color: var(--text-3); font-size: var(--fs-xs); }
 
 /* ---------------------------------------------------------------- Review */
-.ms-rep-steps { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.ms-rep-step { display: flex; align-items: center; gap: var(--sp-2); color: var(--text-3); font-size: var(--fs-sm); }
+.ms-rep-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: var(--sp-3) var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.ms-rep-step { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; color: var(--text-3); font-size: var(--fs-sm); line-height: 1.3; }
 .ms-rep-step[data-status="done"] { color: var(--text-2); }
 .ms-rep-step[data-status="current"] { color: var(--text); font-weight: 600; }
 .ms-rep-step__mark { display: inline-grid; place-items: center; }
@@ -96,6 +102,7 @@
 .ms-rep-followup__title { font-size: var(--fs); font-weight: 600; }
 .ms-rep-followup__save { margin-top: -4px; }
 .ms-rep-targets { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; border: 0; min-width: 0; }
+.ms-rep-targets .ms-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-2); }
 .ms-rep-target { align-items: flex-start; padding-top: 10px; padding-bottom: 10px; cursor: pointer; }
 .ms-rep-target > .ms-choice { margin-top: 2px; }
 .ms-rep-target[data-disabled] { cursor: default; }

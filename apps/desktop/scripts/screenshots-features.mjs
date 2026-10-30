@@ -138,6 +138,32 @@ const shots = [
       await settle(page, 400);
     },
   },
+  {
+    name: 'activity-feed',
+    async run(page) {
+      await nav(page, 'Activity').click();
+      await page.getByRole('feed', { name: 'Activity feed' }).waitFor();
+      await settle(page, 400);
+    },
+  },
+  {
+    name: 'activity-needs-you',
+    async run(page) {
+      await nav(page, 'Activity').click();
+      await page.getByRole('tab', { name: /^Needs you/ }).click();
+      await page.getByRole('list', { name: 'Waiting for your approval' }).waitFor();
+      await settle(page, 400);
+    },
+  },
+  {
+    name: 'activity-notifications',
+    async run(page) {
+      await nav(page, 'Activity').click();
+      await page.getByRole('tab', { name: 'Notifications' }).click();
+      await page.getByRole('list', { name: /^Notifications, / }).first().waitFor();
+      await settle(page, 400);
+    },
+  },
 ];
 
 // ------------------------------------------------------------------------------------------------ run

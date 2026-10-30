@@ -168,9 +168,6 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
           ? `${event.permission.toolName}${event.permission.inputExcerpt ? `: ${event.permission.inputExcerpt}` : ''}` : null;
         const { activity: entry, created } = activity.record({ ...base2, type: 'needs_permission', severity: 'attention', requiresAction: true,
           title: `Needs permission: ${label(view)}`, description: detail ?? 'Claude is waiting for you to allow an action.' });
-        if (view.origin === 'managed' && !event.replay) {
-          actions.raisePermission({ sessionKey: view.key, generation: event.generation, summary: detail ?? 'Permission requested', correlationKey: event.derivedId, projectId: view.projectId });
-        }
         if (created && canNotify && event.notify) notify(entry, hint('permission', 'critical'));
         break;
       }
@@ -289,6 +286,15 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
   function start(): () => void {
     const offClaude = sessions.subscribe({
       onDerived,
+      onPermissionRequest(info, view) {
+        // Every PermissionRequest is its own question. Raising an item for the newest one supersedes the older open
+        // item of that session, so an approval always refers to the dialog that is actually showing.
+        if (info.replay || view.origin !== 'managed') return;
+        try {
+          const detail = info.toolName ? `${info.toolName}${info.inputExcerpt ? `: ${info.inputExcerpt}` : ''}` : null;
+          actions.raisePermission({ sessionKey: info.sessionKey, generation: info.generation, summary: detail ?? 'Permission requested', correlationKey: info.correlationKey, projectId: view.projectId });
+        } catch (err) { log.error('could not raise a permission item', { error: String(err) }); }
+      },
       onReport(captured: CapturedReport) {
         try { reports.capture(captured); } catch (err) { log.error('could not store a report', { error: String(err), report: captured.reportId }); }
       },

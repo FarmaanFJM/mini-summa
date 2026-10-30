@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ActorRef, PendingActionStatus, SessionKey, SettingsPatch } from '@minisumma/shared';
 import { createActionsService } from '../../src/workflow/actions.ts';
-import { FakeDevices, FakeProjects, FakeSessions, KEY_A, KEY_B, KEY_EXT, fakeSettings, flush, hasEmDash, makeEnv, pendingActionIds, recordingActivity } from './helpers.ts';
+import type { DeliveryDetail } from '@minisumma/shared';
+import { FakeDevices, FakeProjects, FakeSessions, KEY_A, KEY_B, KEY_C, KEY_EXT, deliveryDetail, fakeSettings, flush, hasEmDash, makeEnv, pendingActionIds, recordingActivity, reportSummary } from './helpers.ts';
 
 const D: ActorRef = { kind: 'desktop' };
 const PHONE: ActorRef = { kind: 'device', deviceId: 'dev_phone', name: 'Pixel' };
@@ -12,7 +13,7 @@ const ACCEPTS_INPUT = ['idle', 'waiting_for_you', 'turn_ended', 'report_ready'];
 const NOW = '2026-10-30T10:00:00.000Z';
 const LABEL = 'GitManager / a1b2c3d4';
 
-function setup(over: { settings?: SettingsPatch; devices?: boolean; deliveries?: boolean; permissionActivity?: boolean } = {}) {
+function setup(over: { settings?: SettingsPatch; devices?: boolean; deliveries?: boolean; reports?: boolean; permissionActivity?: boolean } = {}) {
   const env = makeEnv(NOW);
   const settings = fakeSettings(over.settings);
   const sessions = new FakeSessions();
@@ -27,17 +28,28 @@ function setup(over: { settings?: SettingsPatch; devices?: boolean; deliveries?:
   const activity = recordingActivity(env);
   const followUps: { deliveryId: string; actionId: string }[] = [];
   let followUpError: Error | null = null;
-  const deliveries = { markFollowUpSent: (deliveryId: string, actionId: string) => { followUps.push({ deliveryId, actionId }); if (followUpError) throw followUpError; return null; } };
+  // a delivery of this project and session whose follow-up has not been drafted yet, and a report that exists
+  const deliveryData = new Map<string, DeliveryDetail>([['dlv_1', deliveryDetail({ id: 'dlv_1', projectId: gm.id, sessionKey: KEY_A })]]);
+  const knownReports = new Set(['rep_1']);
+  const deliveries = {
+    get: (id: string) => deliveryData.get(id) ?? null,
+    markFollowUpSent: (deliveryId: string, actionId: string) => { followUps.push({ deliveryId, actionId }); if (followUpError) throw followUpError; return null; },
+  };
+  const reports = { summary: (id: string) => (knownReports.has(id) ? reportSummary({ id }) : null) };
   const svc = createActionsService({
     base: env.base, settings, sessions, activity: activity.service,
     devices: over.devices === false ? undefined : devices, deliveries: over.deliveries === false ? undefined : deliveries,
+    reports: over.reports === false ? undefined : reports,
     recordPermissionActivity: over.permissionActivity,
   });
   const prompt = (actor: ActorRef, extra: Partial<Parameters<typeof svc.createPrompt>[0]> = {}) =>
     svc.createPrompt({ sessionKey: KEY_A, text: 'Run the tests again', actor, ...extra });
+  /** What the glue does for each PermissionRequest hook: the session shows that request as the open one, then an item is raised. */
   const permission = (extra: Partial<Parameters<typeof svc.raisePermission>[0]> = {}) => {
-    sessions.patch(KEY_A, { state: 'needs_permission', stateLabel: 'Needs permission' });
-    return svc.raisePermission({ sessionKey: KEY_A, generation: 1, summary: 'Bash: rm -rf build', correlationKey: 'derived_1', projectId: gm.id, ...extra });
+    const input = { sessionKey: KEY_A, generation: 1, summary: 'Bash: rm -rf build', correlationKey: 'derived_1', projectId: gm.id, ...extra };
+    sessions.patch(input.sessionKey, { state: 'needs_permission', stateLabel: 'Needs permission' });
+    sessions.permissions.set(input.sessionKey, { correlationKey: input.correlationKey, summary: input.summary });
+    return svc.raisePermission(input);
   };
   const statuses = (id: string): PendingActionStatus[] => pendingActionIds(env.events).filter((e) => e.id === id).map((e) => e.status);
   const row = (id: string) => env.db.get<Record<string, unknown>>('SELECT * FROM pending_actions WHERE id = ?', [id])!;
@@ -47,7 +59,7 @@ function setup(over: { settings?: SettingsPatch; devices?: boolean; deliveries?:
     throw new Error('expected the call to be refused');
   };
   return {
-    env, settings, sessions, devices, svc, activity, followUps, prompt, permission, statuses, row, rows, failure, projects,
+    env, settings, sessions, devices, svc, activity, followUps, prompt, permission, statuses, row, rows, failure, projects, deliveryData, knownReports,
     setFollowUpError: (e: Error | null) => { followUpError = e; },
     expectNoLoggedErrors: () => expect(env.log.errors()).toEqual([]),
   };
@@ -80,6 +92,7 @@ describe('actions: a click on the desktop is the approval', () => {
 
   it('can type without pressing Enter, and carries the report and delivery it was made from', async () => {
     const t = setup();
+    t.deliveryData.set('dlv_1', deliveryDetail({ id: 'dlv_1', projectId: 'prj_gm', sessionKey: KEY_A, followUpDraft: 'Draft for the terminal' }));
     const action = await t.prompt(D, { submit: false, reportId: 'rep_1', deliveryId: 'dlv_1', text: 'Draft for the terminal' });
     expect(t.sessions.typed).toEqual([{ key: KEY_A, text: 'Draft for the terminal', submit: false }]);
     expect(action).toMatchObject({ status: 'executed', reportId: 'rep_1', deliveryId: 'dlv_1' });
@@ -186,13 +199,13 @@ describe('actions: a prompt from another device waits for approval', () => {
 
   it('the desktop approves it, and only then is it typed', async () => {
     const t = setup();
-    const pending = await t.prompt(PHONE, { reportId: 'rep_1', deliveryId: 'dlv_9' });
+    const pending = await t.prompt(PHONE);
     t.env.clock.advance(60_000);
     const done = await t.svc.approve(pending.id, D);
     expect(done).toMatchObject({ status: 'executed', decidedBy: D, decidedAt: '2026-10-30T10:01:00.000Z', executedAt: '2026-10-30T10:01:00.000Z', createdBy: PHONE });
     expect(t.sessions.typeCalls).toEqual([{ key: KEY_A, req: { text: 'Run the tests again', submit: true, expectGeneration: 1, allowedStates: ACCEPTS_INPUT } }]);
     expect(t.statuses(pending.id)).toEqual(['pending', 'approved', 'executed']);
-    expect(t.followUps).toEqual([{ deliveryId: 'dlv_9', actionId: pending.id }]);
+    expect(t.followUps).toEqual([]);
     expect(t.activity.recorded.map((r) => r.title)).toEqual([`Prompt sent to ${LABEL}`]);
     expect(t.activity.resolved).toEqual([[{ ids: [`act_${pending.id}`] }]]);
   });
@@ -326,6 +339,7 @@ describe('actions: the target is checked again at the moment of execution', () =
   it('does not let a broken follow-up bookkeeping hide that the prompt was typed', async () => {
     const t = setup();
     t.setFollowUpError(new Error('delivery store is down'));
+    t.deliveryData.set('dlv_1', deliveryDetail({ id: 'dlv_1', projectId: 'prj_gm', sessionKey: KEY_A, followUpDraft: 'Run the tests again' }));
     const action = await t.prompt(D, { deliveryId: 'dlv_1' });
     expect(action.status).toBe('executed');
     expect(t.env.log.errors()).toHaveLength(1);
@@ -482,7 +496,7 @@ describe('actions: permission requests', () => {
     const action = t.permission()!;
     const done = await t.svc.approve(action.id, D);
     expect(done).toMatchObject({ status: 'executed', decidedBy: D });
-    expect(t.sessions.answerCalls).toEqual([{ key: KEY_A, decision: 'approve', expectGeneration: 1 }]);
+    expect(t.sessions.answerCalls).toEqual([{ key: KEY_A, decision: 'approve', expectGeneration: 1, expectRequestKey: 'derived_1' }]);
     expect(t.sessions.answers).toEqual([{ key: KEY_A, decision: 'approve' }]);
     expect(t.sessions.typeCalls).toEqual([]);
     expect(t.statuses(action.id)).toEqual(['pending', 'approved', 'executed']);
@@ -520,27 +534,41 @@ describe('actions: permission requests', () => {
     expect(gone.sessions.answerCalls).toEqual([]);
   });
 
-  it('is superseded, not answered, when Claude has already moved on by the time it is approved', async () => {
+  it('is refused and superseded, not answered, when Claude has already moved on by the time it is approved', async () => {
     const t = setup();
     const action = t.permission()!;
+    t.sessions.permissions.delete(KEY_A); // the session no longer shows any open request
     t.sessions.patch(KEY_A, { state: 'working', stateLabel: 'Working' });
+    const err = await t.failure(() => t.svc.approve(action.id, D));
+    expect(err).toMatchObject({ status: 409, code: 'permission_changed', message: 'That request is no longer the one that is open. Look at the terminal.' });
+    expect(t.svc.get(action.id)).toMatchObject({ status: 'superseded', decidedBy: SYSTEM, executedAt: null });
+    expect(t.sessions.answerCalls).toEqual([]);
+    expect(t.statuses(action.id)).toEqual(['pending', 'superseded']);
+    expect(t.activity.resolved.flatMap((r) => r[0].ids ?? [])).toContain(`act_${action.id}`);
+  });
+
+  it('still does not answer when the session reports the request as open but is no longer asking (second line of defence)', async () => {
+    const t = setup();
+    const action = t.permission()!;
+    t.sessions.patch(KEY_A, { state: 'working', stateLabel: 'Working' }); // the request key is still there, the state says otherwise
     const done = await t.svc.approve(action.id, D);
     expect(done.status).toBe('superseded');
     expect(t.sessions.answerCalls).toEqual([]);
     expect(t.statuses(action.id)).toEqual(['pending', 'approved', 'superseded']);
-    expect(t.activity.resolved.length).toBeGreaterThan(0);
   });
 
   it('is superseded when the session leaves needs_permission or ends, which closes the feed entry too', () => {
     const t = setup();
+    t.sessions.add({ key: KEY_B, projectId: 'prj_gm', projectName: 'GitManager', origin: 'managed', state: 'needs_permission' });
     const a = t.permission()!;
-    const b = t.permission({ correlationKey: 'derived_2' })!;
+    const b = t.svc.raisePermission({ sessionKey: KEY_B, generation: 1, summary: 'y', correlationKey: 'derived_b', projectId: 'prj_gm' })!;
     t.env.clearEvents();
     t.svc.supersedeOpenFor(KEY_A, 'The session moved on.');
-    for (const id of [a.id, b.id]) expect(t.svc.get(id)).toMatchObject({ status: 'superseded', decidedBy: SYSTEM, executedAt: null });
-    expect(pendingActionIds(t.env.events)).toEqual([{ id: a.id, status: 'superseded' }, { id: b.id, status: 'superseded' }]);
-    expect(t.activity.resolved.flatMap((r) => r[0].ids ?? [])).toEqual([`act_${a.id}`, `act_${b.id}`]);
-    expect(t.env.of('activity.updated')).toHaveLength(2);
+    expect(t.svc.get(a.id)).toMatchObject({ status: 'superseded', decidedBy: SYSTEM, executedAt: null });
+    expect(t.svc.get(b.id)!.status).toBe('pending'); // another session's request is not touched
+    expect(pendingActionIds(t.env.events)).toEqual([{ id: a.id, status: 'superseded' }]);
+    expect(t.activity.resolved.flatMap((r) => r[0].ids ?? [])).toEqual([`act_${a.id}`]);
+    expect(t.env.of('activity.updated')).toHaveLength(1);
     t.env.clearEvents();
     t.svc.supersedeOpenFor(KEY_A, 'again');
     expect(t.env.events).toEqual([]);
@@ -570,7 +598,7 @@ describe('actions: permission requests', () => {
     const rejected = t.svc.reject(action.id, PHONE, 'too risky');
     expect(rejected.status).toBe('rejected');
     await flush();
-    expect(t.sessions.answerCalls).toEqual([{ key: KEY_A, decision: 'reject', expectGeneration: 1 }]);
+    expect(t.sessions.answerCalls).toEqual([{ key: KEY_A, decision: 'reject', expectGeneration: 1, expectRequestKey: 'derived_1' }]);
     expect(t.sessions.answers).toEqual([{ key: KEY_A, decision: 'reject' }]);
     expect(t.statuses(action.id)).toEqual(['pending', 'rejected']);
     expect(t.activity.recorded.at(-1)).toMatchObject({ title: `Permission rejected in ${LABEL}` });
@@ -749,7 +777,9 @@ describe('actions: every state change is announced', () => {
     ['phone prompt rejected', async (t) => { const a = await t.prompt(PHONE); t.svc.reject(a.id, D); return a.id; }, ['pending', 'rejected']],
     ['phone prompt expired', async (t) => { const a = await t.prompt(PHONE); t.env.clock.advance(2 * 3600_000); t.svc.expireDue(); return a.id; }, ['pending', 'expired']],
     ['permission approved', async (t) => { const a = t.permission()!; await t.svc.approve(a.id, D); return a.id; }, ['pending', 'approved', 'executed']],
-    ['permission approved but Claude moved on', async (t) => { const a = t.permission()!; t.sessions.patch(KEY_A, { state: 'working' }); await t.svc.approve(a.id, D); return a.id; }, ['pending', 'approved', 'superseded']],
+    ['permission approved but Claude moved on', async (t) => { const a = t.permission()!; t.sessions.permissions.delete(KEY_A); await t.svc.approve(a.id, D).catch(() => undefined); return a.id; }, ['pending', 'superseded']],
+    ['permission replaced by a newer request', async (t) => { const a = t.permission()!; t.permission({ correlationKey: 'derived_2' }); return a.id; }, ['pending', 'superseded']],
+    ['phone prompt dropped when its device was removed', async (t) => { const a = await t.prompt(PHONE); t.env.bus.emit({ type: 'device.upserted', device: { ...t.devices.devices.get('dev_phone')!, revokedAt: NOW } }); return a.id; }, ['pending', 'rejected']],
     ['permission rejected', async (t) => { const a = t.permission()!; t.svc.reject(a.id, D); await flush(); return a.id; }, ['pending', 'rejected']],
     ['permission superseded', async (t) => { const a = t.permission()!; t.svc.supersedeOpenFor(KEY_A, 'moved on'); return a.id; }, ['pending', 'superseded']],
     ['permission expired', async (t) => { const a = t.permission()!; t.env.clock.advance(2 * 3600_000); t.svc.expireDue(); return a.id; }, ['pending', 'expired']],
@@ -813,5 +843,414 @@ describe('actions: nothing is typed unless a person said so', () => {
     expect(t.sessions.typeCalls).toEqual([]);
     expect(t.sessions.answerCalls).toEqual([]);
     expect([untrusted.id, permission.id].map((id) => t.svc.get(id)!.status)).toEqual(['pending', 'pending']);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// SEC-01: approve what you see
+
+describe('actions: only the request that is open can be answered', () => {
+  const raise = (t: ReturnType<typeof setup>, key: string, summary = `Bash: ${key}`) => t.permission({ correlationKey: key, summary })!;
+
+  it('raising a newer request supersedes the older open one of that session, and nothing else', () => {
+    const t = setup();
+    t.sessions.add({ key: KEY_B, projectId: 'prj_gm', projectName: 'GitManager', origin: 'managed', state: 'needs_permission' });
+    const elsewhere = t.svc.raisePermission({ sessionKey: KEY_B, generation: 1, summary: 'elsewhere', correlationKey: 'req_other', projectId: 'prj_gm' })!;
+    const first = raise(t, 'req_1');
+    t.env.clearEvents();
+    const second = raise(t, 'req_2');
+    expect(t.svc.get(first.id)).toMatchObject({ status: 'superseded', decidedBy: SYSTEM, decidedAt: NOW, executedAt: null });
+    expect(t.svc.get(second.id)!.status).toBe('pending');
+    expect(t.svc.get(elsewhere.id)!.status).toBe('pending'); // another session is not touched
+    expect(pendingActionIds(t.env.events)).toEqual([{ id: first.id, status: 'superseded' }, { id: second.id, status: 'pending' }]);
+    expect(t.activity.resolved.flatMap((r) => r[0].ids ?? [])).toEqual([`act_${first.id}`]);
+    expect(t.svc.list({ status: 'pending' }).map((a) => a.id).sort()).toEqual([second.id, elsewhere.id].sort());
+  });
+
+  it('leaves only the last of several requests open', () => {
+    const t = setup();
+    const made = ['req_1', 'req_2', 'req_3'].map((k) => raise(t, k));
+    expect(made.map((a) => t.svc.get(a.id)!.status)).toEqual(['superseded', 'superseded', 'pending']);
+    expect(t.rows()).toBe(3);
+  });
+
+  it('does not touch a request that was already decided', async () => {
+    const t = setup();
+    const first = raise(t, 'req_1');
+    await t.svc.approve(first.id, D);
+    raise(t, 'req_2');
+    expect(t.svc.get(first.id)!.status).toBe('executed');
+  });
+
+  it('a replay of an older request neither revives it nor supersedes the newer one', () => {
+    const t = setup();
+    const first = raise(t, 'req_1');
+    const second = raise(t, 'req_2');
+    t.env.clearEvents();
+    const again = t.svc.raisePermission({ sessionKey: KEY_A, generation: 1, summary: 'Bash: req_1', correlationKey: 'req_1', projectId: 'prj_gm' });
+    expect(again).toMatchObject({ id: first.id, status: 'superseded' });
+    expect(t.svc.get(second.id)!.status).toBe('pending');
+    expect(t.env.events).toEqual([]);
+    expect(t.rows()).toBe(2);
+  });
+
+  it('a request that is refused (the session is not live) supersedes nothing', () => {
+    const t = setup();
+    const first = raise(t, 'req_1');
+    t.sessions.patch(KEY_A, { availability: 'disconnected' });
+    expect(raise(t, 'req_2')).toBeNull();
+    expect(t.svc.get(first.id)!.status).toBe('pending');
+  });
+
+  it('an item that was superseded can no longer be approved or rejected', async () => {
+    const t = setup();
+    const first = raise(t, 'req_1');
+    raise(t, 'req_2');
+    expect(await t.failure(() => t.svc.approve(first.id, D))).toMatchObject({ status: 409, code: 'action_not_pending', message: expect.stringContaining('already superseded') });
+    expect(await t.failure(() => t.svc.reject(first.id, D))).toMatchObject({ status: 409, code: 'action_not_pending' });
+    expect(t.sessions.answerCalls).toEqual([]);
+  });
+
+  it('approving an item whose request is not the one the session shows is refused and superseded, nothing is answered', async () => {
+    const t = setup();
+    const item = raise(t, 'req_1');
+    t.sessions.permissions.set(KEY_A, { correlationKey: 'req_2', summary: 'a different command' }); // a newer dialog the glue has not raised yet
+    t.env.clearEvents();
+    const err = await t.failure(() => t.svc.approve(item.id, D));
+    expect(err).toMatchObject({ status: 409, code: 'permission_changed', message: 'That request is no longer the one that is open. Look at the terminal.' });
+    expect(hasEmDash(err.message)).toBe(false);
+    expect(t.svc.get(item.id)).toMatchObject({ status: 'superseded', decidedBy: SYSTEM, executedAt: null });
+    expect(pendingActionIds(t.env.events)).toEqual([{ id: item.id, status: 'superseded' }]);
+    expect(t.activity.resolved.flatMap((r) => r[0].ids ?? [])).toContain(`act_${item.id}`);
+    expect(t.sessions.answerCalls).toEqual([]);
+    expect(t.sessions.answers).toEqual([]);
+  });
+
+  it('rejecting such an item is refused the same way, and no answer is sent to the terminal', async () => {
+    const t = setup();
+    const item = raise(t, 'req_1');
+    t.sessions.permissions.set(KEY_A, { correlationKey: 'req_2', summary: 'a different command' });
+    const err = await t.failure(() => t.svc.reject(item.id, PHONE));
+    expect(err).toMatchObject({ status: 409, code: 'permission_changed' });
+    await flush();
+    expect(t.svc.get(item.id)!.status).toBe('superseded');
+    expect(t.sessions.answerCalls).toEqual([]);
+  });
+
+  it('refuses when the session shows no open request at all, or cannot say', async () => {
+    const none = setup();
+    const a = raise(none, 'req_1');
+    none.sessions.permissions.delete(KEY_A);
+    expect(await none.failure(() => none.svc.approve(a.id, D))).toMatchObject({ status: 409, code: 'permission_changed' });
+    const broken = setup();
+    const b = raise(broken, 'req_1');
+    broken.sessions.currentPermission = () => { throw new Error('session store is down'); };
+    expect(await broken.failure(() => broken.svc.reject(b.id, D))).toMatchObject({ status: 409, code: 'permission_changed' }); // fail closed
+    expect(broken.svc.get(b.id)!.status).toBe('superseded');
+    expect(broken.sessions.answerCalls).toEqual([]);
+    expect(broken.env.log.lines.some((l) => l.level === 'warn')).toBe(true);
+  });
+
+  it('hands the request key to the session layer, which refuses a dialog that changed after the check', async () => {
+    const t = setup();
+    const item = raise(t, 'req_1');
+    const real = t.sessions.currentPermission;
+    // the check sees req_1, and a different dialog opens before the keys are sent
+    t.sessions.currentPermission = (key) => { const seen = real(key); t.sessions.permissions.set(key, { correlationKey: 'req_9', summary: 'something else' }); return seen; };
+    const done = await t.svc.approve(item.id, D);
+    expect(t.sessions.answerCalls).toEqual([{ key: KEY_A, decision: 'approve', expectGeneration: 1, expectRequestKey: 'req_1' }]);
+    expect(done).toMatchObject({ status: 'failed', failure: 'That is not the permission request that is open.' });
+    expect(t.sessions.answers).toEqual([]); // nothing was answered
+  });
+
+  it('every permission request is checked this way, not only the first', async () => {
+    const t = setup();
+    const keys = ['req_a', 'req_b', 'req_c'];
+    for (const k of keys) {
+      const item = raise(t, k);
+      expect((await t.svc.approve(item.id, D)).status).toBe('executed');
+    }
+    expect(t.sessions.answerCalls.map((c) => c.expectRequestKey)).toEqual(keys);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// SEC-04: links to reports and deliveries
+
+describe('actions: a prompt links a report or delivery only when the desktop sends it and it checks out', () => {
+  const DRAFT = 'Please add a test for the logout redirect.';
+  const drafted = (t: ReturnType<typeof setup>, over: Partial<DeliveryDetail> = {}) =>
+    t.deliveryData.set('dlv_1', deliveryDetail({ id: 'dlv_1', projectId: 'prj_gm', sessionKey: KEY_A, followUpDraft: DRAFT, ...over }));
+
+  it('keeps ids that exist, and marks the follow-up as sent only for the exact draft typed into the delivery\'s own session', async () => {
+    const t = setup();
+    drafted(t);
+    const action = await t.prompt(D, { text: DRAFT, reportId: 'rep_1', deliveryId: 'dlv_1' });
+    expect(action).toMatchObject({ status: 'executed', reportId: 'rep_1', deliveryId: 'dlv_1' });
+    expect(t.followUps).toEqual([{ deliveryId: 'dlv_1', actionId: action.id }]);
+  });
+
+  it.each([
+    ['one character short', DRAFT.slice(0, -1)],
+    ['a leading space', ` ${DRAFT}`],
+    ['a trailing newline', `${DRAFT}\n`],
+    ['another case', DRAFT.toUpperCase()],
+    ['something else entirely', 'Delete the whole repository.'],
+  ])('does not touch the review when the text is not the draft (%s)', async (_name, text) => {
+    const t = setup();
+    drafted(t);
+    const action = await t.prompt(D, { text, deliveryId: 'dlv_1' });
+    expect(action).toMatchObject({ status: 'executed', deliveryId: 'dlv_1' }); // the link is valid, it just is not "the follow-up"
+    expect(t.followUps).toEqual([]);
+  });
+
+  it('does not mark anything when no follow-up was drafted, or the draft was typed into another session', async () => {
+    const t = setup();
+    drafted(t, { followUpDraft: null });
+    await t.prompt(D, { text: DRAFT, deliveryId: 'dlv_1' });
+    t.sessions.add({ key: KEY_B, projectId: 'prj_gm', projectName: 'GitManager', generation: 1, state: 'idle' });
+    drafted(t, { sessionKey: KEY_B }); // the report came from session B, the prompt goes to A
+    await t.prompt(D, { text: DRAFT, deliveryId: 'dlv_1' });
+    expect(t.followUps).toEqual([]);
+    drafted(t, { sessionKey: KEY_B });
+    await t.prompt(D, { sessionKey: KEY_B, text: DRAFT, deliveryId: 'dlv_1' });
+    expect(t.followUps).toHaveLength(1); // typed into its own session it counts
+  });
+
+  it('a failed prompt marks nothing', async () => {
+    const t = setup();
+    drafted(t);
+    t.sessions.patch(KEY_A, { state: 'working' });
+    expect((await t.prompt(D, { text: DRAFT, deliveryId: 'dlv_1' })).status).toBe('failed');
+    expect(t.followUps).toEqual([]);
+  });
+
+  it('refuses ids that do not exist for the desktop, and creates and types nothing', async () => {
+    const t = setup();
+    expect(await t.failure(() => t.prompt(D, { deliveryId: 'dlv_nope' }))).toMatchObject({ status: 404, code: 'not_found', message: 'Delivery was not found.' });
+    expect(await t.failure(() => t.prompt(D, { reportId: 'rep_nope' }))).toMatchObject({ status: 404, code: 'not_found', message: 'Report was not found.' });
+    expect(await t.failure(() => t.prompt(D, { reportId: 'rep_1', deliveryId: 'dlv_nope' }))).toMatchObject({ status: 404 });
+    expect(t.rows()).toBe(0);
+    expect(t.sessions.typeCalls).toEqual([]);
+  });
+
+  it('refuses a delivery of another project', async () => {
+    const t = setup();
+    drafted(t, { projectId: 'prj_other' });
+    const err = await t.failure(() => t.prompt(D, { text: DRAFT, deliveryId: 'dlv_1' }));
+    expect(err).toMatchObject({ status: 422, code: 'delivery_project_mismatch' });
+    expect(hasEmDash(err.message)).toBe(false);
+    expect(t.rows()).toBe(0);
+    expect(t.sessions.typeCalls).toEqual([]);
+  });
+
+  it('links a delivery of a report that had no project only to the very session it came from', async () => {
+    const t = setup();
+    t.sessions.add({ key: KEY_B, projectId: null, projectName: null, generation: 1, state: 'idle' });
+    t.sessions.add({ key: KEY_C, env: 'wsl:Ubuntu', projectId: null, projectName: null, generation: 1, state: 'idle' });
+    drafted(t, { projectId: null, sessionKey: KEY_B });
+    expect((await t.prompt(D, { sessionKey: KEY_B, text: 'ok', deliveryId: 'dlv_1' })).deliveryId).toBe('dlv_1');
+    // another session without a project, and a session of a project, are both refused
+    expect(await t.failure(() => t.prompt(D, { sessionKey: KEY_C, text: 'ok', deliveryId: 'dlv_1' }))).toMatchObject({ status: 422, code: 'delivery_project_mismatch' });
+    expect(await t.failure(() => t.prompt(D, { sessionKey: KEY_A, text: 'ok', deliveryId: 'dlv_1' }))).toMatchObject({ status: 422, code: 'delivery_project_mismatch' });
+    expect(t.rows()).toBe(1);
+  });
+
+  it('drops both ids for a trusted device: naming someone\'s delivery changes no review, even with the draft as the text', async () => {
+    const t = setup();
+    drafted(t);
+    const same = await t.prompt(TRUSTED, { text: DRAFT, deliveryId: 'dlv_1', reportId: 'rep_1' });
+    const other = await t.prompt(TRUSTED, { text: 'Please delete the production database.', deliveryId: 'dlv_1' });
+    for (const a of [same, other]) {
+      expect(a).toMatchObject({ status: 'executed', reportId: null, deliveryId: null });
+      expect(t.row(a.id)).toMatchObject({ report_id: null, delivery_id: null });
+    }
+    expect(t.followUps).toEqual([]);
+    expect(t.activity.recorded.flatMap((r) => r.links ?? []).some((l) => l.kind === 'delivery' || l.kind === 'report')).toBe(false);
+  });
+
+  it('drops them for a device that waits for approval too, so approving later marks nothing', async () => {
+    const t = setup();
+    drafted(t);
+    const pending = await t.prompt(PHONE, { text: DRAFT, deliveryId: 'dlv_1', reportId: 'rep_1' });
+    expect(pending).toMatchObject({ status: 'pending', reportId: null, deliveryId: null });
+    expect((await t.svc.approve(pending.id, D)).status).toBe('executed');
+    expect(t.followUps).toEqual([]);
+  });
+
+  it('does not make a fuss when a device names ids that do not exist: they are just ignored', async () => {
+    const t = setup();
+    const action = await t.prompt(PHONE, { deliveryId: 'dlv_nope', reportId: 'rep_nope' });
+    expect(action).toMatchObject({ status: 'pending', reportId: null, deliveryId: null });
+  });
+
+  it('cannot check ids without the delivery and report lists, so it drops them with a warning instead of trusting them', async () => {
+    const t = setup({ deliveries: false, reports: false });
+    const action = await t.prompt(D, { deliveryId: 'dlv_1', reportId: 'rep_1' });
+    expect(action).toMatchObject({ status: 'executed', reportId: null, deliveryId: null });
+    expect(t.env.log.lines.filter((l) => l.level === 'warn')).toHaveLength(2);
+    expect(t.followUps).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// SEC-05: a device that is revoked or removed
+
+describe('actions: a device that was removed', () => {
+  type T = ReturnType<typeof setup>;
+  const revoke = (t: T, id: string) => {
+    t.devices.devices.set(id, { ...t.devices.devices.get(id)!, revokedAt: t.env.clock.iso() });
+    t.env.bus.emit({ type: 'device.upserted', device: t.devices.devices.get(id)! });
+  };
+  const remove = (t: T, id: string) => {
+    t.devices.devices.delete(id);
+    t.env.bus.emit({ type: 'device.removed', id });
+  };
+
+  it('loses what it was still waiting to get approved, and nothing else', async () => {
+    const t = setup();
+    const first = await t.prompt(PHONE);
+    const second = await t.prompt(PHONE, { text: 'A second prompt' });
+    const theirs = await t.prompt(TABLET);
+    const typed = await t.prompt(TRUSTED); // executed already, so not "waiting"
+    const request = t.permission()!; // raised by the system, not by a device
+    t.env.clearEvents();
+    revoke(t, 'dev_phone');
+    for (const a of [first, second]) {
+      expect(t.svc.get(a.id)).toMatchObject({ status: 'rejected', decidedBy: SYSTEM, failure: 'The device that asked was removed.', executedAt: null });
+    }
+    expect([theirs, typed, request].map((a) => t.svc.get(a.id)!.status)).toEqual(['pending', 'executed', 'pending']);
+    expect(pendingActionIds(t.env.events)).toEqual([{ id: first.id, status: 'rejected' }, { id: second.id, status: 'rejected' }]);
+    expect(t.activity.resolved.flatMap((r) => r[0].ids ?? [])).toEqual([`act_${first.id}`, `act_${second.id}`]);
+    const results = t.activity.recorded.filter((r) => r.id === `actres_${first.id}`);
+    expect(results).toEqual([expect.objectContaining({ severity: 'info', title: `Prompt to ${LABEL} was rejected`, description: 'The device that asked was removed. Nothing was typed.' })]);
+    expect(t.sessions.typeCalls).toHaveLength(1); // only the trusted device's prompt, typed before
+    t.expectNoLoggedErrors();
+  });
+
+  it('is handled when the device is taken out of the list as well', async () => {
+    const t = setup();
+    const pending = await t.prompt(TABLET);
+    remove(t, 'dev_tablet');
+    expect(t.svc.get(pending.id)).toMatchObject({ status: 'rejected', failure: 'The device that asked was removed.' });
+    expect(t.statuses(pending.id)).toEqual(['pending', 'rejected']);
+  });
+
+  it('ignores a change to a device that is not a revocation', async () => {
+    const t = setup();
+    const pending = await t.prompt(PHONE);
+    t.env.bus.emit({ type: 'device.upserted', device: { ...t.devices.devices.get('dev_phone')!, name: 'Renamed phone', trusted: false } });
+    t.env.bus.emit({ type: 'device.removed', id: 'dev_somebody_else' });
+    expect(t.svc.get(pending.id)!.status).toBe('pending');
+  });
+
+  it('refuses to approve a prompt whose device was revoked, even when no event was seen', async () => {
+    const t = setup();
+    const pending = await t.prompt(PHONE);
+    t.devices.devices.set('dev_phone', { ...t.devices.devices.get('dev_phone')!, revokedAt: NOW }); // the event was missed
+    const err = await t.failure(() => t.svc.approve(pending.id, D));
+    expect(err).toMatchObject({ status: 409, code: 'device_revoked', message: 'The device that asked was removed, so nothing was typed.' });
+    expect(t.svc.get(pending.id)).toMatchObject({ status: 'rejected', failure: 'The device that asked was removed.' });
+    expect(t.sessions.typeCalls).toEqual([]);
+    expect(t.statuses(pending.id)).toEqual(['pending', 'rejected']);
+  });
+
+  it('refuses the same when the device is no longer known at all', async () => {
+    const t = setup();
+    const pending = await t.prompt(TABLET);
+    t.devices.devices.delete('dev_tablet');
+    expect(await t.failure(() => t.svc.approve(pending.id, D))).toMatchObject({ status: 409, code: 'device_revoked' });
+    expect(t.sessions.typeCalls).toEqual([]);
+  });
+
+  it('after the event the prompt is simply no longer pending, for the desktop and for other devices', async () => {
+    const t = setup();
+    const pending = await t.prompt(PHONE);
+    revoke(t, 'dev_phone');
+    expect(await t.failure(() => t.svc.approve(pending.id, D))).toMatchObject({ status: 409, code: 'action_not_pending' });
+    expect(await t.failure(() => t.svc.approve(pending.id, TABLET))).toMatchObject({ status: 409, code: 'action_not_pending' });
+    expect(t.sessions.typeCalls).toEqual([]);
+  });
+
+  it('a prompt from a device that is still there is unaffected by the check', async () => {
+    const t = setup();
+    const pending = await t.prompt(PHONE);
+    revoke(t, 'dev_tablet');
+    expect((await t.svc.approve(pending.id, D)).status).toBe('executed');
+  });
+
+  it('listens only between creation/init and shutdown', async () => {
+    const t = setup();
+    const a = await t.prompt(PHONE);
+    t.svc.shutdown();
+    revoke(t, 'dev_phone');
+    expect(t.svc.get(a.id)!.status).toBe('pending'); // no longer listening
+    t.svc.init();
+    const b = await t.prompt(TABLET);
+    revoke(t, 'dev_tablet');
+    expect(t.svc.get(b.id)!.status).toBe('rejected');
+    t.svc.shutdown();
+  });
+
+  it('still drops the prompts when the service has no device list, and approving then cannot tell', async () => {
+    const t = setup({ devices: false });
+    const a = await t.prompt(PHONE);
+    const b = await t.prompt(TABLET);
+    revoke(t, 'dev_phone');
+    expect(t.svc.get(a.id)!.status).toBe('rejected');
+    expect((await t.svc.approve(b.id, D)).status).toBe('executed');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// SEC-14: a phone cannot send a command
+
+describe('actions: commands cannot be sent from a phone', () => {
+  const MESSAGE = 'Text that starts with ! or / is a Claude Code command, not a prompt, and cannot be sent from a phone.';
+  const COMMANDS: string[] = [
+    '!ls', '/clear', '/', '!', '  /help', '\n\t!rm -rf build', '\r\n/compact', '﻿/help', '​!ls', '​﻿  /x', '­/compact', '⁠!x',
+    '‎/cost', '‮/model', ' 　/model', ' !x', '\u{E0041}/x', '\u0007/bell', '﻿​‌‍ \t\n!ls -la', '/etc/hosts is odd',
+  ];
+  const PLAIN: string[] = [
+    'Run ls /tmp', 'Please run /clear later', 'Fix the !important flag', 'What does a/b mean?', 'Use ! for negation', '?help', 'a\n/clear', '﻿hello /world',
+    '​hello !', '\\/not a command', '(/help)', '  ...  /x',
+  ];
+  const show = (s: string) => JSON.stringify(s);
+
+  it.each(COMMANDS.map((c) => [show(c), c]))('refuses %s from an untrusted device', async (_name, text) => {
+    const t = setup();
+    const err = await t.failure(() => t.prompt(PHONE, { text }));
+    expect(err).toMatchObject({ status: 422, code: 'command_not_allowed', message: MESSAGE });
+    expect(hasEmDash(err.message)).toBe(false);
+    expect(t.rows()).toBe(0);
+    expect(t.sessions.typeCalls).toEqual([]);
+  });
+
+  it.each(COMMANDS.map((c) => [show(c), c]))('refuses %s from a trusted device too', async (_name, text) => {
+    const t = setup();
+    expect(await t.failure(() => t.prompt(TRUSTED, { text }))).toMatchObject({ status: 422, code: 'command_not_allowed' });
+    expect(t.rows()).toBe(0);
+    expect(t.sessions.typeCalls).toEqual([]);
+  });
+
+  it.each(PLAIN.map((c) => [show(c), c]))('lets %s through from a device', async (_name, text) => {
+    const t = setup();
+    expect((await t.prompt(PHONE, { text })).status).toBe('pending');
+    expect((await t.prompt(TRUSTED, { text })).status).toBe('executed');
+  });
+
+  it('does not change anything for the desktop, which may type commands', async () => {
+    const t = setup();
+    for (const text of ['/clear', '!ls', '  /help', '﻿/compact']) {
+      expect((await t.prompt(D, { text })).status).toBe('executed');
+    }
+    expect(t.sessions.typed.map((x) => x.text)).toEqual(['/clear', '!ls', '  /help', '﻿/compact']);
+  });
+
+  it('is checked before anything else is looked at, so a command is never stored', async () => {
+    const t = setup();
+    t.sessions.patch(KEY_A, { availability: 'resumable' });
+    expect(await t.failure(() => t.prompt(PHONE, { text: '/clear', deliveryId: 'dlv_nope' }))).toMatchObject({ code: 'command_not_allowed' });
+    expect(t.rows()).toBe(0);
   });
 });

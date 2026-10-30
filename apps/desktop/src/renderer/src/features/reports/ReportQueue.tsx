@@ -5,7 +5,7 @@ import { useApi, useApp, useRuntime } from '../../app/runtime';
 import { Button, EmptyState, Select, Tabs, Tag, tabPanelProps } from '../../ui';
 import { formatRelative } from '../workspace/sessionModel';
 import { CandidateList, useCandidates } from './Candidates';
-import { DECLARED_TEXT, queueDeliveryLabel } from './model';
+import { DECLARED_TEXT, declaredPhrase, queueDeliveryLabel } from './model';
 import { errorText } from './support';
 
 export type QueueMode = 'reports' | 'other';
@@ -115,7 +115,7 @@ export function ReportQueue({ mode, onMode, selectedReportId, onSelectReport, se
                         {!r.read ? <span className="ms-dot ms-rep-row__dot" data-tone="unread" aria-hidden="true" /> : null}
                         <span className="ms-rep-row__text">{r.taskTitle}</span>
                       </span>
-                      <span className="ms-rep-row__meta">{r.projectName ?? 'No project'}, {DECLARED_TEXT[r.declaredStatus].toLowerCase()}, {formatRelative(r.capturedAt)}</span>
+                      <span className="ms-rep-row__meta">{r.projectName ?? 'No project'}, {declaredPhrase(r.declaredStatus)}, {formatRelative(r.capturedAt)}</span>
                       <span className="ms-rep-row__state">{queueDeliveryLabel(r.delivery)}</span>
                     </button>
                   </li>

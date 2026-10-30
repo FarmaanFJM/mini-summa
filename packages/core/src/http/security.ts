@@ -1,14 +1,17 @@
 // Response headers that every answer carries.
 
-/** Strict policy for the bundled UI. `ws:`/`wss:` in connect-src lets the UI open its /ws socket on any host name it
- *  was served from (127.0.0.1, localhost or the Tailscale name). */
+/**
+ * Strict policy for the bundled UI. `connect-src 'self'` covers the UI's own /ws socket (a same-origin WebSocket matches
+ * 'self' in current Chromium), so no other host can be contacted. `style-src` keeps 'unsafe-inline' because the terminal
+ * (xterm.js) injects <style> elements at run time; scripts stay `'self'` only.
+ */
 export const UI_CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self' ws: wss:",
+  "connect-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",
   "frame-ancestors 'none'",

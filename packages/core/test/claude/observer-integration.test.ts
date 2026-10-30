@@ -62,9 +62,10 @@ async function stack(prev?: Stack): Promise<Stack> {
     overrides: { ...FAST, baseEnv: { ...process.env, FAKE_CLAUDE_THINK_MS: '30', FAKE_CLAUDE_NOTIFY_MS: '400' }, hostEnv: 'posix' },
   });
   const sessions = createSessionsService({ base, settings: createFakeSettings(), projects, environments, managed, overrides: { hostEnv: 'posix', spoolPollMs: 25, discoveryIntervalMs: 0 } });
-  const collected: Collected = { derived: [], reports: [], candidates: [], sessionChanges: [], busUpserts: [] };
+  const collected: Collected = { derived: [], permissions: [], reports: [], candidates: [], sessionChanges: [], busUpserts: [] };
   sessions.subscribe({
-    onDerived: (e) => { collected.derived.push(e); }, onReport: (r) => { collected.reports.push(r); },
+    onDerived: (e) => { collected.derived.push(e); }, onPermissionRequest: (info, view) => { collected.permissions.push({ info, view: structuredClone(view) }); },
+    onReport: (r) => { collected.reports.push(r); },
     onCandidate: (c) => { collected.candidates.push(c); }, onSession: (view, previous) => { collected.sessionChanges.push({ view, previous }); },
   });
   bus.subscribe((_s, e) => { if (e.type === 'session.upserted') collected.busUpserts.push(e.session); });

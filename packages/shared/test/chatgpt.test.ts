@@ -82,6 +82,12 @@ describe('classifyNavigation', () => {
     ['about:blank', 'chatgpt'],
     ['https://chatgpt.com.evil.example/', 'external'],
     ['https://evilchatgpt.com/', 'external'],
+    ['https://evil.com\\@chatgpt.com/', 'blocked'],
+    ['https://evil.com\\.chatgpt.com/', 'blocked'],
+    ['https://evil.com\\@accounts.google.com/', 'blocked'],
+    ['https://chatgpt.com/\tfoo', 'blocked'],
+    ['https://chatgpt.com/\nfoo', 'blocked'],
+    ['https://chat gpt.com/', 'blocked'],
   ])('%s is %s', (url, cls) => {
     expect(classifyNavigation(url)).toBe(cls);
   });

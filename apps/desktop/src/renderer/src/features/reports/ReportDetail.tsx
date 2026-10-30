@@ -1,9 +1,9 @@
 import { envLabel, shortSessionId } from '@minisumma/shared';
 import type { Delivery, Report } from '@minisumma/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNative } from '../../app/native';
 import { useApi, useApp, useRoute } from '../../app/runtime';
-import { Button, CopyButton, EmptyState, toast } from '../../ui';
+import { Button, CopyButton, EmptyState, Tabs, tabPanelProps, toast } from '../../ui';
 import { formatRelative } from '../workspace/sessionModel';
 import { HandoffCard } from './HandoffCard';
 import { useDelivery, useReport } from './hooks';
@@ -25,11 +25,24 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   const saveAllowed = useApp((s) => s.system?.nativeCapabilities.saveFile !== false);
   const runner = useRunner();
   const [created, setCreated] = useState<Delivery | null>(null);
-  useEffect(() => { setCreated(null); }, [reportId]);
+  const [tab, setTab] = useState<'report' | 'review' | null>(null);
+  useEffect(() => { setCreated(null); setTab(null); }, [reportId]);
 
   const report: Report | null = loaded.status === 'ready' ? loaded.value : null;
   const deliveryId = summary?.delivery?.id ?? report?.delivery?.id ?? created?.id ?? null;
   const delivery = useDelivery(deliveryId) ?? (created && created.id === deliveryId ? created : null);
+
+  // Once the message was sent the review is what needs the person, so it opens first; the report is one tab away. The
+  // choice is made when the report opens, or when the person says "I sent it" in this view, and never changes under them.
+  const reviewing = delivery !== null && hasReview(delivery);
+  const opening = useRef<'report' | 'review' | null>(null);
+  if (opening.current === null && delivery) opening.current = reviewing && delivery.review !== 'closed' && delivery.review !== 'follow_up_sent' ? 'review' : 'report';
+  const wasReviewing = useRef(reviewing);
+  useEffect(() => {
+    if (reviewing && !wasReviewing.current && tab === null) setTab('review');
+    wasReviewing.current = reviewing;
+  }, [reviewing, tab]);
+  const shown = reviewing ? tab ?? opening.current ?? 'report' : 'report';
 
   // Opening a report is reading it.
   const unread = summary !== null && !summary.read;
@@ -102,19 +115,34 @@ export function ReportDetail({ reportId }: { reportId: string }) {
               <dd>{DECLARED_TEXT[report.declaredStatus]}. This is a claim by the model, not proof that the work was done or tested.</dd>
               {report.source === 'user_promoted' ? (<><dt>Origin</dt><dd>A final message without a report marker. You made it a report.</dd></>) : null}
             </dl>
-            {report.late ? <div className="ms-notice" data-tone="attention"><span className="ms-notice__text">This message belongs to an earlier prompt or an earlier run of the session, so it may not describe the latest work.</span></div> : null}
-            {report.redactions && report.redactions > 0 ? (
-              <div className="ms-notice" data-tone="attention">
-                <span className="ms-notice__text">{report.redactions === 1 ? '1 credential-like string was' : `${report.redactions} credential-like strings were`} hidden when this report was captured.</span>
-              </div>
+            {reviewing ? (
+              <Tabs
+                label="Report or review"
+                idPrefix="report-view"
+                value={shown}
+                onChange={(id) => setTab(id as 'report' | 'review')}
+                items={[{ id: 'report', label: 'Report' }, { id: 'review', label: 'Review' }]}
+                className="ms-rep-doctabs"
+              />
             ) : null}
-            <ReportText text={report.body} />
+            <div {...tabPanelProps('report-view', shown)} className="ms-rep-panel">
+              {shown === 'review' && delivery ? (
+                <ReviewPanel delivery={delivery} reportId={report.id} reportSessionKey={report.sessionKey} reportGeneration={report.generation} />
+              ) : (
+                <>
+                  {report.late ? <div className="ms-notice" data-tone="attention"><span className="ms-notice__text">This message belongs to an earlier prompt or an earlier run of the session, so it may not describe the latest work.</span></div> : null}
+                  {report.redactions && report.redactions > 0 ? (
+                    <div className="ms-notice" data-tone="attention">
+                      <span className="ms-notice__text">{report.redactions === 1 ? '1 credential-like string was' : `${report.redactions} credential-like strings were`} hidden when this report was captured.</span>
+                    </div>
+                  ) : null}
+                  <ReportText text={report.body} />
+                </>
+              )}
+            </div>
           </div>
           <aside className="ms-rep-side" aria-label="Handoff and review">
             <HandoffCard report={report} delivery={delivery} onCreated={setCreated} />
-            {delivery && hasReview(delivery) ? (
-              <ReviewPanel delivery={delivery} reportId={report.id} reportSessionKey={report.sessionKey} reportGeneration={report.generation} />
-            ) : null}
           </aside>
         </div>
       </div>

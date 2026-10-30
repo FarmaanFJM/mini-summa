@@ -25,6 +25,7 @@ function system() {
   const push = new FakePush();
   const devices = new FakeDevices();
   devices.addDevice({ id: 'dev_phone' });
+  devices.addDevice({ id: 'dev_trusted', name: 'Trusted phone', trusted: true });
   devices.addPushTarget('dev_phone');
 
   const activity = createActivityService({ base: env.base, fullCounts: () => ({ unreadActivity: 0, actionsNeeded: 0, pendingActions: 0, reportsAwaitingHandoff: 0, liveSessions: 0 }) });
@@ -50,7 +51,7 @@ function system() {
     },
   });
   deliveries = createDeliveriesService({ base: env.base, settings, projects, reports, sessions, native });
-  const actions = createActionsService({ base: env.base, settings, sessions, activity, devices, deliveries });
+  const actions = createActionsService({ base: env.base, settings, sessions, activity, devices, deliveries, reports });
 
   const gm = projects.addProject({ id: 'prj_gm', name: 'GitManager' });
   const chat = projects.addConversation(gm.id, { id: 'cnv_gm', title: 'GitManager review', verification: 'verified' });
@@ -113,6 +114,31 @@ describe('workflow services together', () => {
     expect(after.followUpDraft).toBe(draft);
     expect(s.reports.require(report.id).deliveries[0]).toMatchObject({ state: 'user_confirmed_sent', review: 'follow_up_sent' });
     expect(s.activity.get(`actres_${sent.id}`)).toMatchObject({ title: 'Prompt sent to GitManager / a1b2c3d4', links: expect.arrayContaining([{ kind: 'delivery', id: d.id }, { kind: 'report', id: report.id }]) });
+    expect(s.env.log.errors()).toEqual([]);
+  });
+
+  it('only the desktop\'s exact draft moves a review: a trusted device naming the same delivery changes nothing', async () => {
+    const s = system();
+    const { report } = s.reports.capture(s.captured());
+    const d = s.deliveries.list({ reportId: report.id })[0];
+    s.deliveries.confirmSent(d.id, undefined, D);
+    s.deliveries.setReview(d.id, 'received', null, D);
+    const draft = 'Please add a test for the logout redirect.';
+    s.deliveries.setReview(d.id, 'follow_up_drafted', draft, D);
+
+    const trusted = await s.actions.createPrompt({ sessionKey: KEY_A, text: draft, deliveryId: d.id, reportId: report.id, actor: { kind: 'device', deviceId: 'dev_trusted', name: 'Trusted phone' } });
+    expect(trusted).toMatchObject({ status: 'executed', deliveryId: null, reportId: null });
+    expect(s.deliveries.get(d.id)!.review).toBe('follow_up_drafted');
+
+    const different = await s.actions.createPrompt({ sessionKey: KEY_A, text: `${draft} And also delete the logs.`, deliveryId: d.id, actor: D });
+    expect(different).toMatchObject({ status: 'executed', deliveryId: d.id });
+    expect(s.deliveries.get(d.id)!.review).toBe('follow_up_drafted'); // linked, but not the drafted text
+
+    expect(await s.actions.createPrompt({ sessionKey: KEY_A, text: draft, deliveryId: 'dlv_nope', actor: D }).catch((e) => e.status)).toBe(404);
+
+    const exact = await s.actions.createPrompt({ sessionKey: KEY_A, text: draft, deliveryId: d.id, reportId: report.id, actor: D });
+    expect(exact.status).toBe('executed');
+    expect(s.deliveries.get(d.id)!.review).toBe('follow_up_sent');
     expect(s.env.log.errors()).toEqual([]);
   });
 

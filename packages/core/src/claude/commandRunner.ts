@@ -10,6 +10,11 @@ export interface CommandOptions {
   timeoutMs: number;
   /** Extra environment variables for this one call, merged over the current environment. */
   env?: Record<string, string>;
+  /**
+   * Windows only: pass the arguments to CreateProcess exactly as given, joined by spaces, without quoting them. Needed for
+   * `cmd.exe /d /s /c "<line>"`, whose quoting rules are cmd's own. Ignored on other platforms.
+   */
+  windowsVerbatimArguments?: boolean;
 }
 
 export interface CommandResult {
@@ -67,6 +72,7 @@ export const defaultCommandRunner: CommandRunner = (file, args, opts) =>
         {
           timeout: opts.timeoutMs,
           windowsHide: true,
+          windowsVerbatimArguments: opts.windowsVerbatimArguments === true,
           encoding: 'buffer',
           maxBuffer: MAX_OUTPUT_BYTES,
           env: opts.env ? { ...process.env, ...opts.env } : process.env,

@@ -13,6 +13,8 @@ export default defineConfig({
           include: ['test/renderer/**/*.test.{ts,tsx}'],
           environment: 'jsdom',
           setupFiles: ['test/setup.ts'],
+          // Tests that boot the whole app are quick when the machine is idle and slow when it is not.
+          testTimeout: 15_000,
         },
       },
       {

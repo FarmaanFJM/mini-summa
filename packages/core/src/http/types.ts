@@ -41,8 +41,8 @@ export interface HttpTuning {
   maxBufferedBytes: number;
   /** JSON request bodies larger than this are refused with 413. */
   maxBodyBytes: number;
-  /** Global limit for `pairing.redeem`. */
-  redeemPerMinute: number;
+  /** Global limit on FAILED `pairing.redeem` answers per minute (successes and invalid bodies are not charged). */
+  redeemFailuresPerMinute: number;
   /** How long a stored idempotent response is kept. */
   idempotencyTtlMs: number;
 }
@@ -53,7 +53,7 @@ export const DEFAULT_TUNING: HttpTuning = {
   bridgeTimeoutMs: 18_000,
   maxBufferedBytes: 8 * 1024 * 1024,
   maxBodyBytes: 1024 * 1024,
-  redeemPerMinute: 10,
+  redeemFailuresPerMinute: 20,
   idempotencyTtlMs: 24 * 60 * 60 * 1000,
 };
 

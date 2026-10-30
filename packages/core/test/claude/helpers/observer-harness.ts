@@ -9,7 +9,7 @@ import { openDatabase } from '@minisumma/storage';
 import type { Db } from '@minisumma/storage';
 import { createEventBus } from '../../../src/bus.ts';
 import type {
-  CapturedCandidate, CapturedReport, ClaudeDerivedEvent, Clock, CoreBase, EnvLayout, EnvironmentsService, EventBus, Logger,
+  CapturedCandidate, CapturedReport, ClaudeDerivedEvent, Clock, CoreBase, EnvLayout, EnvironmentsService, EventBus, Logger, PermissionRequestInfo,
 } from '../../../src/contracts.ts';
 import { systemClock } from '../../../src/contracts.ts';
 import { createEnvironmentsService } from '../../../src/claude/environments.ts';
@@ -64,6 +64,8 @@ export interface HarnessOptions {
 
 export interface Collected {
   derived: ClaudeDerivedEvent[];
+  /** Every onPermissionRequest call, with the view that was handed over with it. */
+  permissions: { info: PermissionRequestInfo; view: SessionView }[];
   reports: CapturedReport[];
   candidates: CapturedCandidate[];
   sessionChanges: { view: SessionView; previous: SessionView | null }[];
@@ -135,7 +137,7 @@ export async function makeHarness(opts: HarnessOptions = {}): Promise<Harness> {
     environments = createStubEnvironments(hostEnv, [layout]);
   }
 
-  const collected: Collected = { derived: [], reports: [], candidates: [], sessionChanges: [], busUpserts: [] };
+  const collected: Collected = { derived: [], permissions: [], reports: [], candidates: [], sessionChanges: [], busUpserts: [] };
   const rawStore = createRawStore(db, clock);
   const sessions = createSessionsService({
     base, settings, projects, environments, managed, rawStore, run: opts.run, env: opts.sessionsEnv ?? {},
@@ -146,6 +148,7 @@ export async function makeHarness(opts: HarnessOptions = {}): Promise<Harness> {
   if (opts.collect !== false) {
     offSessions = sessions.subscribe({
       onDerived: (event) => { collected.derived.push(event); },
+      onPermissionRequest: (info, view) => { collected.permissions.push({ info, view: structuredClone(view) }); },
       onReport: (report) => { collected.reports.push(report); },
       onCandidate: (candidate) => { collected.candidates.push(candidate); },
       onSession: (view, previous) => { collected.sessionChanges.push({ view, previous }); },

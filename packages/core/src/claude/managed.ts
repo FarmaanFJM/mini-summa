@@ -16,6 +16,12 @@
 //    `claude`) and `prefixArgs` as arguments that go before mine; the wsl.exe wrapper is built here.
 //  - init() marks records 'disconnected' with exitReason 'app_restart' and leaves exitedAt null: when the process died is unknown.
 //  - A failed spawn leaves the record (exited, reason 'spawn_failed') and start() throws CoreError 500 'spawn_failed'.
+//  - hasUnsentInput(key) is a heuristic over what a person typed at the desktop terminal through write() (inputTracking.ts):
+//    a printable character sets it, Enter / Ctrl-C / Ctrl-U / Escape clear it, a new PTY starts clean. Text and keys sent
+//    through typeText / sendKeys never touch it. promptSubmitted() is an extra, not in the ManagedManager contract: the
+//    sessions layer calls it when a UserPromptSubmit hook of the session is ingested (a prompt reached Claude another way).
+//  - On Windows, wsl.exe and cmd.exe are started by full path (windowsPrograms.ts), and a session name cannot carry the
+//    characters that split a Windows command line (normalizeSessionName).
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,10 +34,13 @@ import type {
   CoreBase, CoreOptions, EnvironmentsService, ManagedManager, ManagedSessionRecord, ManagedStartInput, TerminalAttachment, TerminalSink,
 } from '../contracts.ts';
 import { CoreError } from '../errors.ts';
+import { emptyInputLine, scanDesktopInput } from './inputTracking.ts';
+import type { InputLine } from './inputTracking.ts';
 import { CTRL_C, PERMISSION_KEYS, SUBMIT_DELAY_MS, encodeUserText } from './keys.ts';
 import { ScrollbackBuffer, buildLaunchPlan, createNodePtySpawner } from './ptyHost.ts';
 import type { ClaudeCommand, PtyProcess, PtySpawner } from './ptyHost.ts';
 import { writeManagedSettings } from './settingsFile.ts';
+import { systemProgramPath } from './windowsPrograms.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Pure helpers: arguments and environment
@@ -144,6 +153,15 @@ export interface ManagedManagerDeps {
   newSessionId?: () => string;
 }
 
+/** What the real manager offers on top of the ManagedManager contract. The sessions layer calls it when it exists. */
+export interface ManagedManagerExtras {
+  /**
+   * A prompt of this session reached Claude (its UserPromptSubmit hook was ingested), so whatever was on the input line has
+   * been submitted. `receivedAt` is when the hook ran: text typed AFTER that moment belongs to a newer line and is kept.
+   */
+  promptSubmitted(key: SessionKey, receivedAt?: string): void;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Rows
 
@@ -210,19 +228,31 @@ interface Live {
   /** typeText / sendKeys run one at a time so two of them can never interleave their bytes. */
   input: Promise<unknown>;
   stopping: { force: boolean; done: Promise<void> } | null;
+  /** What the desktop terminal's input line may hold (see inputTracking.ts). A new PTY always starts empty. */
+  line: InputLine;
+  /** When (core clock, ms) the latest text was typed at the desktop terminal; 0 = never. */
+  typedAtMs: number;
 }
 
 const clampInt = (value: unknown, fallback: number, min: number, max: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, Math.floor(value))) : fallback;
 
+// Characters that can split or re-quote an argument once a command line is assembled on Windows (node-pty joins the arguments
+// into one string, and the program then parses it again): the double quote and the backslash, the typographic quotes
+// U+2018..U+201F (some Windows code pages convert them to a plain quote when a program reads its command line as ANSI text),
+// and the full-width quote, apostrophe and backslash U+FF02 / U+FF07 / U+FF3C that convert the same way.
+const NAME_QUOTE_CHARS = /["\\‘-‟＂＇＼]/g;
+
 /**
  * Session names become command-line arguments (`--name <name>`, `--remote-control <name>`). Control characters are replaced by
- * spaces, and a name that starts with a dash is refused: as the optional value of `--remote-control` it would be read as the
- * next option (for example `--dangerously-skip-permissions`).
+ * spaces. Double quotes, backslashes and typographic quotes are removed (not escaped: no escaping is reliable across the
+ * programs a command line passes through), so "Bob’s \"fix\"" becomes "Bobs fix". A name that starts with a dash is refused:
+ * as the optional value of `--remote-control` it would be read as the next option (for example
+ * `--dangerously-skip-permissions`).
  */
 export function normalizeSessionName(raw: string | null | undefined): string | null {
   // eslint-disable-next-line no-control-regex
-  const name = (raw ?? '').replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 200);
+  const name = (raw ?? '').replace(NAME_QUOTE_CHARS, '').replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').replace(/\s{2,}/g, ' ').trim().slice(0, 200);
   if (name === '') return null;
   if (name.startsWith('-')) throw new CoreError(400, 'bad_request', 'A session name cannot start with a dash. Choose another name.');
   return name;
@@ -238,7 +268,7 @@ function installHelp(env: EnvId): string {
 
 // ---------------------------------------------------------------------------------------------------------------
 
-export function createManagedManager(deps: ManagedManagerDeps): ManagedManager {
+export function createManagedManager(deps: ManagedManagerDeps): ManagedManager & ManagedManagerExtras {
   const { base, environments } = deps;
   const { db, log, clock } = base;
   const spawner = deps.spawner ?? createNodePtySpawner();
@@ -492,8 +522,13 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager {
 
     const settings = writeManagedSettings({ layout, sessionId, dataDir: base.dataDir });
     const claudeArgs = buildClaudeArgs({ mode: input.mode, sessionId, settingsPath: settings.envPath, name, remoteControl: input.remoteControl });
-    const plan = buildLaunchPlan({ claude, claudeArgs, cwd: input.cwd, hostCwd: base.dataDir, platform });
-    const spawnEnv = scrubEnvironment(o.baseEnv ?? process.env);
+    const hostVariables = o.baseEnv ?? process.env;
+    const plan = buildLaunchPlan({
+      claude, claudeArgs, cwd: input.cwd, hostCwd: base.dataDir, platform,
+      // never a bare name: the process-start code would look for wsl.exe / cmd.exe in the current directory first
+      ...(platform === 'win32' ? { comspec: systemProgramPath('cmd.exe', hostVariables), wslExe: systemProgramPath('wsl.exe', hostVariables) } : {}),
+    });
+    const spawnEnv = scrubEnvironment(hostVariables);
     const startedAt = nowIso(clock);
     const argvJson = JSON.stringify(redactArgv([plan.file, ...(typeof plan.args === 'string' ? [plan.args] : plan.args)]));
 
@@ -550,6 +585,8 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager {
       outputTimer: null,
       input: Promise.resolve(),
       stopping: null,
+      line: emptyInputLine(),
+      typedAtMs: 0,
     };
     lives.set(key, live);
     emit(stored, before);
@@ -595,7 +632,29 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager {
 
   const write = (key: SessionKey, data: string): boolean => {
     const live = lives.get(key);
-    return live?.pty ? safeWrite(live, data) : false;
+    if (!live?.pty) return false;
+    const written = safeWrite(live, data);
+    if (written) {
+      // Only what reached the terminal can be on its input line.
+      const scanned = scanDesktopInput(live.line, data);
+      live.line = scanned.line;
+      if (scanned.typed) live.typedAtMs = clock.now().getTime();
+    }
+    return written;
+  };
+
+  const hasUnsentInput = (key: SessionKey): boolean => {
+    const live = lives.get(key);
+    return Boolean(live?.pty && live.line.unsent);
+  };
+
+  const promptSubmitted = (key: SessionKey, receivedAt?: string): void => {
+    const live = lives.get(key);
+    if (!live?.pty || !live.line.unsent) return;
+    const submittedAt = receivedAt === undefined ? Number.NaN : Date.parse(receivedAt);
+    // Text typed after that prompt was submitted is a newer line, still waiting for its Enter.
+    if (Number.isFinite(submittedAt) && live.typedAtMs > submittedAt) return;
+    live.line = emptyInputLine();
   };
 
   const typeText = async (key: SessionKey, text: string, opts: { submit: boolean }): Promise<boolean> => {
@@ -685,5 +744,5 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager {
     }
   };
 
-  return { init, list, get, start, stop, write, typeText, sendKeys, resize, attach, markPrompted, onChange, shutdown };
+  return { init, list, get, start, stop, write, hasUnsentInput, promptSubmitted, typeText, sendKeys, resize, attach, markPrompted, onChange, shutdown };
 }

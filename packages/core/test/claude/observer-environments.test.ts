@@ -373,6 +373,9 @@ describe('caching and refresh', () => {
 // Windows and WSL, through an injected runner and file system. NOT TESTED on a real Windows host.
 
 const WIN_DATA = 'C:\\Users\\me\\AppData\\Roaming\\Mini-Summa\\data';
+// A Windows host starts its system programs by full path, never by a bare name (see windowsPrograms.ts).
+const SYSTEM32 = 'C:\\Windows\\System32\\';
+const isProgram = (file: string, name: 'wsl.exe' | 'cmd.exe'): boolean => file === `${SYSTEM32}${name}`;
 const WSL_DATA = '/mnt/c/Users/me/AppData/Roaming/Mini-Summa/data';
 const utf16 = (text: string, bom = true): Buffer => Buffer.from(`${bom ? '\uFEFF' : ''}${text}`, 'utf16le');
 
@@ -382,14 +385,14 @@ function windows(distros: Record<string, Distro>, opts: { listing?: (() => Parti
   const files = new Set(opts.files ?? []);
   const handler = (file: string, args: string[]): Partial<CommandResult> | undefined => {
     if (/claude\.(exe|cmd)$/i.test(file) && args[0] === '--version') return ok('2.1.314 (Claude Code)\n');
-    if (file === 'cmd.exe' && args[0] === '/d' && args[1] === '/c' && /claude\.(cmd|bat)$/i.test(args[2]) && args[3] === '--version') return ok('2.1.314 (Claude Code)\r\n');
+    if (isProgram(file, 'cmd.exe') && args[0] === '/d' && args[1] === '/s' && args[2] === '/c' && /^""[^"]*claude\.(cmd|bat)" --version"$/i.test(args[3])) return ok('2.1.314 (Claude Code)\r\n');
     if (/node\.exe$/i.test(file) && args[0] === '--version') return ok('v22.12.0\r\n');
-    if (file === 'wsl.exe' && args[0] === '-l') {
+    if (isProgram(file, 'wsl.exe') && args[0] === '-l') {
       if (opts.listing === null) return { code: null, error: 'wsl.exe was not found.' };
       if (opts.listing) return opts.listing();
       return { stdout: decodeCommandOutput(utf16(`${Object.keys(distros).join('\r\n')}\r\ndocker-desktop\r\ndocker-desktop-data\r\n`)), code: 0 };
     }
-    if (file === 'wsl.exe' && args[0] === '-d' && args[2] === '--exec') {
+    if (isProgram(file, 'wsl.exe') && args[0] === '-d' && args[2] === '--exec') {
       const d = distros[args[1]];
       if (!d) return fail('There is no distribution with the supplied name.', 1);
       if (d.down) return { code: null, error: 'Timed out after 20 seconds.' };
@@ -423,7 +426,7 @@ describe('WSL listing', () => {
     const t = windows({ Ubuntu: { claude: 'ok' }, Debian: { claude: 'ok' } }, { files: ['C:\\Tools\\claude.exe'] });
     const envs = await t.svc.list();
     expect(envs.map((e) => [e.id, e.label])).toEqual([['win', 'Windows'], ['wsl:Ubuntu', 'WSL (Ubuntu)'], ['wsl:Debian', 'WSL (Debian)']]);
-    expect(t.calls.find((c) => c.file === 'wsl.exe' && c.args[0] === '-l')?.args).toEqual(['-l', '-q']);
+    expect(t.calls.find((c) => isProgram(c.file, 'wsl.exe') && c.args[0] === '-l')?.args).toEqual(['-l', '-q']);
     expect(envs.some((e) => e.id.includes('docker'))).toBe(false);
   });
 
@@ -447,7 +450,7 @@ describe('WSL listing', () => {
       host: { platform: 'linux', env: { WSL_DISTRO_NAME: 'Ubuntu', PATH: '' } },
     });
     expect((await svc.list()).map((e) => e.id)).toEqual(['wsl:Ubuntu']);
-    expect(runner.calls.some((c) => c.file === 'wsl.exe')).toBe(false);
+    expect(runner.calls.some((c) => /wsl\.exe$/i.test(c.file))).toBe(false);
     expect((await svc.layout('wsl:Ubuntu')).spoolDirHost).toMatch(/spool[\\/]wsl-Ubuntu$/);
   });
 
@@ -485,7 +488,7 @@ describe('a WSL distribution', () => {
   it('asks the distribution with the same non-login `--exec` it will later use to start Claude, and probes in parallel', async () => {
     const t = windows({ Ubuntu: { claude: 'ok' } });
     await t.svc.list();
-    const forUbuntu = t.calls.filter((c) => c.file === 'wsl.exe' && c.args[0] === '-d');
+    const forUbuntu = t.calls.filter((c) => isProgram(c.file, 'wsl.exe') && c.args[0] === '-d');
     expect(forUbuntu.map((c) => c.args.slice(2).join(' '))).toEqual(expect.arrayContaining([
       '--exec claude --version', '--exec sh -c command -v claude', '--exec node --version', '--exec sh -c printf %s "$HOME"',
     ]));
@@ -573,7 +576,7 @@ describe('Windows host: finding Claude Code', () => {
     const t = windows({}, { files: ['C:\\Windows\\claude.cmd'], listing: null });
     const [info] = await t.svc.list();
     expect(info.claude).toEqual({ path: 'C:\\Windows\\claude.cmd', version: '2.1.314', error: null });
-    expect(t.calls.find((c) => c.file === 'cmd.exe')?.args).toEqual(['/d', '/c', 'C:\\Windows\\claude.cmd', '--version']);
+    expect(t.calls.find((c) => isProgram(c.file, 'cmd.exe'))?.args).toEqual(['/d', '/s', '/c', '""C:\\Windows\\claude.cmd" --version"']);
     expect(await t.svc.claudeCommand('win')).toEqual({ file: 'C:\\Windows\\claude.cmd', prefixArgs: [], wslDistro: null });
   });
 
@@ -582,7 +585,7 @@ describe('Windows host: finding Claude Code', () => {
     expect((await native.svc.list())[0].claude).toMatchObject({ path: 'C:\\Users\\me\\.local\\bin\\claude.exe', version: '2.1.314' });
     const npm = windows({}, { files: ['C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd'], listing: null });
     expect((await npm.svc.list())[0].claude).toMatchObject({ path: 'C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd', version: '2.1.314' });
-    expect(npm.calls.some((c) => c.file === 'cmd.exe')).toBe(true);
+    expect(npm.calls.some((c) => isProgram(c.file, 'cmd.exe'))).toBe(true);
   });
 
   it('lays out the host environment with Windows paths and the Windows config directory', async () => {

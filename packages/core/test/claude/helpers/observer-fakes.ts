@@ -11,6 +11,7 @@ import type {
   TerminalSink,
 } from '../../../src/contracts.ts';
 import { notFound } from '../../../src/errors.ts';
+import type { ManagedManagerExtras } from '../../../src/claude/managed.ts';
 import type { ProjectsPort } from '../../../src/claude/sessions.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -142,7 +143,7 @@ export function createFakeSettings(initial?: SettingsPatch): FakeSettings {
 // ---------------------------------------------------------------------------------------------------------------
 // Managed sessions
 
-export interface FakeManaged extends ManagedManager {
+export interface FakeManaged extends ManagedManager, ManagedManagerExtras {
   initCalls: number;
   shutdownCalls: number;
   started: ManagedStartInput[];
@@ -151,6 +152,10 @@ export interface FakeManaged extends ManagedManager {
   keys: { key: SessionKey; keys: 'approve' | 'reject' }[];
   written: { key: SessionKey; data: string }[];
   prompted: SessionKey[];
+  /** Terminals whose input line holds text a person typed and did not submit (hasUnsentInput). Tests add and remove keys. */
+  unsent: Set<SessionKey>;
+  /** Every promptSubmitted call (the extra the real manager has on top of the contract). */
+  promptSubmittedCalls: { key: SessionKey; receivedAt: string | undefined }[];
   /** What typeText / sendKeys answer (false = the terminal is gone). */
   terminalAvailable: boolean;
   /** Adds or replaces a record (without telling the listeners unless `notify`). */
@@ -186,6 +191,7 @@ export function createFakeManaged(deps: { db: Db; clock: Clock }): FakeManaged {
 
   const fake: FakeManaged = {
     initCalls: 0, shutdownCalls: 0, started: [], stopped: [], typed: [], keys: [], written: [], prompted: [], terminalAvailable: true,
+    unsent: new Set(), promptSubmittedCalls: [],
 
     init() { fake.initCalls++; },
     list: () => [...records.values()].map((r) => ({ ...r })),
@@ -210,6 +216,11 @@ export function createFakeManaged(deps: { db: Db; clock: Clock }): FakeManaged {
       return fake.change(key, { status: 'exited', pid: null, exitedAt: at(), exitCode: 0, exitReason: 'Stopped from Mini-Summa.' });
     },
     write(key, data) { fake.written.push({ key, data }); return fake.terminalAvailable && records.get(key)?.status === 'running'; },
+    hasUnsentInput: (key) => fake.unsent.has(key),
+    promptSubmitted(key, receivedAt) {
+      fake.promptSubmittedCalls.push({ key, receivedAt });
+      fake.unsent.delete(key);
+    },
     async typeText(key, text, opts) { fake.typed.push({ key, text, submit: opts.submit }); return fake.terminalAvailable; },
     async sendKeys(key, k) { fake.keys.push({ key, keys: k }); return fake.terminalAvailable; },
     resize() {},

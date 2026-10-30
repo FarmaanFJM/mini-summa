@@ -8,6 +8,9 @@
 // Config directory: CLAUDE_CONFIG_DIR is passed to the call only when it is explicitly set in the core's environment.
 // Setting it to the default (~/.claude) is NOT the same as leaving it unset: Claude Code then looks for its global
 // state in <dir>/.claude.json instead of ~/.claude.json.
+//
+// A WSL distribution is asked through wsl.exe started by its FULL path on a Windows host (windowsPrograms.ts): the library's own
+// runAgentsJson starts the bare name `wsl.exe`, which the process-start code would look for in the current directory first.
 import { execFile } from 'node:child_process';
 import { takeSnapshot } from '@minisumma/claude-integration';
 import type { RawStoreLike, RunAgentsJsonOptions } from '@minisumma/claude-integration';
@@ -17,8 +20,12 @@ import type { Clock, EnvironmentsService, Logger } from '../contracts.ts';
 import { nowIso } from '../contracts.ts';
 import { CoreError } from '../errors.ts';
 import type { SerialQueue } from './serialQueue.ts';
+import { systemProgramPath } from './windowsPrograms.ts';
 
 export type AgentsRunner = (opts: RunAgentsJsonOptions) => Promise<{ raw: unknown }>;
+
+/** Starts a program and parses its output as JSON (a seam for tests). Rejects with the failure, never with a result. */
+export type ExecJson = (file: string, args: string[], opts: { timeoutMs: number; env: NodeJS.ProcessEnv }) => Promise<unknown>;
 
 export interface DiscoveryStatus {
   env: EnvId;
@@ -43,6 +50,10 @@ export interface DiscoveryDeps {
   log: Pick<Logger, 'debug' | 'warn' | 'error'>;
   /** The core's environment variables (test seam). */
   env?: Record<string, string | undefined>;
+  /** The platform the core runs on (test seam). */
+  platform?: NodeJS.Platform;
+  /** Starts `claude agents --json` through a launcher or wsl.exe (test seam). */
+  exec?: ExecJson;
 }
 
 export interface Discovery {
@@ -59,23 +70,39 @@ const LOCAL_TIMEOUT_MS = 20_000;
 /** The first call into a stopped WSL distribution has to start it. */
 const WSL_TIMEOUT_MS = 30_000;
 
+const execJson: ExecJson = (file, args, opts) => new Promise((resolve, reject) => {
+  execFile(file, args, { env: opts.env, timeout: opts.timeoutMs, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+    if (err) { reject(Object.assign(new Error(`${file} ${args.join(' ')} failed: ${err.message}`), { stderr })); return; }
+    try { resolve(JSON.parse(stdout)); } catch { reject(new Error(`unparsable output: ${String(stdout).slice(0, 200)}`)); }
+  });
+});
+
+const agentsArgs = (opts: RunAgentsJsonOptions): string[] => {
+  const args = ['agents', '--json'];
+  if (opts.all) args.push('--all');
+  if (opts.cwd) args.push('--cwd', opts.cwd);
+  return args;
+};
+
 /**
  * `claude agents --json` through a command that has leading arguments (a launcher script: `node cli.js ...`). The library's
  * runAgentsJson takes only an executable, so this does the same thing for the prefixed form: same arguments, same
  * environment handling, same error shape. A plain executable still goes through the library.
  */
-function runAgentsWithPrefix(cmd: { file: string; prefixArgs: string[] }, opts: RunAgentsJsonOptions): Promise<{ raw: unknown }> {
-  const args = [...cmd.prefixArgs, 'agents', '--json'];
-  if (opts.all) args.push('--all');
-  if (opts.cwd) args.push('--cwd', opts.cwd);
+async function runAgentsWithPrefix(cmd: { file: string; prefixArgs: string[] }, opts: RunAgentsJsonOptions, exec: ExecJson): Promise<{ raw: unknown }> {
   const env = { ...process.env };
   if (opts.configDir) env.CLAUDE_CONFIG_DIR = opts.configDir;
-  return new Promise((resolve, reject) => {
-    execFile(cmd.file, args, { env, timeout: opts.timeoutMs ?? LOCAL_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
-      if (err) { reject(Object.assign(new Error(`${cmd.file} ${args.join(' ')} failed: ${err.message}`), { stderr })); return; }
-      try { resolve({ raw: JSON.parse(stdout) }); } catch { reject(new Error(`unparsable output: ${String(stdout).slice(0, 200)}`)); }
-    });
-  });
+  return { raw: await exec(cmd.file, [...cmd.prefixArgs, ...agentsArgs(opts)], { timeoutMs: opts.timeoutMs ?? LOCAL_TIMEOUT_MS, env }) };
+}
+
+/** The command line that asks a WSL distribution for its sessions: the same arguments the library builds, started by `wslExe`. */
+export function wslAgentsInvocation(wslExe: string, distro: string, opts: RunAgentsJsonOptions): { file: string; args: string[] } {
+  return { file: wslExe, args: ['-d', distro, '--exec', 'claude', ...agentsArgs(opts)] };
+}
+
+async function runAgentsInWsl(wslExe: string, distro: string, opts: RunAgentsJsonOptions, exec: ExecJson): Promise<{ raw: unknown }> {
+  const { file, args } = wslAgentsInvocation(wslExe, distro, opts);
+  return { raw: await exec(file, args, { timeoutMs: opts.timeoutMs ?? WSL_TIMEOUT_MS, env: { ...process.env } }) };
 }
 
 function plainError(err: unknown): string {
@@ -86,6 +113,8 @@ function plainError(err: unknown): string {
 export function createDiscovery(deps: DiscoveryDeps): Discovery {
   const { queue, environments, clock, log } = deps;
   const env = deps.env ?? process.env;
+  const platform = deps.platform ?? process.platform;
+  const exec = deps.exec ?? execJson;
   const statuses = new Map<EnvId, DiscoveryStatus>();
   let timer: NodeJS.Timeout | null = null;
   let stopped = true;
@@ -116,11 +145,17 @@ export function createDiscovery(deps: DiscoveryDeps): Discovery {
         if (env.CLAUDE_CONFIG_DIR) runOpts.configDir = env.CLAUDE_CONFIG_DIR;
       }
       const prefixed = command.prefixArgs.length > 0 && !command.wslDistro;
+      const distro = command.wslDistro;
+      // On a Windows host wsl.exe is started by its full path, not by the bare name the library would use.
+      const throughWslExe = distro !== null && platform === 'win32';
+      let runner: AgentsRunner | undefined = deps.run;
+      if (!runner && prefixed) runner = (o) => runAgentsWithPrefix(command, o, exec);
+      else if (!runner && throughWslExe) runner = (o) => runAgentsInWsl(systemProgramPath('wsl.exe', env), distro, o, exec);
       await takeSnapshot({
         store: deps.rawStore,
         spools: [layout.spoolDirHost],
         envId: id,
-        run: deps.run ?? (prefixed ? (o) => runAgentsWithPrefix(command, o) : undefined),
+        run: runner,
         runOpts,
         // pid liveness can be checked only for processes on this host: not for a WSL distribution seen from Windows
         remote: isWslEnv(id) && environments.hostEnv() === 'win',

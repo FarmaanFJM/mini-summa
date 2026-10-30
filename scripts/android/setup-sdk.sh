@@ -38,8 +38,8 @@ set -o pipefail
 "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools"
 
 if [ "$FULL" = "1" ]; then
-  PLATFORM="${ANDROID_PLATFORM:-android-36}"
-  BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-36.0.0}"
+  PLATFORM="${ANDROID_PLATFORM:-android-37.0}"
+  BUILD_TOOLS="${ANDROID_BUILD_TOOLS:-37.0.0}"
   NDK="${ANDROID_NDK:-27.1.12297006}"
   CMAKE="${ANDROID_CMAKE:-3.22.1}"
   "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platforms;${PLATFORM}" "build-tools;${BUILD_TOOLS}" "ndk;${NDK}" "cmake;${CMAKE}"

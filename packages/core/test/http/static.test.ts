@@ -53,7 +53,7 @@ describe('serving the UI', () => {
     expect(res.text).toContain('<title>Mini-Summa</title>');
     expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
     expect(res.headers['content-security-policy']).toBe(
-      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'");
     expect(res.headers['content-security-policy']).toBe(UI_CSP);
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['referrer-policy']).toBe('no-referrer');

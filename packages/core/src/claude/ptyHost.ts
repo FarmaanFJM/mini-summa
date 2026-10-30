@@ -101,8 +101,10 @@ export interface LaunchOptions {
   /** A directory that exists on the host; used as the PTY's own cwd for WSL, whose real cwd is passed to wsl.exe. */
   hostCwd: string;
   platform: NodeJS.Platform;
-  /** cmd.exe path used for .cmd shims (default `cmd.exe`). */
+  /** cmd.exe path used for .cmd shims (default `cmd.exe`). On Windows the caller passes the full path (windowsPrograms.ts). */
   comspec?: string;
+  /** wsl.exe path used for WSL (default `wsl.exe`). On Windows the caller passes the full path (windowsPrograms.ts). */
+  wslExe?: string;
 }
 
 const CMD_SHIM = /\.(cmd|bat)$/i;
@@ -130,7 +132,7 @@ export function buildLaunchPlan(opts: LaunchOptions): LaunchPlan {
   const { claude, claudeArgs, cwd, platform } = opts;
   if (claude.wslDistro) {
     return {
-      file: 'wsl.exe',
+      file: opts.wslExe ?? 'wsl.exe',
       args: ['-d', claude.wslDistro, '--cd', cwd, '--exec', claude.file, ...claude.prefixArgs, ...claudeArgs],
       cwd: opts.hostCwd,
     };

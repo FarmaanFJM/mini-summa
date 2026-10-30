@@ -35,8 +35,8 @@ function setup(fake: FakeTailscale | null, extra: Partial<TailscaleDeps> = {}, r
   return { svc, settings };
 }
 
-afterEach(() => {
-  svc?.shutdown();
+afterEach(async () => {
+  await svc?.shutdown(); // switches off the entry it created, so the fake and the database must still exist
   svc = undefined;
   vi.useRealTimers();
   vi.unstubAllEnvs();
@@ -544,6 +544,7 @@ describe.skipIf(process.platform === 'win32')('polling', () => {
   it('checks right away and then every 30 seconds while remote access is "tailscale", announcing only changes', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const fake = fakeTs();
+    fake.setServe(serveConfigFor({ target: `http://127.0.0.1:${PORT}` })); // already published: the reconcile at start changes nothing
     const { svc } = setup(fake, {}, 'tailscale');
     svc.init();
     expect(vi.getTimerCount()).toBe(1);
@@ -586,13 +587,15 @@ describe.skipIf(process.platform === 'win32')('polling', () => {
   it('leaves no timer behind after shutdown, and ignores a second init', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
     const fake = fakeTs();
+    fake.setServe(serveConfigFor({ target: `http://127.0.0.1:${PORT}` }));
     const { svc, settings } = setup(fake, {}, 'tailscale');
     svc.init();
     svc.init();
     expect(vi.getTimerCount()).toBe(1);
     await eventually(() => fake.calls().length >= 2);
-    svc.shutdown();
+    const stopping = svc.shutdown();
     expect(vi.getTimerCount()).toBe(0);
+    await stopping;
     const calls = fake.calls().length;
     vi.advanceTimersByTime(10 * 60_000);
     settings.update({ mobile: { remoteAccess: 'off' } });
@@ -608,10 +611,11 @@ describe.skipIf(process.platform === 'win32')('polling', () => {
     const countTimers = (): number => process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
     const before = countTimers();
     const fake = fakeTs();
+    fake.setServe(serveConfigFor({ target: `http://127.0.0.1:${PORT}` }));
     const { svc } = setup(fake, { pollIntervalMs: 40 }, 'tailscale');
     svc.init();
     await eventually(() => fake.calls().length >= 6); // at least three polls
-    svc.shutdown();
+    await svc.shutdown();
     await new Promise((r) => setTimeout(r, 300)); // lets a poll that was running finish
     const calls = fake.calls().length;
     await new Promise((r) => setTimeout(r, 250));
