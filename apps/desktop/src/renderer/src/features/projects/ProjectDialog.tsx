@@ -1,5 +1,5 @@
 import { envLabel } from '@minisumma/shared';
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { useApi, useApp, useAppStore, useRoute, useUi } from '../../app/runtime';
 import { Button, Dialog, Field, Section, Select, TextInput, toast } from '../../ui';
 import { ConversationsEditor } from './ConversationsEditor';
@@ -8,6 +8,7 @@ import {
 } from './projectDraft';
 import type { ProjectDraft } from './projectDraft';
 import { RootsEditor } from './RootsEditor';
+import type { PendingFolder } from './RootsEditor';
 import { runSave, SaveFailure } from './saveProject';
 import type { SaveProgress } from './saveProject';
 
@@ -38,8 +39,11 @@ function ProjectForm({ mode: initialMode, projectId: initialProjectId, onClose }
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // A folder left in the "Add a folder" field counts as a change: Save adds it and closing the dialog asks first.
+  const pendingFolder = useRef<(draft: ProjectDraft) => PendingFolder>(() => ({ kind: 'none' }));
+  const [folderPending, setFolderPending] = useState(false);
 
-  const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(initial), [draft, initial]);
+  const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(initial), [draft, initial]) || folderPending;
   const errors = validateDraft(draft);
   const hasErrors = Boolean(errors.name || errors.githubRepo);
   const envs = distinctEnvs(draft.roots);
@@ -59,13 +63,18 @@ function ProjectForm({ mode: initialMode, projectId: initialProjectId, onClose }
   const save = async () => {
     setTouched(true);
     if (hasErrors || saving) return;
+    // What is still in the folder field is part of what the person asked for: add it, or say why it cannot be added.
+    const left = pendingFolder.current(draft);
+    if (left.kind === 'invalid') return; // the folder field shows why, next to what has to change
+    const wanted = left.kind === 'added' ? left.draft : draft;
+    if (left.kind === 'added') setDraft(wanted);
     setSaving(true);
     setSaveError(null);
     try {
       // The plan is made against the core's state right now, so a retry sends only what is still missing.
       const state = store.getState();
       const current = projectId ? state.projects.find((p) => p.id === projectId) : null;
-      const ops = planSave(draft, current ? { project: current, conversations: state.conversations } : null);
+      const ops = planSave(wanted, current ? { project: current, conversations: state.conversations } : null);
       const progress = await runSave(api, ops, projectId);
       if (mode === 'create' && progress.projectId) route.selectProject(progress.projectId);
       if (ops.length === 0 && mode === 'edit') toast({ title: 'No changes to save' });
@@ -119,7 +128,7 @@ function ProjectForm({ mode: initialMode, projectId: initialProjectId, onClose }
         </Section>
 
         <Section title="Repository folders" level={3}>
-          <RootsEditor draft={draft} onChange={setDraft} />
+          <RootsEditor draft={draft} onChange={setDraft} pending={pendingFolder} onPendingChange={setFolderPending} />
           {envs.length > 1 ? (
             <Field label="New sessions start in">
               <Select

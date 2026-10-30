@@ -78,12 +78,41 @@ describe('folders: reading what is typed', () => {
     expect(within(list).getAllByRole('listitem')).toHaveLength(1);
   });
 
-  it('opens the folder picker of the desktop shell and uses what it returns', async () => {
+  it('opens the folder picker of the desktop shell and adds what it returns to the list at once', async () => {
     const { user, app, dialog } = await openCreate();
     (app.fake.native.dialogs.selectDirectory as ReturnType<typeof vi.fn>).mockResolvedValueOnce('C:\\Picked\\Folder');
     await user.click(within(dialog).getByRole('button', { name: 'Browse' }));
-    expect((within(dialog).getByLabelText('Add a folder') as HTMLInputElement).value).toBe('C:\\Picked\\Folder');
     expect(app.fake.native.dialogs.selectDirectory).toHaveBeenCalledWith({ title: 'Choose the repository folder' });
+    // No second "Add folder" press: a chosen folder is a decision. The field stays empty for the next one.
+    const list = await within(dialog).findByRole('list', { name: 'Repository folders' });
+    expect(within(list).getByText('C:\\Picked\\Folder')).toBeTruthy();
+    expect((within(dialog).getByLabelText('Add a folder') as HTMLInputElement).value).toBe('');
+  });
+
+  it('a cancelled picker changes nothing', async () => {
+    const { user, dialog } = await openCreate();
+    await user.click(within(dialog).getByRole('button', { name: 'Browse' })); // the fake answers null, as a cancelled dialog does
+    expect(within(dialog).queryByRole('list', { name: 'Repository folders' })).toBeNull();
+    expect((within(dialog).getByLabelText('Add a folder') as HTMLInputElement).value).toBe('');
+  });
+
+  it('says so when the picker returns a folder that is already in the list', async () => {
+    const { user, app, dialog } = await openCreate();
+    const pick = app.fake.native.dialogs.selectDirectory as ReturnType<typeof vi.fn>;
+    pick.mockResolvedValueOnce('C:\\Picked\\Folder').mockResolvedValueOnce('c:\\picked\\folder');
+    await user.click(within(dialog).getByRole('button', { name: 'Browse' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Browse' }));
+    expect(await within(dialog).findByText('This folder is already in the list.')).toBeTruthy();
+    expect(within(within(dialog).getByRole('list', { name: 'Repository folders' })).getAllByRole('listitem')).toHaveLength(1);
+  });
+
+  it('keeps a picked path it cannot read in the field, with the question it needs answered', async () => {
+    const { user, app, dialog } = await openCreate();
+    (app.fake.native.dialogs.selectDirectory as ReturnType<typeof vi.fn>).mockResolvedValueOnce('/home/me/app');
+    await user.click(within(dialog).getByRole('button', { name: 'Browse' }));
+    expect((within(dialog).getByLabelText('Add a folder') as HTMLInputElement).value).toBe('/home/me/app');
+    expect(within(dialog).getByText('This looks like a Linux path. Choose which WSL distribution it belongs to.')).toBeTruthy();
+    expect(within(dialog).queryByRole('list', { name: 'Repository folders' })).toBeNull();
   });
 
   it('offers no Browse button where there is no folder picker', async () => {
@@ -341,5 +370,72 @@ describe('creating a project', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(calledNames(calls).some((n) => n === 'projects.create')).toBe(false);
+  });
+});
+
+
+describe('regression: a folder chosen for a project that has none must be saved', () => {
+  async function createGithubOnlyProject() {
+    const user = userEvent.setup();
+    const app = await renderApp();
+    await user.click(screen.getByRole('button', { name: 'New project' }));
+    const dialog = await screen.findByRole('dialog', { name: 'New project' });
+    await user.type(within(dialog).getByLabelText('Name'), 'CaissaTrainer');
+    await user.type(within(dialog).getByLabelText('GitHub repository'), 'FarmaanFIM/CaissaTrainer');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    return { user, app };
+  }
+
+  it('Browse, then Save: the folder is stored, shown in the header and no "No changes to save" appears', async () => {
+    const { user, app } = await createGithubOnlyProject();
+    expect(screen.getByText(/No folder yet/)).toBeTruthy(); // the state the person started from
+    await user.click(screen.getByRole('button', { name: 'Edit CaissaTrainer' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit CaissaTrainer' });
+    (app.fake.native.dialogs.selectDirectory as ReturnType<typeof vi.fn>).mockResolvedValueOnce('C:\\Dev\\CaissaTrainer');
+    const calls = vi.spyOn(app.demo, 'call');
+    await user.click(within(dialog).getByRole('button', { name: 'Browse' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' })); // no "Add folder" in between
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(calledNames(calls)).toContain('projects.addRoot');
+    expect(screen.queryByText('No changes to save')).toBeNull();
+    expect(screen.queryByText(/No folder yet/)).toBeNull();
+    expect(screen.getByText(/C:\\Dev\\CaissaTrainer/)).toBeTruthy();
+    const stored = await app.demo.call('projects.list');
+    expect(stored.find((p) => p.name === 'CaissaTrainer')?.roots.map((r) => r.path)).toEqual(['C:\\Dev\\CaissaTrainer']);
+  });
+
+  it('a path typed and not added is added by Save instead of being dropped', async () => {
+    const { user, app } = await createGithubOnlyProject();
+    await user.click(screen.getByRole('button', { name: 'Edit CaissaTrainer' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit CaissaTrainer' });
+    await user.type(within(dialog).getByLabelText('Add a folder'), 'D:\\Work\\Caissa');
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText('No changes to save')).toBeNull();
+    const stored = await app.demo.call('projects.list');
+    expect(stored.find((p) => p.name === 'CaissaTrainer')?.roots.map((r) => r.path)).toEqual(['D:\\Work\\Caissa']);
+  });
+
+  it('a path that cannot be read stops Save and says what to do; nothing is discarded', async () => {
+    const { user, app } = await createGithubOnlyProject();
+    await user.click(screen.getByRole('button', { name: 'Edit CaissaTrainer' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit CaissaTrainer' });
+    await user.type(within(dialog).getByLabelText('Add a folder'), '/home/me/caissa');
+    const calls = vi.spyOn(app.demo, 'call');
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+    expect(await within(dialog).findByText('Choose which WSL distribution this folder is in, or clear the folder field.')).toBeTruthy(); // once, beside the field
+    expect(screen.getByRole('dialog', { name: 'Edit CaissaTrainer' })).toBeTruthy(); // still open, still holding the path
+    expect((within(dialog).getByLabelText('Add a folder') as HTMLInputElement).value).toBe('/home/me/caissa');
+    expect(calledNames(calls).filter((n) => /^projects\./.test(n))).toEqual([]);
+  });
+
+  it('with nothing in the field and nothing changed, Save still says there was nothing to save', async () => {
+    const { user } = await createGithubOnlyProject();
+    await user.click(screen.getByRole('button', { name: 'Edit CaissaTrainer' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit CaissaTrainer' });
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByText('No changes to save')).toBeTruthy();
   });
 });

@@ -135,6 +135,11 @@
       "id": "X06",
       "title": "After /clear inside a managed terminal the Claude pane follows to the new session, and a restart reopens on it",
       "why": "Regression check for a known gap: when Claude replaces the conversation inside a running terminal (/clear, /resume) the core keeps the terminal managed under a new session id and the old session becomes history, but the window used to leave the person on the old, ended tab. This proves, in the real window with the fake Claude CLI, that the pane ends on the new session's tab, that it is the same terminal and typing still reaches the process, that the old session stays reachable as ended history, and that a restart reopens on the new session."
+    },
+    {
+      "id": "X07",
+      "title": "A folder picked for a project that has none is saved, shown, and still there after a restart",
+      "why": "Regression check for a reported defect: Browse only filled the \"Add a folder\" field, the folder joined the project through a second button, and Save then said \"No changes to save\" and discarded it while the header kept saying \"No folder yet\". This does what the report did in the real window (Browse, then Save, nothing in between) for a project made from a GitHub repository alone, checks the folder is listed, stored and shown, then restarts the app and checks it is still there and that a local session starts in it."
     }
   ]
 }

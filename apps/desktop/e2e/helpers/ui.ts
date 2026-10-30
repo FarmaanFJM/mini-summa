@@ -87,10 +87,9 @@ export async function addFolderByTyping(dialog: Locator, folder: string): Promis
   await dialog.getByRole('button', { name: 'Add folder' }).click();
 }
 
-/** Presses Browse (the native picker is answered by the test) and adds the folder it returned. */
+/** Presses Browse (the native picker is answered by the test). The folder it returns is added to the list at once. */
 export async function addFolderWithPicker(dialog: Locator): Promise<void> {
   await dialog.getByRole('button', { name: 'Browse' }).click();
-  await dialog.getByRole('button', { name: 'Add folder' }).click();
 }
 
 export interface UiProject {
