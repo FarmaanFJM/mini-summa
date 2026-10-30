@@ -3,7 +3,6 @@
 // typed (a heuristic, documented in inputTracking.ts), and typeInto / targetCheck refuse while a line may be pending.
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseSessionKey } from '@minisumma/shared';
-import type { SessionKey } from '@minisumma/shared';
 import { createEventBus } from '../../src/bus.ts';
 import { systemClock } from '../../src/contracts.ts';
 import type { ManagedManager } from '../../src/contracts.ts';
@@ -361,7 +360,7 @@ describe('typeInto and targetCheck while someone has typed on the line', () => {
     it('without a time for a session in another environment (its clock may differ), and never for replayed history', async () => {
       const h = await harness();
       await h.feed([ev(2, 'UserPromptSubmit', { prompt_id: 'w1' }, 'wsl:Ubuntu')]);
-      expect(h.managed.promptSubmittedCalls).toEqual([{ key: parseSessionKey(`wsl:Ubuntu|${S1}`) ? `wsl:Ubuntu|${S1}` as SessionKey : K1, receivedAt: undefined }]);
+      expect(h.managed.promptSubmittedCalls).toEqual([{ key: keyOf('wsl:Ubuntu', S1), receivedAt: undefined }]);
       const before = h.managed.promptSubmittedCalls.length;
       await h.sessions.rebuild(); // a replay of everything: none of it is news
       expect(h.managed.promptSubmittedCalls).toHaveLength(before);

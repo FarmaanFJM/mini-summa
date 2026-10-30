@@ -1,0 +1,37 @@
+/*
+  First-run checklist. The layer ignores the pointer except where the panel is, so the application underneath stays usable.
+  The panel is a floating surface: one step lighter than the page, with the single outline overlays are allowed (X3).
+*/
+.ms-onb-layer { position: fixed; inset: 0; z-index: 40; display: flex; padding: var(--sp-5); pointer-events: none; }
+.ms-onb-layer[data-place="center"] { align-items: center; justify-content: center; padding-left: calc(var(--ms-onb-offset, 0px) + var(--sp-5)); }
+.ms-onb-layer[data-place="corner"] { align-items: flex-end; justify-content: flex-end; }
+
+.ms-onb {
+  pointer-events: auto; display: flex; flex-direction: column; gap: var(--sp-4); width: min(580px, 100%); max-height: 100%; overflow: auto; padding: var(--sp-5);
+  background: var(--s3); border-radius: var(--r-xl); box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-pop);
+}
+.ms-onb-layer[data-place="corner"] .ms-onb { width: min(420px, 100%); max-height: min(100%, 640px); }
+.ms-onb__head { display: flex; flex-direction: column; gap: 2px; }
+.ms-onb__title { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; }
+.ms-onb__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+
+.ms-onb-steps { display: flex; flex-direction: column; gap: var(--sp-4); margin: 0; padding: 0; list-style: none; }
+.ms-onb-step { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: var(--sp-3); }
+.ms-onb-step__mark { display: grid; place-items: center; height: 20px; color: var(--text-3); }
+.ms-onb-step[data-done] .ms-onb-step__mark { color: var(--text); }
+.ms-onb-step__body { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.ms-onb-step__title { margin: 0; font-size: var(--fs-md); font-weight: 600; line-height: 20px; }
+.ms-onb-step[data-done] .ms-onb-step__title { color: var(--text-2); font-weight: 500; }
+.ms-onb-step__optional { color: var(--text-3); font-weight: 400; }
+
+/* Buttons on a floating surface sit one step lighter than it, as in dialogs. */
+.ms-onb .sm-btn { background: var(--s4); }
+.ms-onb .sm-btn:hover:not(:disabled) { background: var(--s5); }
+.ms-onb .sm-btn--primary { background: var(--accent); }
+.ms-onb .sm-btn--primary:hover:not(:disabled) { background: var(--accent-hover); }
+.ms-onb .sm-btn--ghost { background: transparent; }
+.ms-onb .sm-btn--ghost:hover:not(:disabled) { background: var(--s4); }
+.ms-onb .ms-x-text { background: var(--s2); }
+
+/* Inside Settings the steps sit on the page, not on a floating surface. */
+.ms-set-page .ms-onb-steps { max-width: 640px; }

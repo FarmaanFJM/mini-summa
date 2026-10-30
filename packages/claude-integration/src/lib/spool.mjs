@@ -40,7 +40,7 @@ function isClockReading(value) {
 function moveInto(spoolDir, sub, name) {
   const from = path.join(spoolDir, name); const dir = path.join(spoolDir, sub);
   for (let attempt = 0; ; attempt++) {
-    fs.mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); // done/ and quarantine/ hold the same payloads as the spool itself (change 10)
     try { fs.renameSync(from, path.join(dir, name)); return true; } catch (err) {
       if (err?.code !== 'ENOENT') throw err;
       if (!fs.existsSync(from)) return false;

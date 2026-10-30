@@ -21,6 +21,7 @@
     "core": "tsx packages/core/src/cli.ts",
     "dist:win": "npm run dist:win -w @minisumma/desktop",
     "guard": "node scripts/publish-guard.mjs",
+    "verify": "node scripts/run-verification.mjs",
     "verify:claude": "tsx scripts/verify-real-claude.ts"
   },
   "devDependencies": {

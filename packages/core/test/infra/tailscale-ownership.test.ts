@@ -105,6 +105,30 @@ describe('the record of the entry Mini-Summa created', () => {
     expect(record()).toEqual({ port: OLD_PORT, createdAt: 'an earlier run' }); // the old entry is still ours to clean up
   });
 
+  it('stays when the publishing command was cut off, because it may have made the entry; cleanup only acts on a real match', async () => {
+    const fake = fakeTs();
+    fake.set({ hang: true, hangOn: 'serve --bg' });
+    const { svc } = setup(fake, { commandTimeoutMs: 400 });
+    const s = await svc.setServe(true);
+    expect(s.problem).toMatch(/did not answer in time/);
+    expect(record()?.port).toBe(PORT);
+    // nothing was made, so shutdown finds no entry of its own, runs nothing that changes Serve and forgets the record
+    fake.clearCalls();
+    await svc.shutdown();
+    expect(serveCalls(fake)).toEqual([]);
+    expect(record()).toBeNull();
+  });
+
+  it('keeps the older record, not the new one, when a command was cut off while an older entry exists', async () => {
+    const fake = fakeTs();
+    fake.setServe(published(OLD_PORT));
+    fake.set({ hang: true, hangOn: 'serve --bg' });
+    const { svc } = setup(fake, { commandTimeoutMs: 400, getPort: () => 51234 });
+    keepRecord(OLD_PORT);
+    await svc.setServe(true);
+    expect(record()).toEqual({ port: OLD_PORT, createdAt: 'an earlier run' });
+  });
+
   it('ignores a value that is not a record, and an entry then counts as somebody else\'s', async () => {
     const fake = fakeTs();
     fake.setServe(published(OLD_PORT));

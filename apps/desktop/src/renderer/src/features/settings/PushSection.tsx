@@ -31,7 +31,12 @@ export function PushSection() {
   const readFile = async (file: File | undefined) => {
     if (!file) return;
     try {
-      const text = await file.text();
+      const text = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+        reader.onerror = () => reject(reader.error ?? new Error('The file could not be read.'));
+        reader.readAsText(file);
+      });
       setJson(text);
       setFileName(file.name);
       setError(null);

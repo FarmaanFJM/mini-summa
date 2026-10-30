@@ -34,15 +34,20 @@ describe a limit are as important as the ones that describe a protection.
   There is no CORS. Bodies over 1 MB are refused with 413, malformed input with 400, and unknown routes with 404.
 * **Remote access uses `tailscale serve` only.** Mini-Summa never runs `tailscale funnel`. Any request that carries the
   `Tailscale-Funnel-Request` header (what Tailscale adds to Funnel traffic) is refused with 403 before anything else is
-  looked at, so a Funnel someone else configured cannot expose the API. When the preferred port is taken, the core starts
-  on another port, says so in the UI, and reports that the Serve entry must be refreshed.
+  looked at, and while Funnel is detected no phone address is offered at all.
+* **The Serve entry belongs to Mini-Summa only while it is its own.** It records the entry it created and removes it when it
+  quits, but only if that entry still forwards to its own port. An entry made by someone else, or re-pointed since, is never
+  changed or removed. If the preferred port is taken and the core starts on another one, the phone address is withheld
+  until Serve forwards to the port the core really uses (Settings, Remote access shows what to do), so another program that
+  grabbed the old port can never receive a phone's token.
 * Content-Security-Policy on the served UI: `default-src 'self'`, `connect-src 'self'`, no frames, no object embeds.
   `style-src` keeps `'unsafe-inline'` because the terminal component writes style elements at run time.
 * Pairing: one-time codes (192 bits, stored only as a SHA-256 hash, valid for 5 minutes, burned after 5 wrong tries). The
   endpoint is rate-limited by *failures* (20 per minute), so a stranger cannot lock you out of pairing by sending
   empty requests, and a stranger cannot guess a code either.
 * Device tokens are random, shown once, stored only as SHA-256 hashes, and revocable. Revoking a device closes its
-  WebSocket, makes its token fail at once, and rejects the prompts it still had waiting.
+  WebSocket, makes its token fail at once, and rejects the prompts it still had waiting. Device names are cleaned
+  (control, bidirectional and invisible characters removed) so a name cannot hide text or imitate another device.
 
 ## Approvals: the human stays in control
 

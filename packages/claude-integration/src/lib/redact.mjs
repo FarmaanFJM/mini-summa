@@ -16,7 +16,7 @@ const REDACTED = '[REDACTED]';
 const PEM_BEGIN = /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/g;
 const PEM_END = /-----END (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----/;
 const PEM_WINDOW = 4096;
-const PEM_MIN_BODY = 16; // without an END line, fewer base64 characters than this after the header is not a key
+const PEM_MIN_BODY = 8;  // without an END line, fewer base64 characters than this after the header is not a key
 const PEM_BODY = /^[A-Za-z0-9+/=\s\\:,.-]*$/; // all that may stand between the header and the END line: base64, line breaks (also as \n), the Proc-Type/DEK-Info lines of old keys
 
 function redactPem(s, counter) {
@@ -59,6 +59,10 @@ const SECRET_NAME = /(?:^|_)(?:PASSWORD|PASSWD|PASSPHRASE|SECRET|TOKEN|API_?KEY|
 // words that follow a mention of a flag in prose ("the --token flag"), which are not its value
 const PROSE = new Set(['flag', 'option', 'argument', 'parameter', 'param', 'arg', 'value', 'is', 'are', 'was', 'must', 'should', 'can', 'will',
   'to', 'and', 'or', 'if', 'when', 'with', 'for', 'in', 'on', 'as', 'not', 'be', 'the', 'a', 'an', 'it', 'this', 'that', 'instead', 'here', 'set', 'from', 'file']);
+const BEARER_PROSE = new Set(['tokens', 'scheme', 'schemes', 'header', 'headers', 'prefix', 'strategy', 'access', 'credential', 'credentials', 'values', 'protocol']);
+// WWW-Authenticate: Bearer realm="api", error="invalid_token" is a challenge, not a credential
+const BEARER_PARAM = /^(?:realm|error|error_description|error_uri|scope|resource_metadata|charset)=/i;
+const isBearerProse = (v) => BEARER_PARAM.test(v) || BEARER_PROSE.has(v.replace(/[.,;:=~+/_-]+$/, '').toLowerCase());
 const bare = (v) => v.replace(/^["']|["'.,;:!?)]+$/g, '').toLowerCase();
 // usage text or an elision, not a value: `--token <token>`, `--password PASSWORD`, `PASSWORD=...`, `PASSWORD=****`
 const isPlaceholder = (v) => {
@@ -66,24 +70,28 @@ const isPlaceholder = (v) => {
   return /^<[^<>\s]+>$/.test(core) || /^(?:PASSWORD|PASSWD|PASSPHRASE|TOKEN|SECRET|API[_-]?KEY|KEY|VALUE|STRING)$/.test(core) || /^(?:\.{2,}|\u2026+|\*+)$/.test(unquote(v));
 };
 
-// The command a flag belongs to starts on a line of its own; a trailing backslash continues it on the next one.
-function commandStart(str, offset) {
-  let start = str.lastIndexOf('\n', offset - 1) + 1;
+// The text of the command that a flag belongs to: its line, and the lines before it that end in a backslash. Looks back at most
+// LOOKBACK characters, so a very long line cannot make the scan quadratic.
+const LOOKBACK = 2000;
+function commandBefore(str, offset) {
+  const win = str.slice(Math.max(0, offset - LOOKBACK), offset);
+  let start = win.lastIndexOf('\n') + 1;
   for (let i = 0; i < 20 && start > 0; i++) {
     let eol = start - 1;                                  // the newline that ends the previous line
-    if (str[eol - 1] === '\r') eol--;
-    if (str[eol - 1] !== '\\') break;                     // that line does not continue onto this one
-    start = str.lastIndexOf('\n', eol - 1) + 1;
+    if (win[eol - 1] === '\r') eol--;
+    if (win[eol - 1] !== '\\') break;                     // that line does not continue onto this one
+    start = win.lastIndexOf('\n', eol - 1) + 1;
   }
-  return start;
+  return win.slice(start);
 }
 
 const RULES = [
   // the original rules, in their original order
   [/sk-ant-[A-Za-z0-9_-]{8,}/g, null],
   [/sk-[A-Za-z0-9]{20,}/g, null],
-  // 12 or more characters, as before; 6 to 11 with a digit in them ("Bearer abc123", not "Bearer tokens"), or as an Authorization value
-  [/\bBearer\s+([A-Za-z0-9._~+/=-]{6,})/g, (m, token) => (token.length >= 12 || /[0-9]/.test(token) ? REDACTED : null)],
+  // 12 or more characters, as before; 6 to 11 as well, unless it is a word that follows "Bearer" in a sentence ("Bearer tokens")
+  [/\bBearer\s+([A-Za-z0-9._~+/=-]{6,})/g,
+    (m, token) => (token.length < 12 && isBearerProse(token) ? null : REDACTED)],
   [/\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{16,}/g, null],
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, null],
   [/\bAKIA[0-9A-Z]{16}\b/g, null],
@@ -91,22 +99,22 @@ const RULES = [
   // more token shapes, hidden wherever they appear
   [/\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{8,}/g, null],                                   // OpenAI project, service-account and admin keys
   [/\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{8,}/g, null],                                       // Stripe secret and restricted keys
-  [/\bglpat-[A-Za-z0-9_-]{16,}/g, null],                                                      // GitLab personal access tokens
+  [/\bglpat-[A-Za-z0-9_-]{8,}/g, null],                                                        // GitLab personal access tokens
   [/\b(?:xox[bpaers]|xapp)-[A-Za-z0-9-]{8,}/g, null],                                         // Slack tokens
   [/(?:https?:\/\/)?\bhooks\.slack\.com\/services\/[A-Za-z0-9]+\/[A-Za-z0-9]+\/[A-Za-z0-9]+/g, null], // Slack incoming webhooks
-  [/\bAIza[0-9A-Za-z_-]{35,}/g, null],                                                        // Google API keys
-  [/\bnpm_[A-Za-z0-9]{30,}/g, null],                                                          // npm access tokens
-  [/\bhf_[A-Za-z0-9]{30,}/g, null],                                                           // Hugging Face tokens
+  [/\bAIza[0-9A-Za-z_-]{20,}/g, null],                                                        // Google API keys
+  [/\bnpm_[A-Za-z0-9]{16,}/g, null],                                                          // npm access tokens
+  [/\bhf_[A-Za-z0-9]{16,}/g, null],                                                           // Hugging Face tokens
 
   // secrets in the way they are written: the name or the option stays, the value goes
-  [/\b(aws_secret_access_key["']?\s*[=:]\s*["']?)([A-Za-z0-9/+=]{6,})/gi,
+  [/\b(aws_secret_access_key["']?(?:[ \t]*[=:][ \t]*|[ \t]+)["']?)([A-Za-z0-9/+=]{6,})/gi,
     (m, head, value) => (value.length >= 16 || /[0-9/+=]/.test(value) ? head + REDACTED : null)],
   // Authorization: Basic <base64>, and Authorization: Bearer <anything of 6 or more> (any case). Base64 is never one plain word.
-  [/\b(Authorization["']?\s*[:=]\s*["']?(?:(Basic)|Bearer)\s+)([A-Za-z0-9+/=._~-]{6,})/gi,
-    (m, head, basic, value) => (basic && /^[A-Z]?[a-z]+$/.test(value) ? null : head + REDACTED)],
+  [/\b(Authorization["']?\s*[:=]\s*["']?(?:(Basic)|Bearer)\s+)([A-Za-z0-9+/=._~-]{6,})(?![A-Za-z0-9+/=._~(<{$-])/gi,
+    (m, head, basic, value) => ((basic ? /^[A-Z]?[a-z]+$/.test(value) : isBearerProse(value)) ? null : head + REDACTED)],
   // curl -u user:password, curl -sSu user:password, curl --user user:password
   [/(\s)(-[A-Za-z]*u|--user)([ \t]+|=)("[^"\n]+"|'[^'\n]+'|[^\s"']+)/g, (m, space, flag, sep, credentials, offset, str) => {
-    if (!/\bcurl\b/.test(str.slice(commandStart(str, offset), offset))) return null;       // -u means other things for other programs
+    if (!/\bcurl\b/.test(commandBefore(str, offset))) return null;       // -u means other things for other programs
     const user = unquote(credentials);
     const colon = user.indexOf(':');
     if (colon < 0 || colon === user.length - 1) return null;                               // no password given: curl asks for it
@@ -116,7 +124,7 @@ const RULES = [
   // scheme://user:password@host
   [/\b([A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/)([^\s/?#@:"'<>]*):([^\s/?#@"'<>]+)@/g,
     (m, scheme, user, password) => (REFERENCE_RE.test(password) ? null : `${scheme}${REDACTED}@`)],
-  [/\b(AccountKey|SharedAccessKey)=([A-Za-z0-9+/=]{16,})/gi, (m, name) => `${name}=${REDACTED}`],
+  [/\b(AccountKey|SharedAccessKey)=([A-Za-z0-9+/=]{6,})/gi, (m, name) => `${name}=${REDACTED}`],
   // --password=hunter2, --client-secret=hunter2 (any prefix before the secret word when there is an =) ...
   [new RegExp(`(?<![A-Za-z0-9-])(--(?:[a-z][a-z0-9]*-)*(?:password|passwd|token|secret|api-key)=)(?!${REFERENCE})${FLAG_VALUE}`, 'g'),
     (m, head, value) => (isPlaceholder(value) ? null : head + REDACTED)],

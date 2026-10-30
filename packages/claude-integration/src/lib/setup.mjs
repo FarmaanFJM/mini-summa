@@ -4,7 +4,10 @@ import path from 'node:path';
 export const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PermissionRequest', 'PreToolUse', 'PostToolUse',
   'Notification', 'Stop', 'StopFailure', 'SessionEnd'];
 
-const FORBIDDEN_IN_PS = /["`$\r\n]/;
+// A path is written inside double quotes, so a character that ends such a string or is expanded in it must not occur: a double
+// quote, the backtick, $, a line break, and the typographic quotes U+2018 to U+201E, which PowerShell reads as quotes too
+// (docs/CHANGES-FROM-POC.md, change 11).
+const FORBIDDEN_IN_PS = /["`$\r\n\u2018-\u201e]/;
 
 // handler, event and env are not paths but they are put on the command line too, so they get the same care
 // (docs/CHANGES-FROM-POC.md, change 3). A token is refused if it holds a character that could end a quoted string or be

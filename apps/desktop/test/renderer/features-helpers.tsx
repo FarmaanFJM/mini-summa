@@ -57,3 +57,13 @@ export const textOf = (node: Element | null | undefined): string => (node?.textC
 export function callsTo(spy: { mock: { calls: unknown[][] } }, name: string): unknown[] {
   return spy.mock.calls.filter((c) => c[0] === name).map((c) => c[1]);
 }
+
+/** The terms and descriptions of a definition list, as { term: description } in the text a person reads. */
+export function factsOf(list: Element | null): Record<string, string> {
+  const out: Record<string, string> = {};
+  list?.querySelectorAll('dt').forEach((dt) => {
+    const dd = dt.nextElementSibling;
+    if (dd) out[textOf(dt)] = textOf(dd);
+  });
+  return out;
+}

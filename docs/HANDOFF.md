@@ -12,7 +12,9 @@ This page states exactly what Mini-Summa automates and what stays in your hands.
    Managed sessions are bound to their project when Mini-Summa starts them; other sessions are matched by their
    working directory or assigned by you.
 3. **Storage.** The complete final message is stored locally. Credential-like strings are replaced by `[REDACTED]` when
-   the message is captured, and the report tells you how many were hidden. Nothing else is shortened or rewritten.
+   the message is captured, and the report tells you how many were hidden (including zero). Nothing else is shortened or
+   rewritten. Redaction recognises the usual shapes of keys, tokens, private keys, passwords and credentials in URLs; it is
+   pattern based, so read a report before you paste it somewhere you do not trust.
 4. **Destination.** Mini-Summa takes the ChatGPT conversation you mapped: the conversation bound to that session, else
    the project's preferred conversation, else the project's only conversation. The choice is **frozen into the delivery
    record**. It does not follow whichever tab or project is on screen, and changing the preferred conversation later does

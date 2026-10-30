@@ -9,10 +9,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '@minisumma/storage';
 import { createEventBus } from '../../src/bus.ts';
 import { systemClock } from '../../src/contracts.ts';
+import { createProjection } from '../../src/claude/projection.ts';
+import { createRawStore } from '../../src/claude/rawStore.ts';
 import { createFakeManaged, createFakeProjects, createFakeSettings } from './helpers/observer-fakes.ts';
 import { keyOf, makeHarness } from './helpers/observer-harness.ts';
 import type { Harness } from './helpers/observer-harness.ts';
-import { S1, S2, hookEntry, hookPayload, isoAt, writeSpoolRecord } from './helpers/observer-hook.ts';
+import { S1, S2, discoveryEntry, hookEntry, hookPayload, isoAt, writeSpoolRecord } from './helpers/observer-hook.ts';
 
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => { for (const c of cleanups.splice(0).reverse()) await c(); });
@@ -241,6 +243,23 @@ describe('the open request is forgotten when the session stops waiting', () => {
     expect(h.sessions.currentPermission(K1)).toBeNull();
   });
 
+  it('in a new generation that discovery opened while the state carried over, so nothing else reset the request', async () => {
+    const h = await harness();
+    h.projects.add({ id: 'p1', name: 'Proj', roots: [{ path: '/w/proj' }] });
+    await h.sessions.flush();
+    h.managed.seed({ key: K1, projectId: 'p1' }, true);
+    const listing = (n: number, pid: number) => discoveryEntry({ n, sessions: [{ kind: 'interactive', cwd: '/w/proj', sessionId: S1, pid, startedAt: 1_700_000_000_000 + pid, status: 'busy' }] });
+    await h.feed([listing(1, 100), ev(2, 'UserPromptSubmit', { prompt_id: 'p' }), permission(3, 'ls')]);
+    expect(h.view(K1)).toMatchObject({ generation: 1, state: 'needs_permission' });
+    expect(h.sessions.currentPermission(K1)?.correlationKey).toBe(key(3));
+
+    await h.feed([listing(4, 200)]); // a different process now serves this session id; it is still busy, not "idle"
+    expect(h.view(K1)).toMatchObject({ generation: 2, state: 'needs_permission' });
+    expect(h.sessions.currentPermission(K1)).toBeNull();
+    expect(await h.sessions.answerPermission(K1, 'approve', 2, key(3))).toEqual({ ok: false, code: 'state_not_allowed', problem: STALE });
+    expect(h.managed.keys).toEqual([]);
+  });
+
   it('in a new generation of the session, whose first request has its own key', async () => {
     const h = await harness();
     await started(h);
@@ -292,9 +311,18 @@ describe('a terminal that was started again', () => {
     expect(h.view(K1)).toMatchObject({ state: 'unknown', stateLabel: 'Starting' });
     expect(h.sessions.currentPermission(K1)).toBeNull();
 
-    await h.feed([ev(5, 'SessionStart', { source: 'resume' }), permission(6, 'echo new')]);
+    // The new process makes itself heard with a hook that moves neither the state nor the generation. Starting is over and the
+    // session still reads needs_permission, but request 4 came out of the old process's spool file: it is not what is open.
+    await h.feed([ev(5, 'Notification', { prompt_id: 'p', notification_type: 'permission_prompt', message: 'Claude needs your permission' })]);
+    expect(h.view(K1).state).toBe('needs_permission');
+    expect(h.view(K1).stateLabel).not.toBe('Starting');
+    expect(h.sessions.currentPermission(K1)).toBeNull();
+    expect(await h.sessions.answerPermission(K1, 'approve', 1, key(4))).toEqual({ ok: false, code: 'state_not_allowed', problem: STALE });
+    expect(h.managed.keys).toEqual([]);
+
+    await h.feed([ev(6, 'SessionStart', { source: 'resume' }), permission(7, 'echo new')]);
     expect(h.view(K1)).toMatchObject({ generation: 2, state: 'needs_permission' });
-    expect(h.sessions.currentPermission(K1)).toEqual({ correlationKey: key(6), summary: 'Bash: echo new' });
+    expect(h.sessions.currentPermission(K1)).toEqual({ correlationKey: key(7), summary: 'Bash: echo new' });
   });
 });
 
@@ -326,5 +354,77 @@ describe('after the app restarted', () => {
     expect(b.view(K1).state).toBe('needs_permission'); // (last known)
     expect(b.sessions.currentPermission(K1)).toBeNull();
     expect(await b.sessions.answerPermission(K1, 'approve', 1, key(4))).toMatchObject({ ok: false, code: 'not_live' });
+  });
+});
+
+describe('the projection remembers one open request per session', () => {
+  function setup() {
+    const db = openDatabase(':memory:').db;
+    cleanups.push(() => db.close());
+    const projects = createFakeProjects({ bus: createEventBus(), db });
+    projects.add({ id: 'p1', name: 'Proj', roots: [{ path: '/w/proj' }] });
+    const rawStore = createRawStore(db, systemClock);
+    const projection = createProjection({ db, rawStore, projects, hostEnv: 'posix', clock: systemClock });
+    const append = (...entries: Parameters<typeof rawStore.appendRaw>[0][]) => {
+      for (const e of entries) rawStore.appendRaw(e);
+      return projection.applyNew();
+    };
+    return { projection, append };
+  }
+  const opening = () => [ev(1, 'SessionStart', { source: 'startup' }), ev(2, 'UserPromptSubmit', { prompt_id: 'p' })];
+
+  it('reports every accepted request in log order and keeps the newest', () => {
+    const { projection, append } = setup();
+    const result = append(...opening(), permission(3, 'ls'), permission(4, 'pwd'));
+    expect(result.permissions.map((p) => [p.correlationKey, p.inputExcerpt, p.generation, p.replay])).toEqual([[key(3), 'ls', 1, false], [key(4), 'pwd', 1, false]]);
+    expect(projection.currentPermission(K1)).toMatchObject({ transportId: 't-posix-4', info: { correlationKey: key(4), toolName: 'Bash', inputExcerpt: 'pwd' } });
+    expect(projection.currentPermission(K2)).toBeNull();
+  });
+
+  it('flags what a replay produces', () => {
+    const { projection, append } = setup();
+    expect(append(...opening(), permission(3, 'ls')).permissions.map((p) => p.replay)).toEqual([false]);
+    const { projection: second, append: appendSecond } = setup();
+    appendSecond(...opening());
+    expect(second.applyNew({ replay: true }).permissions).toEqual([]);
+    expect(projection.currentPermission(K1)?.info.replay).toBe(false);
+  });
+
+  it('rebuilds to the same answer, all of it replayed', async () => {
+    const { projection, append } = setup();
+    append(...opening(), permission(3, 'ls'), permission(4, 'pwd'));
+    const before = projection.currentPermission(K1);
+    const rebuilt = await projection.rebuild();
+    expect(rebuilt.permissions.map((p) => [p.correlationKey, p.replay])).toEqual([[key(3), true], [key(4), true]]);
+    expect(projection.currentPermission(K1)).toEqual({ ...before, info: { ...before!.info, replay: true } });
+  });
+
+  it.each([
+    ['the tool ran', ev(4, 'PostToolUse', { prompt_id: 'p', tool_use_id: 'u1' })],
+    ['a report arrived (the state changes without a transition of its own)', ev(4, 'Stop', { prompt_id: 'p', last_assistant_message: 'Done.\n\n<!-- mini-summa:report status=complete task="T" -->\n' })],
+    ['the session ended', ev(4, 'SessionEnd', { reason: 'other' })],
+  ])('forgets it when %s', (_name, leave) => {
+    const { projection, append } = setup();
+    append(...opening(), permission(3, 'ls'));
+    expect(projection.currentPermission(K1)).not.toBeNull();
+    append(leave);
+    expect(projection.currentPermission(K1)).toBeNull();
+  });
+
+  it('forgets it in a new generation even when the state carried over (discovery opened it)', () => {
+    const { projection, append } = setup();
+    const listing = (n: number, pid: number) => discoveryEntry({ n, sessions: [{ kind: 'interactive', cwd: '/w/proj', sessionId: S1, pid, startedAt: 1_700_000_000_000 + pid, status: 'busy' }] });
+    append(listing(1, 100), ev(2, 'UserPromptSubmit', { prompt_id: 'p' }), permission(3, 'ls'));
+    expect(projection.currentPermission(K1)?.info.generation).toBe(1);
+    append(listing(4, 200));
+    expect(projection.session(K1)).toMatchObject({ state: 'needs_permission', gen: { n: 2 } });
+    expect(projection.currentPermission(K1)).toBeNull();
+  });
+
+  it('lists every UserPromptSubmit hook with the time it ran', () => {
+    const { projection, append } = setup();
+    const result = append(ev(1, 'SessionStart', { source: 'startup' }), ev(2, 'UserPromptSubmit', { prompt_id: 'p' }), ev(3, 'UserPromptSubmit', { prompt_id: 'q' }, S2));
+    expect(result.submissions).toEqual([{ sessionKey: K1, at: isoAt(2), replay: false }, { sessionKey: K2, at: isoAt(3), replay: false }]);
+    expect(projection.applyNew().submissions).toEqual([]);
   });
 });

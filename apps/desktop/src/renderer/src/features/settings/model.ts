@@ -271,3 +271,8 @@ export const RETENTION_FIELDS = [
   { key: 'notificationsDays', label: 'Notification records', hint: 'The record of what each notification became.' },
   { key: 'reportsDays', label: 'Reports and handoffs', hint: 'Only finished handoffs, and the reports behind them. Anything still open stays.' },
 ] as const satisfies readonly { key: keyof RetentionSettings; label: string; hint: string }[];
+
+const PLATFORM_NAMES: Record<string, string> = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' };
+
+/** The operating system in the words people use. Anything unknown is shown as the host reports it. */
+export const platformWords = (platform: string): string => PLATFORM_NAMES[platform] ?? platform;

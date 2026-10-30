@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApi, useApp } from '../../app/runtime';
 import { errorText } from '../reports/support';
 
-export type SaveState = { state: 'idle' | 'saving' | 'saved' } | { state: 'failed'; error: string };
+export type SaveState = { state: 'idle' } | { state: 'saving' } | { state: 'saved' } | { state: 'failed'; error: string };
 
 export type TrackResult<T> = { ok: true; value: T } | { ok: false; error: string };
 

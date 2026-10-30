@@ -619,11 +619,32 @@ export function createFeatureHandlers(server: DemoServer): HandlerMap {
       const body = i.body as { name?: string; trusted?: boolean; scopes?: Scope[] };
       const d = data().devices.find((x) => x.id === i.params.id);
       if (!d) throw notFound('That device');
+      if (d.revokedAt !== null) throw new ApiError(409, 'device_revoked', 'This device was revoked, so it cannot be changed. Pair it again to use it.');
+      if (body.scopes !== undefined && d.platform === 'extension' && (body.scopes.length !== 1 || body.scopes[0] !== 'extension')) {
+        throw new ApiError(400, 'scope_not_allowed', 'The browser extension always has the "extension" permission and nothing else. Leave its permissions as they are.');
+      }
       if (body.name !== undefined) d.name = body.name;
       if (body.trusted !== undefined) d.trusted = body.trusted;
       if (body.scopes !== undefined) d.scopes = body.scopes;
       emit({ type: 'device.upserted', device: d });
       return d;
+    }),
+    // As the real core: a revoked device stays in the list marked as revoked, and what it still had waiting is dropped.
+    'devices.revoke': guarded('devices.revoke', (i) => {
+      const d = data().devices.find((x) => x.id === i.params.id);
+      if (!d) throw notFound('That device');
+      if (d.revokedAt === null) {
+        Object.assign(d, { revokedAt: nowIso(), pushRegistered: false });
+        for (const a of data().actions) {
+          if (a.status === 'pending' && a.createdBy.kind === 'device' && a.createdBy.deviceId === d.id) {
+            Object.assign(a, { status: 'rejected', decidedAt: nowIso(), decidedBy: { kind: 'system' } as ActorRef, failure: 'The device that asked was removed.' });
+            emit({ type: 'action.upserted', action: a });
+          }
+        }
+        emit({ type: 'device.upserted', device: d });
+        emitCounts();
+      }
+      return { ok: true as const };
     }),
 
     // ----- push and tailscale -----

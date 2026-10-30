@@ -324,7 +324,11 @@ export function createTailscaleService(deps: TailscaleDeps): TailscaleServiceImp
     writeRecord({ port, createdAt: nowIso() });
     const run = await runCli(['serve', '--bg', `--https=${HTTPS_PORT}`, `http://127.0.0.1:${port}`]);
     if (!run.ok) {
-      writeRecord(previous);
+      // A command that failed outright made no entry, so the record goes back to what it was. One that was cut off (time
+      // limit, shutdown) may or may not have made it: with nothing recorded before, keep the record so that a later
+      // cleanup can find out, because cleanup only ever acts on an entry that really points at the recorded port.
+      const unknownOutcome = run.timedOut || run.errno === 'ECANCELED';
+      if (!(unknownOutcome && previous === null)) writeRecord(previous);
       const output = `${run.stderr}\n${run.stdout}`;
       // A timeout usually means Tailscale is waiting for a tailnet admin to enable Serve and printed where before it
       // blocked, so the partial output is read first.

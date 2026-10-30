@@ -1,27 +1,60 @@
-// Extension point: the second UI worker replaces this placeholder with the settings sections. It shows how a view takes
-// over the sidebar (principle 14): <SidebarContent> swaps the project list for its own content and gives a back chevron.
+// Settings. The sections replace the sidebar's content (with a back chevron), so there is still exactly one sidebar (P14);
+// the page shows one section at a time and the route remembers which, so a link or a notification can open a section directly.
+import '../reports/shared.css';
+import './settings.css';
+import type { ComponentType } from 'react';
 import { useRoute } from '../../app/runtime';
-import { EmptyState } from '../../ui';
 import { SidebarContent } from '../shell/SidebarSlot';
+import { AboutSection } from './AboutSection';
+import { ChatGptSection } from './ChatGptSection';
+import { ClaudeCodeSection } from './ClaudeCodeSection';
+import { DataSection } from './DataSection';
+import { ExtensionSection } from './ExtensionSection';
+import { HooksSection } from './HooksSection';
+import { resolveSection, SECTIONS } from './model';
+import type { SectionId } from './model';
+import { NotificationsSection } from './NotificationsSection';
+import { PhoneSection } from './PhoneSection';
+import { PushSection } from './PushSection';
+import { RemoteAccessSection } from './RemoteAccessSection';
+import { ReviewSection } from './ReviewSection';
 
-const SECTIONS = ['ChatGPT', 'Sessions', 'Notifications', 'Phone', 'Data'];
+const BODY: Record<SectionId, ComponentType> = {
+  chatgpt: ChatGptSection,
+  extension: ExtensionSection,
+  'claude-code': ClaudeCodeSection,
+  hooks: HooksSection,
+  notifications: NotificationsSection,
+  phones: PhoneSection,
+  remote: RemoteAccessSection,
+  push: PushSection,
+  review: ReviewSection,
+  data: DataSection,
+  about: AboutSection,
+};
 
 export default function SettingsView() {
   const route = useRoute();
+  const current = resolveSection(route.section);
+  const Body = BODY[current];
+  const label = SECTIONS.find((s) => s.id === current)?.label ?? 'Settings';
+
   return (
-    <section className="ms-view" aria-label="Settings">
+    <section className="ms-view ms-set-view" aria-label="Settings">
       <SidebarContent title="Settings" onBack={() => route.back()}>
-        <ul className="ms-sidebar__sections">
-          {SECTIONS.map((name) => (
-            <li key={name}>
-              <button type="button" className="sm-nav-item" aria-current={route.section === name ? 'true' : undefined} onClick={() => route.go({ section: name })}>{name}</button>
-            </li>
-          ))}
-        </ul>
+        <nav aria-label="Settings sections">
+          <ul className="ms-sidebar__sections">
+            {SECTIONS.map((s) => (
+              <li key={s.id}>
+                <button type="button" className="sm-nav-item" aria-current={s.id === current ? 'true' : undefined} onClick={() => route.go({ section: s.id })}>{s.label}</button>
+              </li>
+            ))}
+          </ul>
+        </nav>
       </SidebarContent>
-      <header className="ms-view__head"><h1 className="ms-view__title">{route.section ?? 'Settings'}</h1></header>
-      <div className="ms-view__body">
-        <EmptyState>Settings are not built yet.</EmptyState>
+      <header className="ms-view__head"><h1 className="ms-view__title">{label}</h1></header>
+      <div className="ms-view__body" key={current}>
+        <Body />
       </div>
     </section>
   );

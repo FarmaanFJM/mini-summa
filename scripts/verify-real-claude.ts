@@ -303,8 +303,59 @@ async function main(): Promise<void> {
         expect(done.every((r) => r.projectId === project.id && r.sessionKey === key), 'a report was attributed to the wrong place');
         return `${done.length} reports under the project`;
       });
+
+      if (sawDialog) {
+        // Reject path: Escape closes the dialog and Claude fires no hook for it, so the file must not appear and the
+        // session must still take the next prompt.
+        await until('the session to be ready for the next prompt', async () => {
+          const s = await client.call('sessions.get', { params: { key } });
+          return ['turn_ended', 'idle', 'report_ready', 'waiting_for_you'].includes(s.state) ? s : null;
+        });
+        const known = new Set((await client.call('actions.list', { query: { status: 'all' } })).map((a) => a.id));
+        await sendLine('Create a file named nope.txt in the current directory containing the word no.');
+        await check('permission: rejecting from the core sends the reject keystroke, nothing is created, and the item is closed', async () => {
+          const a = await until('a new pending permission action', async () => (await client.call('actions.list', { query: { status: 'pending' } })).find((x) => x.kind === 'permission' && x.sessionKey === key && !known.has(x.id)));
+          await client.call('actions.reject', { params: { id: a.id }, body: {} });
+          await sleep(5000);
+          expect(!existsSync(join(repoDir, 'nope.txt')), 'the file was created although the request was rejected');
+          const closed = (await client.call('actions.list', { query: { status: 'all' } })).find((x) => x.id === a.id);
+          expect(closed && closed.status !== 'pending', `the item is still ${closed?.status}`);
+          const s = await client.call('sessions.get', { params: { key } });
+          return `item ${closed!.status}; session state afterwards: ${s.state} (${s.stateEvidence})`;
+        });
+        await check('permission: after a reject the session still takes the next prompt and leaves the permission state', async () => {
+          await sendLine('Reply with the single word ok.');
+          const s = await until('the session to move past the rejected dialog', async () => {
+            const x = await client.call('sessions.get', { params: { key } });
+            return x.state !== 'needs_permission' && ['turn_ended', 'idle', 'report_ready', 'waiting_for_you'].includes(x.state) ? x : null;
+          });
+          return `state ${s.state} (${s.stateEvidence})`;
+        });
+      }
     } else if (live) {
       notTested('permission dialog and approval keystroke', 'skipped with --skip-permission');
+    }
+
+    if (live) {
+      // A phone's prompt: queued by a paired device, typed only after the desktop approves exactly that text.
+      await check('phone prompt: a paired phone queues text, the desktop approves it, and the real Claude answers that text', async () => {
+        await until('the session to be ready for a prompt', async () => {
+          const s = await client.call('sessions.get', { params: { key } });
+          return ['turn_ended', 'idle', 'report_ready', 'waiting_for_you'].includes(s.state) ? s : null;
+        });
+        const offer = await client.call('pairing.createOffer', { body: { scopes: ['read', 'prompt'], kind: 'phone' } });
+        const paired = await client.call('pairing.redeem', { body: { offerId: offer.id, code: offer.code, deviceName: 'Verification phone', platform: 'android' } });
+        const phone = new MiniSummaClient({ baseUrl: core.baseUrl, token: paired.token, clientName: 'verify-phone' });
+        const queued = await phone.call('actions.create', { body: { sessionKey: key, text: 'Reply with exactly this one word and nothing else: PHONEOK' } });
+        expect(queued.status === 'pending', `the prompt is ${queued.status} before anyone approved it`);
+        await sleep(3000);
+        const still = await client.call('candidates.list', { query: { projectId: project.id } });
+        expect(!still.some((c) => c.body.includes('PHONEOK')), 'Claude answered before the desktop approved');
+        await client.call('actions.approve', { params: { id: queued.id } });
+        const answer = await until('Claude\'s answer to the phone prompt', async () => (await client.call('candidates.list', { query: { projectId: project.id } })).find((c) => c.body.includes('PHONEOK')));
+        expect(answer.sessionKey === key, 'the answer belongs to another session');
+        return `answer "${answer.body.trim().slice(0, 40)}"`;
+      });
     }
 
     // Resume: the same session id comes back as a managed session in a new generation.

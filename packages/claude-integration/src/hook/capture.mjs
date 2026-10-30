@@ -40,7 +40,7 @@ function logError(err) {
     const spool = args.spool ?? process.env.MINI_SUMMA_SPOOL;
     if (!spool) return;
     fs.appendFileSync(path.join(path.dirname(spool), 'capture-errors.log'),
-      `${new Date().toISOString()} ${String(err && err.stack || err).slice(0, 2000)}\n`);
+      `${new Date().toISOString()} ${String(err && err.stack || err).slice(0, 2000)}\n`, { mode: 0o600 });
   } catch { /* nothing else we can do */ }
 }
 
@@ -96,7 +96,7 @@ function main() {
     payload,
   };
 
-  fs.mkdirSync(spool, { recursive: true });
+  ensureSpoolDir(spool);
   const name = `${mono.toString().padStart(20, '0')}-${id}.json`;
   const tmp = path.join(spool, `.tmp-${id}`);
   const fd = fs.openSync(tmp, 'wx', 0o600);
@@ -109,6 +109,35 @@ function main() {
   if (payload.hook_event_name === 'SessionStart' && (args.registry ?? process.env.MINI_SUMMA_REGISTRY)) {
     emitSessionStartContext(payload);
   }
+}
+
+// The spool holds hook payloads: prompts, file contents, command output. Only the user may enter it (docs/CHANGES-FROM-POC.md,
+// change 10). Directories this creates, parents included, are 0700; the files in it are 0600. The mode is not applied on Windows.
+function ensureSpoolDir(spool) {
+  fs.mkdirSync(spool, { recursive: true, mode: 0o700 });
+  tightenSpoolDir(spool);
+}
+
+// A spool directory made by an earlier version has the default mode (0755). It is tightened when it is plainly ours: a real
+// directory (not a link), owned by this user, group- or world-accessible, holding only what the hook and the ingestor put there
+// (pending files, temp files, done/, quarantine/). The directory somebody pointed --spool at by mistake is left as it is.
+// Best effort: the capture must not fail over this, and the common case (already private) costs one lstat.
+const OURS = /^(?:\d+-[0-9a-f-]{36}\.json|\.tmp-[0-9a-f-]{36}|done|quarantine)$/;
+function tightenSpoolDir(spool) {
+  if (process.platform === 'win32') return;
+  try {
+    const st = fs.lstatSync(spool);
+    if (!st.isDirectory() || (st.mode & 0o077) === 0) return;
+    if (typeof process.getuid === 'function' && st.uid !== process.getuid()) return;
+    const dir = fs.opendirSync(spool);
+    try {
+      for (let seen = 0, entry; (entry = dir.readSync()) !== null; seen++) {
+        if (!OURS.test(entry.name)) return;
+        if (seen >= 256) break; // a spool this full is certainly ours; do not list it all on every hook
+      }
+    } finally { dir.closeSync(); }
+    fs.chmodSync(spool, 0o700);
+  } catch { /* leave the mode as it was */ }
 }
 
 function emitSessionStartContext(payload) {
