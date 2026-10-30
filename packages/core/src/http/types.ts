@@ -49,7 +49,8 @@ export interface HttpTuning {
 
 export const DEFAULT_TUNING: HttpTuning = {
   helloTimeoutMs: 5_000,
-  bridgeTimeoutMs: 5_000,
+  // A tab the extension has to create can take up to 15 s to finish loading (its own limit); leave room for the answer.
+  bridgeTimeoutMs: 18_000,
   maxBufferedBytes: 8 * 1024 * 1024,
   maxBodyBytes: 1024 * 1024,
   redeemPerMinute: 10,

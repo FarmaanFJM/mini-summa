@@ -3,12 +3,13 @@ import type { ChatGptViewState, NavigationTarget, Rect, SessionKey } from '@mini
 import { render, screen, waitFor } from '@testing-library/react';
 import type { RenderResult } from '@testing-library/react';
 import { vi } from 'vitest';
-import { App } from '../../src/renderer/src/app/App';
 import type { RendererNative } from '../../src/renderer/src/app/native';
-import { createRuntime } from '../../src/renderer/src/app/runtime';
+import { createRuntime, RuntimeProvider } from '../../src/renderer/src/app/runtime';
 import type { Runtime } from '../../src/renderer/src/app/runtime';
 import { createMemoryStorage } from '../../src/renderer/src/app/storage';
 import type { KeyValueStorage } from '../../src/renderer/src/app/storage';
+import { Shell } from '../../src/renderer/src/features/shell/Shell';
+import { Toaster } from '../../src/renderer/src/ui';
 import { createDemoClient } from '../../src/renderer/src/dev/demoClient';
 import type { DemoClient, DemoClientOptions } from '../../src/renderer/src/dev/demoClient';
 import type { TerminalAdapter } from '../../src/renderer/src/terminals/terminals';
@@ -162,7 +163,8 @@ export async function renderApp(options: HarnessOptions = {}): Promise<RenderedA
   const container = document.createElement('div');
   container.id = 'root';
   document.body.appendChild(container);
-  const view = render(<App runtime={harness.runtime} />, { container });
+  // The app without the onboarding gate: that gate belongs to the feature worker and has its own tests.
+  const view = render(<RuntimeProvider runtime={harness.runtime}><Shell /><Toaster /></RuntimeProvider>, { container });
   if (options.startLoader !== false && (options.scenario ?? 'normal') === 'normal') {
     await screen.findByRole('button', { name: /^GitManager/ });
   }

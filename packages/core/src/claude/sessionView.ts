@@ -205,7 +205,7 @@ export function buildSessionView(i: SessionViewInput): SessionView | null {
   }
 
   // ---- state ----
-  const starting = m ? (i.starting ?? isStarting(m, f)) : false;
+  const starting = m?.status === 'running' ? (i.starting ?? isStarting(m, f)) : false; // only a running terminal can be starting
   const reducerState: SessionState = r?.state ?? 'unknown';
   let state: SessionState = reducerState;
   let stateLabel: string;

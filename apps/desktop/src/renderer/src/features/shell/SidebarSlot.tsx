@@ -1,6 +1,6 @@
 // A view can take over the sidebar instead of opening a second one beside it (P14): it renders <SidebarContent> and the
 // shell swaps its project list for that content, with a back chevron at the top.
-import { createContext, useContext, useEffect } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { IconButton } from '../../ui';
@@ -13,6 +13,18 @@ export interface SidebarSlotValue {
 }
 
 export const SidebarSlotContext = createContext<SidebarSlotValue | null>(null);
+
+/**
+ * The shell's side of the slot: it owns the element, counts how many views have claimed it, and says whether the project
+ * list should step aside. `<Sidebar replaced={host.replaced} slotRef={host.setSlot} />` plus a provider with `host.value`.
+ */
+export function useSidebarSlotHost(): { value: SidebarSlotValue; replaced: boolean; setSlot: (el: HTMLElement | null) => void } {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const [claims, setClaims] = useState(0);
+  const claim = useCallback(() => { setClaims((n) => n + 1); return () => setClaims((n) => n - 1); }, []);
+  const value = useMemo(() => ({ slot, claim }), [slot, claim]);
+  return { value, replaced: claims > 0, setSlot };
+}
 
 export interface SidebarContentProps {
   /** Heading shown beside the back chevron, for example "Settings". */

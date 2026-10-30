@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { parseSessionKey } from '@minisumma/shared';
 import type { SessionKey, SessionView } from '@minisumma/shared';
 import { CoreError } from '../../src/errors.ts';
 import type { ClaudeEventHandlers } from '../../src/contracts.ts';
@@ -692,6 +693,147 @@ describe('answerPermission', () => {
     await h.feed([ev(5, 'PermissionRequest', { prompt_id: 'q', tool_name: 'Bash', tool_input: { command: 'ls' } }, S2)]);
     expect(await h.sessions.answerPermission(K2, 'approve', null)).toMatchObject({ ok: false, code: 'not_managed' });
     expect(h.managed.keys.length).toBe(1);
+  });
+});
+
+describe('a terminal that has not shown a sign of life yet (startup screens, the trust dialog)', () => {
+  const PROBLEM = 'Claude has not finished starting. If it is asking whether you trust this folder, answer in the terminal.';
+  const desktop = { kind: 'desktop' } as const;
+  // Even a caller that lists 'unknown' among the states it accepts cannot open this door.
+  const ALLOWED = ['idle', 'turn_ended', 'waiting_for_you', 'report_ready', 'unknown'] as never;
+  const send = (h: Harness, key: SessionKey, expectGeneration: number | null) =>
+    h.sessions.typeInto(key, { text: 'go on', submit: true, expectGeneration, allowedStates: ALLOWED });
+  const expectRefused = async (h: Harness, key: SessionKey, generation: number | null): Promise<void> => {
+    expect(await send(h, key, generation)).toEqual({ ok: false, code: 'state_not_allowed', problem: PROBLEM });
+    expect(await h.sessions.answerPermission(key, 'approve', generation)).toEqual({ ok: false, code: 'state_not_allowed', problem: PROBLEM });
+    expect(h.sessions.targetCheck(key, generation)).toMatchObject({ managed: true, live: true, state: 'unknown', problem: PROBLEM });
+    expect(h.managed.typed).toEqual([]);
+    expect(h.managed.keys).toEqual([]);
+  };
+
+  /** A session that ran, did a task and ended; its terminal is gone and it can be resumed. */
+  async function endedSession(h: Harness): Promise<void> {
+    await addProject(h);
+    h.managed.seed({ key: K1, projectId: 'p1', cwd: '/w/proj' }, true);
+    await h.feed([
+      ev(1, 'SessionStart', { source: 'startup' }), ev(2, 'UserPromptSubmit', { prompt_id: 'a' }),
+      ev(3, 'Stop', { prompt_id: 'a', last_assistant_message: 'done' }), ev(4, 'SessionEnd', { reason: 'prompt_input_exit' }),
+    ]);
+    h.managed.change(K1, { status: 'exited', pid: null, exitedAt: '2026-01-01T10:00:09.000Z', exitCode: 0 });
+    expect(h.view(K1)).toMatchObject({ availability: 'resumable', resumable: true, state: 'ended' });
+  }
+
+  it('a brand new terminal is "Starting" until its first hook; text, answers and the check are refused meanwhile', async () => {
+    const h = await harness();
+    await addProject(h);
+    const started = await h.sessions.start('p1', { mode: 'new' }, desktop);
+    const key = started.key;
+    expect(started).toMatchObject({ origin: 'managed', availability: 'live', state: 'unknown', stateLabel: 'Starting', stateEvidence: 'managed:pty', attention: null, generation: 1, resumable: false });
+    expect(h.sessions.targetCheck(key, 1)).toEqual({ managed: true, live: true, generation: 1, generationMatches: true, state: 'unknown', problem: PROBLEM });
+    await expectRefused(h, key, 1);
+    await expectRefused(h, key, null);
+
+    // A person typing at the desktop terminal is never held back (that is where the trust dialog is answered).
+    expect(h.sessions.terminal.input(key, '\r')).toBe(true);
+    expect(h.managed.written).toEqual([{ key, data: '\r' }]);
+
+    // Claude is up: its SessionStart hook arrives, and the same checks now pass
+    await h.feed([ev(1, 'SessionStart', { source: 'startup' }, parseSessionKey(key)!.sessionId)]);
+    expect(h.view(key)).toMatchObject({ state: 'idle', stateLabel: 'Idle', stateEvidence: 'hook:SessionStart', generation: 1 });
+    expect(h.sessions.targetCheck(key, 1)).toEqual({ managed: true, live: true, generation: 1, generationMatches: true, state: 'idle', problem: null });
+    expect(await send(h, key, 1)).toEqual({ ok: true, submitted: true });
+  });
+
+  it('a resumed terminal shows nothing of its earlier process, and is refused until the new process says hello', async () => {
+    const h = await harness();
+    await endedSession(h);
+    const resumed = await h.sessions.start('p1', { mode: 'resume', resumeKey: K1 }, desktop);
+    expect(resumed).toMatchObject({
+      key: K1, origin: 'managed', availability: 'live', resumable: false, termination: null, state: 'unknown', stateLabel: 'Starting', stateEvidence: 'managed:pty',
+      attention: null, pid: 4321, generation: 1,
+    });
+    await expectRefused(h, K1, 1);
+    expect(h.sessions.terminal.input(K1, '\r')).toBe(true);
+
+    // the first hook of the new process: the reducer opens the new generation and the terminal may be used
+    await h.feed([ev(10, 'SessionStart', { source: 'resume' })]);
+    expect(h.view(K1)).toMatchObject({ state: 'idle', stateLabel: 'Idle', generation: 2, availability: 'live', stateEvidence: 'hook:SessionStart' });
+    expect(h.collected.derived.some((d) => d.kind === 'generation' && d.generation === 2 && d.sessionKey === K1)).toBe(true);
+    expect(await send(h, K1, 1)).toMatchObject({ ok: false, code: 'generation_changed' }); // a request made for the earlier process
+    expect(await send(h, K1, 2)).toEqual({ ok: true, submitted: true });
+    expect(h.managed.typed).toHaveLength(1);
+  });
+
+  it('does not show a permission prompt of the earlier process as this one\'s: the trust dialog is not a permission dialog', async () => {
+    const h = await harness();
+    await addProject(h);
+    h.managed.seed({ key: K1, projectId: 'p1' }, true);
+    await h.feed([ev(1, 'SessionStart', { source: 'startup' }), ev(2, 'UserPromptSubmit', { prompt_id: 'a' }), ev(3, 'PermissionRequest', { prompt_id: 'a', tool_name: 'Bash', tool_input: { command: 'ls' } })]);
+    expect(h.view(K1)).toMatchObject({ state: 'needs_permission', attention: { kind: 'permission' } });
+    // the app died with a prompt on screen: no SessionEnd, the terminal is gone
+    h.managed.change(K1, { status: 'disconnected', pid: null, prompted: true, exitReason: 'app_restart' });
+    expect(h.view(K1)).toMatchObject({ availability: 'disconnected', resumable: true, attention: null });
+
+    await h.sessions.start('p1', { mode: 'resume', resumeKey: K1 }, desktop);
+    expect(h.view(K1)).toMatchObject({ availability: 'live', state: 'unknown', stateLabel: 'Starting', attention: null });
+    // before the fix this answered a dialog that was not there: an Enter on "do you trust this folder?" (default: No, exit)
+    expect(await h.sessions.answerPermission(K1, 'approve', null)).toEqual({ ok: false, code: 'state_not_allowed', problem: PROBLEM });
+    expect(await h.sessions.answerPermission(K1, 'reject', 1)).toEqual({ ok: false, code: 'state_not_allowed', problem: PROBLEM });
+    expect(h.managed.keys).toEqual([]);
+  });
+
+  it('is decided by the order of the log, not by clocks: a hook stamped before the start (a lagging WSL clock) counts when it arrives after', async () => {
+    const h = await harness();
+    h.managed.seed({ key: K1, projectId: null }, true);
+    expect(h.view(K1).stateLabel).toBe('Starting');
+    await h.feed([ev(1, 'SessionStart', { source: 'startup' })]); // received_at 2026-01-01, long before the record's startedAt
+    expect(h.view(K1).startedAt! > h.collected.derived.find((d) => d.sessionKey === K1)!.at).toBe(true);
+    expect(h.view(K1)).toMatchObject({ state: 'idle', stateLabel: 'Idle' });
+    expect(await send(h, K1, 1)).toEqual({ ok: true, submitted: true });
+  });
+
+  it('is not fooled by hooks of the earlier process that were already in the log when the new run began', async () => {
+    const h = await harness();
+    await endedSession(h);
+    // the earlier process\'s last hooks, applied just before the resume
+    await h.feed([ev(5, 'Notification', { notification_type: 'idle_prompt', message: 'idle' })]);
+    await h.sessions.start('p1', { mode: 'resume', resumeKey: K1 }, desktop);
+    expect(h.view(K1).stateLabel).toBe('Starting');
+    await h.sessions.flush();
+    await h.sessions.flush();
+    expect(h.view(K1).stateLabel).toBe('Starting'); // polling again changes nothing: only a NEW hook does
+  });
+
+  it('a second resume starts over: the earlier run\'s hook does not make the next terminal look ready', async () => {
+    const h = await harness();
+    await endedSession(h);
+    await h.sessions.start('p1', { mode: 'resume', resumeKey: K1 }, desktop);
+    await h.feed([ev(10, 'SessionStart', { source: 'resume' }), ev(11, 'SessionEnd', { reason: 'prompt_input_exit' })]);
+    h.managed.change(K1, { status: 'exited', pid: null, exitedAt: '2026-01-01T10:00:20.000Z', exitCode: 0 });
+    expect(h.view(K1)).toMatchObject({ availability: 'resumable', generation: 2 });
+    await h.sessions.start('p1', { mode: 'resume', resumeKey: K1 }, desktop);
+    expect(h.view(K1)).toMatchObject({ availability: 'live', state: 'unknown', stateLabel: 'Starting', generation: 2 });
+    await expectRefused(h, K1, 2);
+    await h.feed([ev(20, 'SessionStart', { source: 'resume' })]);
+    expect(h.view(K1)).toMatchObject({ state: 'idle', generation: 3 });
+    expect(await send(h, K1, 3)).toMatchObject({ ok: true });
+  });
+
+  it('leaves observed sessions alone: only a terminal Mini-Summa started can be "starting"', async () => {
+    const h = await harness();
+    await h.feed([ev(1, 'SessionStart', { source: 'startup' }, S2)]);
+    expect(h.view(K2)).toMatchObject({ origin: 'external', state: 'idle', stateLabel: 'Idle' });
+    expect(h.sessions.targetCheck(K2, null).problem).toBe('Mini-Summa only types into sessions it started itself. This session is observed only.');
+  });
+
+  it('a terminal that stops while starting is simply not running any more', async () => {
+    const h = await harness();
+    await addProject(h);
+    const key = (await h.sessions.start('p1', { mode: 'new' }, desktop)).key;
+    h.managed.change(key, { status: 'exited', pid: null, exitedAt: 'E', exitCode: 1 });
+    expect(h.view(key)).toMatchObject({ availability: 'ended', state: 'ended' });
+    expect(h.sessions.targetCheck(key, null).problem).toBe('This session has ended.');
+    expect(await send(h, key, null)).toMatchObject({ ok: false, code: 'not_live' });
   });
 });
 

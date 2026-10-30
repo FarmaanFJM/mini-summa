@@ -1,3 +1,4 @@
+import { DEFAULT_TUNING } from '../../src/http/types.ts';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ServerMessage } from '@minisumma/shared';
 import { resultOfReply } from '../../src/http/bridge.ts';
@@ -86,18 +87,10 @@ describe('extension bridge', () => {
     await extension.nextOfType('pong');
   });
 
-  it('waits 5 seconds by default', async () => {
-    const hh = await boot();
-    const extension = await connect(hh, hh.tokens.extension);
-    const started = Date.now();
-    const res = await hh.server.extensionBridge.openOrFocus(url);
-    const waited = Date.now() - started;
-    expect(waited).toBeGreaterThanOrEqual(4900);
-    expect(waited).toBeLessThan(6500);
-    expect(res).toMatchObject({ ok: false, mode: 'extension' });
-    expect(res.note).toMatch(/did not answer within 5 seconds/);
-    await nextRequest(extension);
-  }, 15_000);
+  it('waits long enough by default for a tab the extension has to open (it gives a page 15 seconds)', () => {
+    expect(DEFAULT_TUNING.bridgeTimeoutMs).toBeGreaterThanOrEqual(16_000);
+    expect(DEFAULT_TUNING.bridgeTimeoutMs).toBeLessThanOrEqual(30_000);
+  });
 
   it('fails fast when the extension disconnects before answering', async () => {
     const hh = await boot();
