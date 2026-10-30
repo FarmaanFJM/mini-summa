@@ -12,6 +12,12 @@ const OTHER_HOSTS = ['https://example.org/', 'http://example.com/', 'https://www
 scenario('[X04] The test sandbox is closed: the app reaches the chatgpt.com stand-in and no other host', async () => {
   const h = await launchApp();
 
+  // The rules the app was started with: chatgpt.com goes to this machine, every other name is "not found", and no proxy is used.
+  const switches = await h.app.evaluate(({ app }) => ({ rules: app.commandLine.getSwitchValue('host-resolver-rules'), noProxy: app.commandLine.hasSwitch('no-proxy-server') }));
+  expect(switches.rules).toMatch(/MAP chatgpt\.com 127\.0\.0\.1:\d+/);
+  expect(switches.rules).toContain('MAP * ~NOTFOUND');
+  expect(switches.noProxy).toBe(true);
+
   // Every other host name fails to resolve, in both sessions, and nothing arrives at the stand-in for them.
   const attempts = await h.app.evaluate(async ({ session }, urls) => {
     const outcomes: Record<string, string> = {};
@@ -35,5 +41,5 @@ scenario('[X04] The test sandbox is closed: the app reaches the chatgpt.com stan
   }, url);
   expect(reached.status).toBe(200);
   expect(h.standIn.requests.map((r) => `${r.method} ${r.host}${r.path}`)).toEqual([`GET chatgpt.com/c/${uuidOf('x04')}`]);
-  evidence('X04', `${OTHER_HOSTS.length} other host names (example.org, example.com, google.com, three openai.com names) all failed with net::ERR_NAME_NOT_RESOLVED from both of the app's network sessions, and none of the ${OTHER_HOSTS.length * 2} attempts reached the stand-in; chatgpt.com answered with status ${reached.status} from the stand-in and was recorded as one GET. Host names only: an address typed as an IP number is not covered by host rules, and no test uses one`);
+  evidence('X04', `the app runs with host-resolver-rules "${switches.rules}" and no proxy; ${OTHER_HOSTS.length} other host names (example.org, example.com, google.com, three openai.com names) all failed with net::ERR_NAME_NOT_RESOLVED from both of the app's network sessions, and none of the ${OTHER_HOSTS.length * 2} attempts reached the stand-in; chatgpt.com answered with status ${reached.status} from the stand-in and was recorded as one GET. Host names only: an address typed as an IP number is not covered by host rules, and no test uses one`);
 });
