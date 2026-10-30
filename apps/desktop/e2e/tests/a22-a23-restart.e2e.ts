@@ -4,10 +4,10 @@
 import crypto from 'node:crypto';
 import { expect } from 'vitest';
 import type { Delivery, SessionView } from '@minisumma/shared';
-import { launchApp } from '../helpers/app.ts';
+import { launchApp, PREFERRED_CORE_PORT } from '../helpers/app.ts';
 import type { AppHandle } from '../helpers/app.ts';
 import { createProject, fullReport, latestDelivery, reportsOf, startSession, waitForSession } from '../helpers/core.ts';
-import { evidence } from '../helpers/evidence.ts';
+import { evidence, notTested } from '../helpers/evidence.ts';
 import { isRunning, liveSessionsOf, readReceived } from '../helpers/fake-claude.ts';
 import { finishTask } from '../helpers/flow.ts';
 import { chatgptView, notificationSpy, readClipboard, spyOnNotifications } from '../helpers/main-process.ts';
@@ -202,16 +202,20 @@ scenario('[A23] Pending reports persist after restart', async () => {
 
 // Not one of the 25 behaviours: the window's own memory. The route store keeps the selected project in the page's localStorage so
 // that "the app reopens where it was left" (see app/route.ts).
-scenario('[X02] The window reopens on the project that was selected when it was closed', async () => {
+scenario('[X02] The window reopens on the project that was selected when it was closed', async (ctx) => {
   const h = await launchApp();
   await createProject(h, 'Alpha');
   await createProject(h, 'Beta');
   await selectProject(h.page, 'Beta');
   const originBefore = new URL(h.page.url()).origin;
+  if (h.port !== PREFERRED_CORE_PORT) {
+    notTested(ctx, 'X02', `The core could not take its preferred port ${PREFERRED_CORE_PORT} (it listened on ${h.port}: something else on this machine holds it), so the window's origin cannot be expected to stay the same across a restart.`);
+  }
   expect((await h.quit()).code).toBe(0);
   const h2 = await launchApp({ sandbox: h.sandbox, standIn: h.standIn });
   const originAfter = new URL(h2.page.url()).origin;
+  expect(originAfter, 'the window must keep the same origin across a restart, because localStorage belongs to the origin').toBe(originBefore);
   const heading = await h2.page.getByRole('heading', { level: 1 }).first().innerText();
-  expect(heading, `reopened on "${heading}" instead of the project that was selected ("Beta"). The page origin was ${originBefore} and is now ${originAfter}: localStorage belongs to the origin, and the embedded core listens on a different port each time`).toBe('Beta');
-  evidence('X02', `the window reopened on Beta, as it was left (origin ${originAfter})`);
+  expect(heading, `reopened on "${heading}" instead of the project that was selected ("Beta"); origin ${originBefore} -> ${originAfter}`).toBe('Beta');
+  evidence('X02', `the window reopened on Beta, as it was left, on the same origin (${originAfter})`);
 });

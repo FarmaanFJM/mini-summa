@@ -38,6 +38,8 @@ export interface AppHandle {
   readonly app: ElectronApplication;
   readonly page: Page;
   readonly baseUrl: string;
+  /** The port of the embedded core (and so of the window's origin). The core prefers 47811 and takes a free port when it is busy. */
+  readonly port: number;
   readonly token: string;
   /** The typed client of the core (desktop token), with its event stream connected. */
   readonly api: MiniSummaClient;
@@ -120,7 +122,7 @@ export async function launchApp(options: LaunchOptions = {}): Promise<AppHandle>
     const electronVersion = await app.evaluate(() => process.versions.electron);
     let gone = false;
     handle = {
-      sandbox, standIn, app, page, baseUrl: connection.baseUrl, token: connection.token, api, pid: proc.pid ?? -1, electronVersion,
+      sandbox, standIn, app, page, baseUrl: connection.baseUrl, port: Number(new URL(connection.baseUrl).port), token: connection.token, api, pid: proc.pid ?? -1, electronVersion,
       pageErrors,
       output: () => out.join(''),
       async quit() {
@@ -160,18 +162,44 @@ function killTree(proc: ChildProcess): void {
   try { proc.kill('SIGKILL'); } catch { /* already gone */ }
 }
 
-/** Every launched app is stopped, every stand-in closed and every sandbox removed. Called after each test. */
+/** The core prefers this port for its address (the window's origin depends on it). */
+export const PREFERRED_CORE_PORT = 47811;
+
+/** Waits (briefly) until nothing listens on the preferred port, so that the next launch gets the same origin as the last one. */
+async function waitForPreferredPortFree(): Promise<boolean> {
+  const net = await import('node:net');
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const free = await new Promise<boolean>((resolve) => {
+      const probe = net.createServer();
+      probe.once('error', () => resolve(false));
+      probe.listen(PREFERRED_CORE_PORT, '127.0.0.1', () => probe.close(() => resolve(true)));
+    });
+    if (free) return true;
+    await sleep(50);
+  }
+  return false;
+}
+
+/**
+ * Every launched app is stopped, every stand-in closed and every sandbox removed. Called after each test. A process of the
+ * sandbox that cannot be killed is an error: a leaked Electron would hold the core's preferred port and give the next launch
+ * a different address.
+ */
 export async function cleanupAll(): Promise<void> {
+  const leaked: string[] = [];
   for (const handle of [...registry.handles]) {
     await within('kill app', 15_000, handle.kill()).catch(() => undefined);
     registry.handles.delete(handle);
   }
   for (const standIn of [...registry.standIns]) { await within('close stand-in', 5_000, standIn.close()).catch(() => undefined); registry.standIns.delete(standIn); }
   for (const sandbox of [...registry.sandboxes]) {
-    await killSandboxProcesses(sandbox);
+    const left = await killSandboxProcesses(sandbox);
+    if (left > 0) leaked.push(`${left} process(es) of ${sandbox.root} survived SIGKILL`);
     removeSandbox(sandbox);
     registry.sandboxes.delete(sandbox);
   }
+  await waitForPreferredPortFree();
+  if (leaked.length > 0) throw new Error(`Leaked processes: ${leaked.join('; ')}`);
 }
 
 /** What to keep from a failed test: a screenshot of every window, the app's output, the stand-in's requests, the core log. */

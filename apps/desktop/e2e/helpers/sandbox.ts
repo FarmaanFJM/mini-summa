@@ -108,13 +108,15 @@ export function sandboxProcesses(sb: Sandbox): number[] {
   return found;
 }
 
-export async function killSandboxProcesses(sb: Sandbox): Promise<void> {
-  for (let round = 0; round < 3; round += 1) {
+/** Kills every process of the sandbox (the app, its Chromium children, the terminals, the hooks). Returns how many were still alive at the end. */
+export async function killSandboxProcesses(sb: Sandbox): Promise<number> {
+  for (let round = 0; round < 5; round += 1) {
     const pids = sandboxProcesses(sb);
-    if (pids.length === 0) return;
+    if (pids.length === 0) return 0;
     for (const pid of pids) { try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ } }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  return sandboxProcesses(sb).length;
 }
 
 export function removeSandbox(sb: Sandbox): void {

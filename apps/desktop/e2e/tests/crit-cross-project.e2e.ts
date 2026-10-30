@@ -114,8 +114,10 @@ scenario('[CRIT] A report from A is handed off to A\'s conversation while B is s
   expect(h.standIn.requests.some((r) => r.path.includes(CONV.C1))).toBe(false); // C's other conversation was never loaded at all
 
   // The delivery waits for the person; B is still the selected project and the pane says that the page is not B's.
-  const after = await latestDelivery(h, rA.id);
-  expect(after.state).toBe('awaiting_user_send');
+  const after = await until('the handoff to finish and wait for the person', async () => {
+    const d = await latestDelivery(h, rA.id);
+    return d.state === 'awaiting_user_send' ? d : null;
+  });
   expect(after.destination).toEqual(dA.destination); // frozen: the same destination, byte for byte
   await h.page.getByRole('heading', { level: 1, name: NAMES.B }).waitFor();
   await h.page.getByText(/This page is not one of .* conversations\. Handoffs still go to the one you mapped\./).waitFor();
