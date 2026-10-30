@@ -79,3 +79,23 @@ export function selectionAfterClose(tabs: readonly SessionView[], closed: Sessio
   const rest = tabs.filter((s) => s.key !== closed);
   return (rest[i - 1] ?? rest[i] ?? null)?.key ?? null;
 }
+
+/**
+ * The tab to show. The one the person chose, if it is there. A choice whose session no longer exists anywhere (it was remembered
+ * from an earlier run, and the session was removed since) falls back to the newest session, because that is the one the person is
+ * most likely to want; with no choice at all the first tab is shown, as it always was. A session that exists but has no tab yet
+ * is about to get one (see ClaudePane), so the first tab is shown for that moment.
+ */
+export function pickSelectedTab(tabs: readonly SessionView[], chosen: SessionKey | undefined, sessions: readonly SessionView[]): SessionView | null {
+  const hit = tabs.find((t) => t.key === chosen);
+  if (hit) return hit;
+  if (chosen !== undefined && !sessions.some((s) => s.key === chosen)) return newestSession(tabs) ?? null;
+  return tabs[0] ?? null;
+}
+
+/** The session that started last (ties: the later tab). */
+export function newestSession(tabs: readonly SessionView[]): SessionView | undefined {
+  let best: SessionView | undefined;
+  for (const tab of tabs) if (best === undefined || (tab.startedAt ?? '') >= (best.startedAt ?? '')) best = tab;
+  return best;
+}

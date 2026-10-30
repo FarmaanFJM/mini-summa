@@ -8,7 +8,7 @@ import { NewSessionDialog } from './NewSessionDialog';
 import { ObservedPanel, SessionNotice } from './SessionPanels';
 import { formatRelative, ORIGIN_LABEL, shortId, tabTitle } from './sessionModel';
 import { InputBanner, StateDot } from './sessionParts';
-import { selectionAfterClose, visibleTabs } from './tabs';
+import { pickSelectedTab, selectionAfterClose, visibleTabs } from './tabs';
 import { TerminalSlot } from './TerminalSlot';
 import { useSessionActions } from './useSessionActions';
 import { envLabel } from '@minisumma/shared';
@@ -34,7 +34,7 @@ export function ClaudePane({ project, visible, maximized, onToggleMaximize }: Cl
 
   const tabs = useMemo(() => visibleTabs({ openTabs, dismissed }, project.id, sessions), [openTabs, dismissed, project.id, sessions]);
   const chosen = route.sessionByProject[project.id];
-  const selected = tabs.find((t) => t.key === chosen) ?? tabs[0] ?? null;
+  const selected = pickSelectedTab(tabs, chosen, sessions);
 
   // A session chosen before (restored, or named by a notification) gets its tab if it belongs here.
   useEffect(() => {

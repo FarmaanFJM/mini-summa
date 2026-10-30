@@ -38,7 +38,7 @@ export function windowsDirectory(env: Variables): string {
  * Full path of a system program: <SystemRoot>\System32\<name>. For cmd.exe the command interpreter Windows itself names in
  * %ComSpec% is used when it is a local path to a cmd.exe; anything else in that variable is ignored.
  */
-export function systemProgramPath(name: 'wsl.exe' | 'cmd.exe', env: Variables): string {
+export function systemProgramPath(name: 'wsl.exe' | 'cmd.exe' | 'taskkill.exe', env: Variables): string {
   if (name === 'cmd.exe') {
     const comspec = variable(env, 'ComSpec')?.trim();
     if (comspec && LOCAL_DRIVE_PATH.test(comspec) && path.win32.basename(comspec).toLowerCase() === 'cmd.exe') return path.win32.normalize(comspec);

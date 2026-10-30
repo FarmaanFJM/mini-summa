@@ -6,6 +6,7 @@ import { makeSessionKey } from '@minisumma/shared';
 import type { ManagedSessionRecord } from '../../src/contracts.ts';
 import { CoreError } from '../../src/errors.ts';
 import { createNodePtySpawner } from '../../src/claude/ptyHost.ts';
+import { buildSessionView } from '../../src/claude/sessionView.ts';
 import { directive, readEnvReport, readReceived } from '../../src/testing/fake-claude/index.ts';
 import {
   CONVERSATION_ID, FakePty, FakeSpawner, PROJECT_ID, RecordingSink, createHarness, eventsOf, startWithSink, waitFor, waitForText,
@@ -178,14 +179,15 @@ describe('how a session ends', () => {
     expect(sink.exits[0]).toMatchObject({ code: 0, signal: null, reason: 'exited' });
   });
 
-  it('stop() is graceful by default: Ctrl-C twice makes Claude leave by itself, SessionEnd fires, reason is "exited"', async () => {
+  it('stop() is graceful by default: Ctrl-C twice makes Claude leave by itself, SessionEnd fires, and the user\'s stop is the reason', async () => {
     h = createHarness();
     const manager = h.makeManager();
     const { key, sink } = await startWithSink(manager, h);
     await waitForText(sink, '? for shortcuts');
     await waitFor(() => eventsOf(h.spool()).includes('SessionStart'), 'SessionStart');
     const stopped = await manager.stop(key, {});
-    expect(stopped).toMatchObject({ status: 'exited', exitCode: 0, exitReason: 'exited', pid: null });
+    expect(stopped).toMatchObject({ status: 'exited', exitCode: 0, exitReason: 'killed_by_user', pid: null });
+    expect(sink.exits[0]).toMatchObject({ code: 0, reason: 'killed_by_user' });
     const end = h.spool().find((r) => r.event === 'SessionEnd');
     expect(end?.payload.reason).toBe('prompt_input_exit');
   });
@@ -204,7 +206,7 @@ describe('how a session ends', () => {
     expect(sink.exits[0].reason).toBe('killed_by_user');
   });
 
-  it('a graceful stop that works is NOT "killed_by_user" (Mini-Summa did not terminate it)', async () => {
+  it('a graceful stop that works is still the user\'s stop: nothing is killed, the reason is "killed_by_user" and the notice says so', async () => {
     h = createHarness();
     const spawner = new FakeSpawner();
     const manager = h.makeManager({ spawner, overrides: { stopGraceMs: 2000 } });
@@ -215,7 +217,40 @@ describe('how a session ends', () => {
     const stopped = await manager.stop(record.key, {});
     expect(pty.written.slice(0, 2)).toEqual(['\x03', '\x03']);
     expect(pty.killed).toEqual([]);
-    expect(stopped).toMatchObject({ status: 'exited', exitReason: 'exited', exitCode: 0 });
+    expect(stopped).toMatchObject({ status: 'exited', exitReason: 'killed_by_user', exitCode: 0 });
+    // Regression: this used to be recorded as "exited", which the window words "The terminal process exited with code 0."
+    const view = buildSessionView({
+      key: record.key, env: 'posix', sessionId: record.sessionId, reducer: null, facts: null, managed: stopped,
+      attribution: { projectId: PROJECT_ID, projectName: 'Harness project', resolution: 'managed' }, projectDefaultKey: null, history: null,
+    });
+    expect(view?.termination).toEqual({ kind: 'observed', reason: 'You stopped the session.', at: stopped.exitedAt });
+  });
+
+  it('a process that leaves on its own while nobody stopped it is still "exited", and quitting the app is still "app_exit"', async () => {
+    h = createHarness();
+    const spawner = new FakeSpawner();
+    const manager = h.makeManager({ spawner, overrides: { shutdownGraceMs: 2000 } });
+    const own = await manager.start(h.startInput());
+    const quitting = await manager.start(h.startInput());
+    spawner.ptys[0].emitExit({ exitCode: 0, signal: null });
+    expect(manager.get(own.key)).toMatchObject({ status: 'exited', exitReason: 'exited', exitCode: 0 });
+    await manager.shutdown(); // the second one leaves on the Ctrl-C gesture the shutdown sends
+    expect(manager.get(quitting.key)).toMatchObject({ status: 'exited', exitReason: 'app_exit', exitCode: 0 });
+  });
+
+  it('a user stop that is already under way keeps its reason when the app quits meanwhile', async () => {
+    h = createHarness();
+    const spawner = new FakeSpawner();
+    const manager = h.makeManager({ spawner, overrides: { stopGraceMs: 5000, shutdownGraceMs: 1000, ctrlCGapMs: 5 } });
+    const record = await manager.start(h.startInput());
+    const pty = spawner.ptys[0];
+    pty.politeExit = false;
+    const stopping = manager.stop(record.key, {});
+    await new Promise((r) => setTimeout(r, 30));
+    pty.politeExit = true;
+    await manager.shutdown();
+    await stopping;
+    expect(manager.get(record.key)).toMatchObject({ status: 'exited', exitReason: 'killed_by_user' });
   });
 
   it('a graceful stop that does not work ends in a kill after the timeout, recorded "killed_by_user"', async () => {

@@ -559,6 +559,50 @@ export interface RetentionSettings {
   reportsDays: number;
 }
 
+/** The views the desktop window can be left on (the same set as `NavigationTarget['view']`). */
+export type UiViewId = 'workspace' | 'activity' | 'reports' | 'settings';
+
+/** Where the window was left: the view, and the project that was selected. */
+export interface UiRoute {
+  projectId: string | null;
+  view: UiViewId;
+}
+
+/** What one project's panes were showing: the Claude session tab and the ChatGPT conversation the person chose. */
+export interface UiProjectPrefs {
+  sessionKey?: SessionKey;
+  conversationId?: string;
+}
+
+/** The first-run checklist: whether the person hid it, and whether this installation was empty when it was first opened. */
+export interface UiSetupPrefs {
+  dismissed?: boolean;
+  seenEmpty?: boolean;
+}
+
+/**
+ * What the desktop window remembers between runs. The CORE keeps it (inside the settings), because the window's own storage
+ * belongs to the page origin, and the origin changes when the core has to take another port. Small, typed and bounded
+ * (see UI_LIMITS in defaults.ts); every key is optional, so a first run stores nothing.
+ */
+export interface UiPrefs {
+  route?: UiRoute;
+  /** Keyed by project id. */
+  perProject?: Record<string, UiProjectPrefs>;
+  setup?: UiSetupPrefs;
+}
+
+/**
+ * A change to UiPrefs. `route` is replaced as a unit (null forgets it). In `perProject` and `setup` only the fields that are
+ * named change, so two windows writing different things never overwrite each other; null forgets a field (and an entry
+ * with nothing left disappears).
+ */
+export interface UiPrefsPatch {
+  route?: UiRoute | null;
+  perProject?: Record<string, { sessionKey?: SessionKey | null; conversationId?: string | null } | null>;
+  setup?: { dismissed?: boolean | null; seenEmpty?: boolean | null };
+}
+
 export interface Settings {
   chatgpt: {
     mode: 'embedded' | 'external';
@@ -588,10 +632,12 @@ export interface Settings {
     promptActionTtlMinutes: number;
   };
   retention: RetentionSettings;
+  /** What the desktop window remembers between runs. Absent until the window has stored something. Not for the phone. */
+  ui?: UiPrefs;
 }
 
 export type DeepPartial<T> = T extends object ? { [K in keyof T]?: DeepPartial<T[K]> } : T;
-export type SettingsPatch = DeepPartial<Settings>;
+export type SettingsPatch = DeepPartial<Omit<Settings, 'ui'>> & { ui?: UiPrefsPatch };
 
 // ---------------------------------------------------------------------------------------------------------------
 // System

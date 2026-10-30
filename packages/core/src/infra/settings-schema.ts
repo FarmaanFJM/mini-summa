@@ -6,6 +6,11 @@
 // The numeric ranges mirror `settingsPatchSchema` in @minisumma/shared/routes.ts, which validates the HTTP body. The
 // service clamps instead of rejecting because a slider that overshoots by one pixel should not be an error. A test
 // keeps this table and that schema from drifting apart.
+//
+// `Settings.ui` (what the desktop window remembers) is not a fixed shape: its keys are project ids. It is therefore not in
+// the table; `checkUiPatch` in @minisumma/shared validates it, strictly on update (an unknown key is a 400) and leniently
+// on load (what is valid is kept).
+import { checkUiPatch } from '@minisumma/shared';
 import type { Settings } from '@minisumma/shared';
 import { badRequest } from '../errors.ts';
 
@@ -28,7 +33,7 @@ const num = (min: number, max: number): Leaf => ({ t: 'num', min, max });
 const int = (min: number, max: number): Leaf => ({ t: 'num', min, max, int: true });
 const oneOf = (...values: string[]): Leaf => ({ t: 'enum', values });
 
-export const SETTINGS_SPEC: SettingsSpec<Settings> = {
+export const SETTINGS_SPEC: SettingsSpec<Omit<Settings, 'ui'>> = {
   chatgpt: { mode: oneOf('embedded', 'external'), externalBrowser: oneOf('default', 'extension') },
   layout: {
     orientation: oneOf('auto', 'landscape', 'portrait'),
@@ -125,14 +130,22 @@ function walk(spec: object, input: unknown, strict: boolean, path: string): Reco
   return out;
 }
 
-/** A clean patch from user input: unknown keys dropped, numbers clamped, anything malformed a 400. */
+/** A clean patch from user input: unknown keys dropped, numbers clamped, anything malformed a 400. The `ui` part is strict: an unknown key in it is refused. */
 export function strictPatch(input: unknown): Record<string, unknown> {
-  return walk(SETTINGS_SPEC, input, true, '');
+  const out = walk(SETTINGS_SPEC, input, true, '');
+  if (isPlainObject(input) && input.ui !== undefined) {
+    const { patch, problems } = checkUiPatch(input.ui);
+    if (problems.length > 0) throw badRequest(problems[0].message, { field: problems[0].field }, 'invalid_setting');
+    out.ui = patch;
+  }
+  return out;
 }
 
 /** A clean partial from stored data: invalid fields are skipped (the default applies), unknown keys are dropped. */
 export function lenientPartial(input: unknown): Record<string, unknown> {
-  return walk(SETTINGS_SPEC, input, false, '');
+  const out = walk(SETTINGS_SPEC, input, false, '');
+  if (isPlainObject(input) && input.ui !== undefined) out.ui = checkUiPatch(input.ui).patch;
+  return out;
 }
 
 /** Dotted paths of every numeric field with its range. Used by the drift test against settingsPatchSchema. */

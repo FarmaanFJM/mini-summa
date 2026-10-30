@@ -6,6 +6,7 @@ import { MiniSummaClient } from '@minisumma/shared';
 import { createXtermAdapterFactory } from '../terminals/xtermAdapter';
 import type { ApiClient } from './api';
 import { chooseClient } from './clientChoice';
+import { keepaliveSender } from './keepalive';
 import { detectNative } from './native';
 import type { RendererNative } from './native';
 import { createRuntime } from './runtime';
@@ -25,6 +26,8 @@ function build(api: ApiClient, native: RendererNative, mode: Runtime['mode']): R
     native,
     mode,
     storage: safeLocalStorage(),
+    // The desktop shell knows its core's address and token; the last remembered change is sent as the window closes.
+    sendOnClose: desktopShell ? keepaliveSender(() => native.connection()) : undefined,
     adapterFactory: createXtermAdapterFactory({
       webgl: desktopShell,
       conpty: desktopShell && native.platform === 'win32',

@@ -17,6 +17,10 @@ export interface Disposable { dispose(): void }
 export interface PtyExitInfo { exitCode: number | null; signal: number | null }
 
 export interface PtyProcess {
+  /**
+   * The process id. ConPTY connects the process asynchronously (the conout worker must be ready first), so on Windows this is 0
+   * for a moment after spawn() and only becomes the real id with the first output: callers read it again later, never once.
+   */
   readonly pid: number;
   onData(listener: (data: string) => void): Disposable;
   onExit(listener: (info: PtyExitInfo) => void): Disposable;
@@ -64,7 +68,12 @@ function adapt(handle: NodePtyHandle): PtyProcess {
   };
 }
 
-export function createNodePtySpawner(load: () => NodePtyModule = loadNodePty): PtySpawner {
+/**
+ * `encoding: 'utf8'` is what makes node-pty hand out strings on Linux and macOS. On Windows the ConPTY agent always decodes
+ * UTF-8 itself and prints "Setting encoding on Windows is not supported" to the console for every terminal it starts when the
+ * option is given (windowsTerminal.js of @lydell/node-pty-win32-x64), so it is left out there. `platform` is a test seam.
+ */
+export function createNodePtySpawner(load: () => NodePtyModule = loadNodePty, platform: NodeJS.Platform = process.platform): PtySpawner {
   return {
     spawn(req) {
       const pty = load();

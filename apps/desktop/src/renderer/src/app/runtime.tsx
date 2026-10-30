@@ -3,6 +3,7 @@
 import { createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
+import type { UiPrefsPatch } from '@minisumma/shared';
 import type { ApiClient } from './api';
 import { createLoader } from './loader';
 import type { Loader } from './loader';
@@ -10,10 +11,13 @@ import { NativeProvider } from './native';
 import type { RendererNative } from './native';
 import { createRouteStore } from './route';
 import type { RouteActions, RouteState, RouteStore } from './route';
+import { onboardingStore } from './onboardingPrefs';
 import { createMemoryStorage } from './storage';
 import type { KeyValueStorage } from './storage';
 import { createAppStore } from './store';
 import type { AppState, AppStore } from './store';
+import { createUiSync } from './uiSync';
+import type { UiSync, UiSyncOptions } from './uiSync';
 import { createUiStore } from './uiStore';
 import type { UiActions, UiState, UiStore } from './uiStore';
 import { TerminalRegistry } from '../terminals/terminals';
@@ -27,6 +31,8 @@ export interface Runtime {
   ui: UiStore;
   terminals: TerminalRegistry;
   loader: Loader;
+  /** Keeps what the window remembers (selected project, tabs, setup flags) in the core as well as in `storage`. */
+  uiSync: UiSync;
   /** Where small per-window preferences are remembered (guarded localStorage, or memory in tests). */
   storage: KeyValueStorage;
   /** How the client was chosen: the desktop shell, a browser tab pointed at a core, or the in-memory demo. */
@@ -45,6 +51,10 @@ export interface RuntimeOptions {
   startLoader?: boolean;
   /** Frame scheduler for terminal fitting. Tests pass a synchronous one. */
   schedule?: (fn: () => void) => number;
+  /** Sends a remembered change as the page closes, with a request that outlives the page. */
+  sendOnClose?: (body: { ui: UiPrefsPatch }) => void;
+  /** Timing of the writes that keep the core's copy of the window's memory (tests shorten it). */
+  uiSync?: Pick<UiSyncOptions, 'delayMs' | 'retry'>;
 }
 
 export function createRuntime(options: RuntimeOptions): Runtime {
@@ -58,6 +68,8 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   });
   const terminals = new TerminalRegistry({ terminal: api.terminal, createAdapter: options.adapterFactory, schedule: options.schedule });
   const loader = createLoader({ api, store });
+  // Registered before the loader starts, so it sees the first snapshot before any screen does.
+  const uiSync = createUiSync({ api, store, route, onboarding: onboardingStore(storage), sendOnClose: options.sendOnClose, ...options.uiSync });
 
   const cleanups: (() => void)[] = [];
 
@@ -83,9 +95,10 @@ export function createRuntime(options: RuntimeOptions): Runtime {
   if (options.startLoader !== false) loader.start();
 
   return {
-    api, native, store, route, ui, terminals, loader, storage, mode,
+    api, native, store, route, ui, terminals, loader, uiSync, storage, mode,
     dispose() {
       loader.stop();
+      uiSync.dispose();
       for (const off of cleanups.splice(0)) off();
       terminals.dispose();
     },

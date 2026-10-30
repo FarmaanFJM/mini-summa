@@ -1,6 +1,8 @@
 // Builds a sideloadable release APK of the Mini-Summa companion.
 //
 //   node scripts/build-apk.mjs [--clean] [--out <dir>] [--debug]
+//                              [--retries <n>] [--wait <seconds>]
+//                              [--net-attempts <n>] [--net-backoff <ms>] [--gradle-arg <arg>]...
 //
 // What it does, in order, and stops with the exact missing piece if one step cannot run:
 //   1. checks Java, the Android SDK and the exact SDK packages the generated project needs
@@ -8,30 +10,82 @@
 //   3. ./gradlew assembleRelease                  (assembleDebug with --debug)
 //   4. re-signs the APK with a LOCAL key and verifies the signature
 //
+// Downloads (step 3). Gradle fetches several hundred files from Maven Central, Google Maven, the Gradle Plugin Portal and
+// JitPack. Some networks (shared or cloud addresses) are throttled: the server answers a share of the requests with
+// "429 Too Many Requests". Gradle keeps every file it already downloaded, so a second run continues where the first stopped.
+// This script helps in two ways, and never changes what is downloaded, from where, or how it is checked:
+//   * it makes Gradle patient: --net-attempts (default 10) tries per file and --net-backoff (default 1500 ms, doubling after each
+//     failed try). These are Gradle's own settings (org.gradle.internal.network.retry.* for libraries and
+//     org.gradle.internal.repository.* for POM/module files); a value you already set in ~/.gradle/gradle.properties wins;
+//   * it runs Gradle again after a pause when the failure was only a refused or dropped download: --retries (default 2, 0 = off)
+//     re-runs, first pause --wait seconds (default 60), doubling up to 10 minutes.
+// When Gradle still fails because of the network, the script says which servers refused it, with which HTTP status and which
+// files, instead of leaving you with a wall of Gradle output. --gradle-arg passes one extra argument to Gradle
+// (for example --gradle-arg --info, repeat it for more).
+//
 // The signing key is never inside the repository. Without MINISUMMA_KEYSTORE a throwaway key is created under
 // ~/.android-build-keys with a random password that exists only in this process (an environment variable for keytool
 // and apksigner), is never written to a file, and the key file is deleted after signing. Such an APK is for sideloading
 // on your own phone only. To update an installed app later, sign with a key you keep:
 //   MINISUMMA_KEYSTORE=/path/to.jks MINISUMMA_KEYSTORE_PASSWORD=... [MINISUMMA_KEY_ALIAS=alias] node scripts/build-apk.mjs
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { explainDownloadFailure, isTransient, newEvidence, scanLine } from './gradle-network.mjs';
 
 const appDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const args = process.argv.slice(2);
-const flag = (name) => args.includes(name);
-const option = (name, fallback) => { const i = args.indexOf(name); return i >= 0 && args[i + 1] ? args[i + 1] : fallback; };
+
+function fail(message) { console.error(`\nBuild stopped: ${message}`); process.exit(1); }
+function step(title) { console.log(`\n== ${title}`); }
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---- options ----------------------------------------------------------------------------------------------------------
+const USAGE = `Usage: node scripts/build-apk.mjs [--clean] [--out <dir>] [--debug] [--retries <n>] [--wait <seconds>]
+                                   [--net-attempts <n>] [--net-backoff <ms>] [--gradle-arg <arg>]...
+  --clean           regenerate android/ from scratch (expo prebuild --clean)
+  --out <dir>       where the signed APK is written (default ~/minisumma-apk)
+  --debug           build the debug variant instead of release
+  --retries <n>     run Gradle again up to n more times when it only failed because a download was refused or dropped (default 2, 0 = never)
+  --wait <seconds>  pause before the first re-run (default 60); it doubles every time, up to 600
+  --net-attempts <n>  how many times Gradle tries each file before giving up (default 10; Gradle's own default is 3)
+  --net-backoff <ms>  Gradle's first wait between tries, doubled after each failed try (default 1500)
+  --gradle-arg <a>  one extra argument for ./gradlew, repeatable (for example --gradle-arg --info)`;
+const argv = process.argv.slice(2);
+const switches = new Set();
+const values = new Map();
+const extraGradleArgs = [];
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i];
+  if (a === '--help' || a === '-h') { console.log(USAGE); process.exit(0); }
+  else if (['--clean', '--debug'].includes(a)) switches.add(a);
+  else if (['--out', '--retries', '--wait', '--net-attempts', '--net-backoff', '--gradle-arg'].includes(a)) {
+    const v = argv[++i];
+    if (v === undefined) fail(`${a} needs a value.\n\n${USAGE}`);
+    if (a === '--gradle-arg') extraGradleArgs.push(v); else values.set(a, v);
+  } else fail(`unknown option "${a}".\n\n${USAGE}`);
+}
+const flag = (name) => switches.has(name);
+const option = (name, fallback) => values.get(name) ?? fallback;
+function count(name, fallback, min) {
+  const raw = option(name, undefined);
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < min) fail(`${name} must be a whole number of at least ${min} (got "${raw}").`);
+  return n;
+}
 
 const sdk = process.env.ANDROID_HOME ?? process.env.ANDROID_SDK_ROOT ?? join(homedir(), 'android-sdk');
 const env = { ...process.env, ANDROID_HOME: sdk, ANDROID_SDK_ROOT: sdk };
 const debug = flag('--debug');
 const outDir = resolve(option('--out', join(homedir(), 'minisumma-apk')));
+const retries = count('--retries', 2, 0);
+const waitSeconds = count('--wait', 60, 1);
+const netAttempts = count('--net-attempts', 10, 1);
+const netBackoff = count('--net-backoff', 1500, 1);
 
-function fail(message) { console.error(`\nBuild stopped: ${message}`); process.exit(1); }
-function step(title) { console.log(`\n== ${title}`); }
 function run(cmd, cmdArgs, opts = {}) {
   console.log(`$ ${[cmd, ...cmdArgs].join(' ')}`);
   const r = spawnSync(cmd, cmdArgs, { stdio: 'inherit', env, cwd: appDir, ...opts });
@@ -65,9 +119,66 @@ run('npx', ['expo', 'prebuild', '--platform', 'android', '--no-install', ...(fla
 writeFileSync(join(appDir, 'android/local.properties'), `sdk.dir=${sdk}\n`);
 
 // ---- 3. compile ---------------------------------------------------------------------------------------------------------
+// Runs Gradle, streams its output to the terminal unchanged, and remembers what a refused or dropped download looked like.
+function gradleOnce(gradleArgs) {
+  return new Promise((done) => {
+    const evidence = newEvidence();
+    const child = spawn('./gradlew', gradleArgs, { cwd: join(appDir, 'android'), env, stdio: ['inherit', 'pipe', 'pipe'] });
+    const forward = (sink) => {
+      let rest = '';
+      return (chunk) => {
+        sink.write(chunk);
+        rest += chunk.toString('utf8');
+        const lines = rest.split('\n');
+        rest = lines.pop() ?? '';
+        for (const l of lines) scanLine(l, evidence);
+      };
+    };
+    child.stdout.on('data', forward(process.stdout));
+    child.stderr.on('data', forward(process.stderr));
+    child.on('error', (error) => done({ code: null, signal: null, error, evidence }));
+    child.on('close', (code, signal) => done({ code, signal, evidence }));
+  });
+}
+
 const task = debug ? 'assembleDebug' : 'assembleRelease';
-step(`Gradle ${task}`);
-run('./gradlew', [task, '--no-daemon', '--console=plain'], { cwd: join(appDir, 'android') });
+// Gradle's own retry settings. Skip any the user already set (their value would win on the command line otherwise).
+const userGradleHome = process.env.GRADLE_USER_HOME ?? join(homedir(), '.gradle');
+let userProps = '';
+try { userProps = readFileSync(join(userGradleHome, 'gradle.properties'), 'utf8'); } catch { /* none */ }
+const retryProps = {
+  'org.gradle.internal.network.retry.max.attempts': netAttempts,
+  'org.gradle.internal.network.retry.initial.backOff': netBackoff,
+  'org.gradle.internal.repository.max.tentatives': netAttempts,
+  'org.gradle.internal.repository.initial.backoff': netBackoff,
+};
+const userSet = (name) => userProps.includes(`systemProp.${name}`) || (process.env.GRADLE_OPTS ?? '').includes(`-D${name}`) || extraGradleArgs.some((a) => a.startsWith(`-D${name}`));
+const retryArgs = Object.entries(retryProps).filter(([name]) => !userSet(name)).map(([name, v]) => `-D${name}=${v}`);
+const gradleArgs = [task, '--no-daemon', '--console=plain', ...retryArgs, ...extraGradleArgs];
+
+const attemptsTotal = retries + 1;
+let result;
+for (let attempt = 1; attempt <= attemptsTotal; attempt++) {
+  if (attempt > 1) {
+    const pause = Math.min(waitSeconds * 2 ** (attempt - 2), 600);
+    console.log(`\nWaiting ${pause} s before Gradle run ${attempt} of ${attemptsTotal}. Gradle keeps what it already downloaded, so this run continues where the last one stopped.`);
+    await sleep(pause * 1000);
+  }
+  step(`Gradle ${task}${attemptsTotal > 1 ? ` (run ${attempt} of ${attemptsTotal})` : ''}`);
+  console.log(`$ ./gradlew ${gradleArgs.join(' ')}`);
+  result = await gradleOnce(gradleArgs);
+  if (result.error) fail(`could not start ./gradlew in ${join(appDir, 'android')}: ${result.error.message}`);
+  if (result.code === 0) break;
+  if (result.signal) fail(`Gradle was stopped by ${result.signal}.`);
+  if (!isTransient(result.evidence)) break;
+  console.error(explainDownloadFailure(result.evidence));
+}
+if (result.code !== 0) {
+  if (isTransient(result.evidence)) {
+    fail(`Gradle still could not download everything after ${attemptsTotal} run(s) (exit code ${result.code}). See the list of refused files above.\nRun the same command again later (--retries ${retries + 3} --wait 120 waits longer), or from another network.`);
+  }
+  fail(`Gradle exited with ${result.code}, and the output shows no refused or dropped download, so this looks like a build problem and not a network one. Read the "What went wrong" part above (add --gradle-arg --stacktrace for more).`);
+}
 const variant = debug ? 'debug' : 'release';
 const built = join(appDir, `android/app/build/outputs/apk/${variant}`);
 const apkName = readdirSync(built).find((f) => f.endsWith('.apk'));

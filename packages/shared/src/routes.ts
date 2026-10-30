@@ -6,6 +6,7 @@ import type {
   HookPlan, HookStatus, NotificationRecord, PairingOffer, PairingRedeemResult, PendingAction, Project, Report,
   ReportCandidate, ReportSummary, Scope, SessionView, Settings, StateSnapshot, TailscaleStatus,
 } from './entities.ts';
+import { UI_LIMITS } from './defaults.ts';
 import { isEnvId, isSessionKey } from './env.ts';
 import type { EnvId, SessionKey } from './env.ts';
 import type { ChatGptOpenResult } from './native.ts';
@@ -83,6 +84,17 @@ export const sessionStartSchema = z.object({
   rows: z.number().int().min(5).max(200).optional(),
 });
 
+// The window's memory (`Settings.ui`). Strict: a key this build does not know is refused, not ignored. Bounded: ids are short and at
+// most UI_LIMITS.projects projects are named in one patch. The meaning of the patch (null forgets) is `mergeUi` in defaults.ts.
+const uiId = z.string().min(1).max(UI_LIMITS.idChars).refine((v) => v !== '__proto__' && v !== 'constructor' && v !== 'prototype', 'Not a usable id');
+const uiSessionKey = z.string().max(UI_LIMITS.keyChars).refine((v): v is SessionKey => isSessionKey(v), 'Not a valid session key') as unknown as z.ZodType<SessionKey>;
+const uiPatchSchema = z.strictObject({
+  route: z.strictObject({ projectId: uiId.nullable(), view: z.enum(['workspace', 'activity', 'reports', 'settings']) }).nullable(),
+  perProject: z.record(uiId, z.strictObject({ sessionKey: uiSessionKey.nullable(), conversationId: uiId.nullable() }).partial().nullable())
+    .refine((v) => Object.keys(v).length <= UI_LIMITS.projects, `At most ${UI_LIMITS.projects} projects can be named in one change`),
+  setup: z.strictObject({ dismissed: z.boolean().nullable(), seenEmpty: z.boolean().nullable() }).partial(),
+}).partial();
+
 const settingsPatchSchema = z.object({
   chatgpt: z.object({ mode: z.enum(['embedded', 'external']), externalBrowser: z.enum(['default', 'extension']) }).partial(),
   layout: z.object({
@@ -105,6 +117,7 @@ const settingsPatchSchema = z.object({
     promptActionTtlMinutes: z.number().int().min(1).max(1440),
   }).partial(),
   retention: z.object({ rawEventsDays: z.number().int().min(0).max(3650), activityDays: z.number().int().min(0).max(3650), notificationsDays: z.number().int().min(0).max(3650), reportsDays: z.number().int().min(0).max(3650) }).partial(),
+  ui: uiPatchSchema,
 }).partial();
 export { settingsPatchSchema };
 

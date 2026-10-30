@@ -34,6 +34,7 @@ import type {
   CoreBase, CoreOptions, EnvironmentsService, ManagedManager, ManagedSessionRecord, ManagedStartInput, TerminalAttachment, TerminalSink,
 } from '../contracts.ts';
 import { CoreError } from '../errors.ts';
+import { killProcessTree } from './commandRunner.ts';
 import { emptyInputLine, scanDesktopInput } from './inputTracking.ts';
 import type { InputLine } from './inputTracking.ts';
 import { CTRL_C, PERMISSION_KEYS, SUBMIT_DELAY_MS, encodeUserText } from './keys.ts';
@@ -142,6 +143,11 @@ export interface ManagedOverrides {
   platform?: NodeJS.Platform;
   /** The environment copied into sessions (default process.env). */
   baseEnv?: Readonly<Record<string, string | undefined>>;
+  /**
+   * Windows only: ends a process and everything it started (default `taskkill /pid N /T /F`). Runs when a stop or the app's exit
+   * has to kill a process, before the process itself is killed.
+   */
+  killTree?: (pid: number) => Promise<unknown>;
 }
 
 export interface ManagedManagerDeps {
@@ -218,7 +224,10 @@ interface Live {
   pty: PtyProcess | null;
   scrollback: ScrollbackBuffer;
   sinks: Set<SinkEntry>;
-  /** Why Mini-Summa ended the process, if it did. Anything else that ends it is plain 'exited'. */
+  /**
+   * Why Mini-Summa ended the process, if it did: the user pressed Stop ('killed_by_user', also when Claude left by itself on the
+   * Ctrl-C gesture, because it left at the user's request) or the app is quitting ('app_exit'). Anything else is plain 'exited'.
+   */
   endReason: EndReason | null;
   exit: ExitInfo | null;
   exitWaiters: (() => void)[];
@@ -362,6 +371,9 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager &
   };
 
   const handleData = (live: Live, data: string): void => {
+    // ConPTY connects its process asynchronously: spawn() hands back pid 0 on Windows and the real id is known from the first
+    // output on. The record keeps "no pid" until then, and takes it as soon as it exists.
+    if (live.record.pid === null && live.pty && live.pty.pid > 0) commit(live, { pid: live.pty.pid });
     const seq = live.scrollback.append(data);
     live.pendingOutputAt = nowIso(clock);
     if (!live.outputTimer) {
@@ -428,7 +440,16 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager &
     safeWrite(live, CTRL_C);
   };
 
-  /** Graceful for `grace` ms (repeating the gesture), then SIGTERM, then SIGKILL. */
+  const killTree = o.killTree ?? ((pid: number) => killProcessTree(pid, { env: o.baseEnv ?? process.env }));
+
+  /** Windows: ends the process and every process it started, by the parent links (see endProcess). Never throws. */
+  const endTree = async (live: Live): Promise<void> => {
+    const pid = live.pty?.pid;
+    if (typeof pid !== 'number' || pid <= 0) return;
+    try { await killTree(pid); } catch (err) { log.warn('could not end the process tree of a managed terminal', { key: live.record.key, pid, error: String(err) }); }
+  };
+
+  /** Graceful for `grace` ms (repeating the gesture), then SIGTERM, then SIGKILL. On Windows the process tree goes first. */
   const endProcess = async (live: Live, graceMs: number, reasonIfKilled: EndReason): Promise<void> => {
     if (!live.pty) return;
     if (graceMs > 0) {
@@ -440,6 +461,10 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager &
     }
     if (!live.pty) return;
     live.endReason ??= reasonIfKilled;
+    // On Windows node-pty's kill() ends the processes attached to the pseudo-console and closes it. A child that Claude started
+    // with a console of its own (an MCP server, a shell, git) is not attached to it and would be left running, and the parent
+    // links that find it are gone once its parent is dead. So the whole tree is ended first, then the terminal is closed.
+    if (platform === 'win32') await endTree(live);
     safeKill(live, 'SIGTERM');
     if (await exitedWithin(live, termWaitMs)) return;
     safeKill(live, 'SIGKILL');
@@ -605,8 +630,10 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager &
     live.pty = pty;
     pty.onData((data) => handleData(live, data));
     pty.onExit((info) => handleExit(live, info));
-    commit(live, { pid: pty.pid });
-    log.info('managed session started', { key, env, pid: pty.pid, mode: input.mode });
+    // 0 = a Windows ConPTY that has not connected its process yet: no pid is recorded until the first output (see handleData).
+    const pid = pty.pid > 0 ? pty.pid : null;
+    commit(live, { pid });
+    log.info('managed session started', { key, env, pid, mode: input.mode });
     return view(live);
   };
 
@@ -619,6 +646,9 @@ export function createManagedManager(deps: ManagedManagerDeps): ManagedManager &
     }
     const force = opts.force === true;
     if (!live.stopping) {
+      // The user asked for this end, whatever form it takes: Claude may leave by itself on the Ctrl-C gesture long before any
+      // kill is needed, and the notice must still say "You stopped the session." rather than "exited with code 0".
+      live.endReason ??= 'killed_by_user';
       live.stopping = { force, done: endProcess(live, force ? 0 : stopGraceMs, 'killed_by_user').finally(() => { live.stopping = null; }) };
     } else if (force && !live.stopping.force) {
       // A graceful stop is already waiting; the user now wants it dead.

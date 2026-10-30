@@ -1,5 +1,5 @@
-import { defaultSettings, settingsPatchSchema } from '@minisumma/shared';
-import type { Settings, SettingsPatch } from '@minisumma/shared';
+import { defaultSettings, settingsPatchSchema, UI_LIMITS } from '@minisumma/shared';
+import type { SessionKey, Settings, SettingsPatch } from '@minisumma/shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createSettingsService } from '../../src/infra/settings.ts';
 import { SETTINGS_SPEC, numericFields } from '../../src/infra/settings-schema.ts';
@@ -236,6 +236,8 @@ describe('update', () => {
       const unwrap = (z: Zod): Zod => { let s = z; for (let i = 0; i < 8 && s.def?.innerType; i++) s = s.def.innerType; return s; };
       const zodLeaves = new Map<string, Zod>();
       const walkZod = (z: Zod, prefix: string): void => {
+        // The window's memory (ui) has no table of leaves: its keys are project ids. Its rules are tested in "the window state".
+        if (prefix === 'ui') return;
         const s = unwrap(z);
         if (s.def?.type === 'object' && s.shape) for (const [k, v] of Object.entries(s.shape)) walkZod(v, prefix ? `${prefix}.${k}` : k);
         else zodLeaves.set(prefix, s);
@@ -342,5 +344,135 @@ describe('after the change', () => {
     const keys = (obj: unknown, prefix = ''): string[] =>
       Object.entries(obj as Record<string, unknown>).flatMap(([k, v]) => (v !== null && typeof v === 'object' ? keys(v, `${prefix}${k}.`) : [`${prefix}${k}`]));
     expect(keys(storedJson()).sort()).toEqual(keys(defaultSettings()).sort());
+  });
+});
+
+describe('the window state (ui)', () => {
+  const KEY_A = 'win|a1b2c3d4-5e6f-4a70-8b91-c2d3e4f50617' as SessionKey;
+  const KEY_B = 'posix|e1f2a3b4-c5d6-4e7f-8091-a2b3c4d5e6f7' as SessionKey;
+
+  it('is absent by default and stores nothing until the window has something to remember', () => {
+    const s = make();
+    expect(s.get()).not.toHaveProperty('ui');
+    expect(s.update({ ui: {} }).ui).toBeUndefined();
+    expect(storedJson()).toBeUndefined();
+    expect(base.eventsOf('settings.changed')).toHaveLength(0);
+  });
+
+  it('stores a change next to the other settings, announces it once and returns it', () => {
+    const s = make();
+    const next = s.update({ ui: { route: { projectId: 'prj_a', view: 'reports' }, perProject: { prj_a: { sessionKey: KEY_A, conversationId: 'cnv_1' } }, setup: { dismissed: true } }, layout: { sidebarWidth: 300 } });
+    expect(next.ui).toEqual({ route: { projectId: 'prj_a', view: 'reports' }, perProject: { prj_a: { sessionKey: KEY_A, conversationId: 'cnv_1' } }, setup: { dismissed: true } });
+    expect(next.layout.sidebarWidth).toBe(300);
+    expect((storedJson() as Settings).ui).toEqual(next.ui);
+    expect(base.eventsOf('settings.changed')).toHaveLength(1);
+    expect(base.eventsOf('settings.changed')[0].settings.ui).toEqual(next.ui);
+  });
+
+  it('merges a later change into what is there (two windows write different things) and forgets on null', () => {
+    const s = make();
+    s.update({ ui: { perProject: { prj_a: { sessionKey: KEY_A } }, setup: { seenEmpty: true } } });
+    s.update({ ui: { perProject: { prj_a: { conversationId: 'cnv_1' }, prj_b: { sessionKey: KEY_B } }, route: { projectId: 'prj_b', view: 'workspace' } } });
+    expect(s.get().ui).toEqual({
+      route: { projectId: 'prj_b', view: 'workspace' },
+      perProject: { prj_a: { sessionKey: KEY_A, conversationId: 'cnv_1' }, prj_b: { sessionKey: KEY_B } },
+      setup: { seenEmpty: true },
+    });
+    s.update({ ui: { perProject: { prj_a: null, prj_b: { sessionKey: null } }, setup: { seenEmpty: null }, route: null } });
+    expect(s.get()).not.toHaveProperty('ui');
+    expect(storedJson()).not.toHaveProperty('ui');
+  });
+
+  it('does nothing for a change that changes nothing: no write, no event', () => {
+    const s = make();
+    s.update({ ui: { perProject: { prj_a: { sessionKey: KEY_A }, prj_b: { conversationId: 'cnv_2' } }, setup: { dismissed: false } } });
+    const stamp = base.db.get<{ updated_at: string }>("SELECT updated_at FROM kv WHERE key='settings'")?.updated_at;
+    base.clock.advance(60_000);
+    s.update({ ui: { perProject: { prj_a: { sessionKey: KEY_A } }, setup: { dismissed: false } } });
+    s.update({ ui: { perProject: { prj_gone: null } } });
+    expect(base.eventsOf('settings.changed')).toHaveLength(1);
+    expect(base.db.get<{ updated_at: string }>("SELECT updated_at FROM kv WHERE key='settings'")?.updated_at).toBe(stamp);
+  });
+
+  describe('validation', () => {
+    const cases: [string, unknown][] = [
+      ['a part it does not know', { theme: 'dark' }],
+      ['a key it does not know inside the route', { route: { projectId: null, view: 'workspace', zoom: 2 } }],
+      ['a key it does not know inside a project', { perProject: { prj_a: { sessionKey: KEY_A, scroll: 3 } } }],
+      ['a key it does not know in the setup', { setup: { mood: 'good' } }],
+      ['a view that does not exist', { route: { projectId: 'prj_a', view: 'moon' } }],
+      ['a project id that is not text', { route: { projectId: 7, view: 'workspace' } }],
+      ['a session key that is not one', { perProject: { prj_a: { sessionKey: 'a1b2c3d4' } } }],
+      ['an id that is far too long', { perProject: { prj_a: { conversationId: 'c'.repeat(UI_LIMITS.idChars + 1) } } }],
+      ['a flag that is not true or false', { setup: { dismissed: 'yes' } }],
+      ['a window state that is not an object', 'dark'],
+      ['a window state that is null', null],
+    ];
+    for (const [name, ui] of cases) {
+      it(`rejects ${name} with a plain 400 and changes nothing`, () => {
+        const s = make();
+        s.update({ ui: { setup: { seenEmpty: true } } });
+        const before = s.get();
+        const events = base.eventsOf('settings.changed').length;
+        const err = failure(() => s.update({ layout: { sidebarWidth: 300 }, ui } as unknown as SettingsPatch));
+        expect(err.status).toBe(400);
+        expect(err.code).toBe('invalid_setting');
+        expect(err.message.length).toBeGreaterThan(20);
+        expectPlainText(err.message);
+        expect(typeof (err.details as { field?: unknown }).field).toBe('string');
+        expect(s.get()).toEqual(before); // all or nothing: the layout change in the same patch was not applied either
+        expect(base.eventsOf('settings.changed')).toHaveLength(events);
+      });
+    }
+
+    it('names the field that is wrong', () => {
+      const s = make();
+      const err = failure(() => s.update({ ui: { perProject: { prj_a: { conversationId: 5 as never } } } }));
+      expect(err.details).toEqual({ field: 'ui.perProject.prj_a.conversationId' });
+      expect(err.message).toContain('ui.perProject.prj_a.conversationId');
+    });
+
+    it('refuses more projects in one change than it keeps, and stays within the limit however many changes arrive', () => {
+      const s = make();
+      const many = Object.fromEntries(Array.from({ length: UI_LIMITS.projects + 1 }, (_, i) => [`prj_${i}`, { conversationId: 'cnv_1' }]));
+      expect(failure(() => s.update({ ui: { perProject: many } })).status).toBe(400);
+      for (let i = 0; i < UI_LIMITS.projects + 30; i += 1) s.update({ ui: { perProject: { [`prj_${i}`]: { conversationId: `cnv_${i}` } } } });
+      const kept = Object.keys(s.get().ui?.perProject ?? {});
+      expect(kept).toHaveLength(UI_LIMITS.projects);
+      expect(kept).toContain(`prj_${UI_LIMITS.projects + 29}`); // the newest are kept
+      expect(kept).not.toContain('prj_0'); // the oldest were forgotten
+      expect(JSON.stringify(storedJson()).length).toBeLessThan(60_000);
+    });
+  });
+
+  describe('loading', () => {
+    it('shows what the previous process saved', () => {
+      base = makeBase();
+      createSettingsService({ base }).update({ ui: { route: { projectId: 'prj_a', view: 'activity' }, perProject: { prj_a: { sessionKey: KEY_A } } } });
+      const second = createSettingsService({ base });
+      expect(second.get().ui).toEqual({ route: { projectId: 'prj_a', view: 'activity' }, perProject: { prj_a: { sessionKey: KEY_A } } });
+    });
+
+    it('keeps what is valid in a damaged value and drops the rest, instead of failing to start', () => {
+      base = makeBase();
+      seed({ ui: { route: { projectId: 'prj_a', view: 'moon' }, perProject: { prj_a: { sessionKey: 'nope', conversationId: 'cnv_1' }, prj_b: 'text' }, setup: { dismissed: 'x', seenEmpty: true }, future: { x: 1 } } });
+      expect(createSettingsService({ base }).get().ui).toEqual({ perProject: { prj_a: { conversationId: 'cnv_1' } }, setup: { seenEmpty: true } });
+      for (const bad of [{ ui: 'text' }, { ui: [1] }, { ui: null }, { ui: { route: 3 } }]) {
+        base.close();
+        base = makeBase();
+        seed(bad);
+        expect(createSettingsService({ base }).get()).toEqual(defaultSettings());
+      }
+    });
+
+    it('does not store what it dropped again', () => {
+      base = makeBase();
+      seed({ ui: { perProject: { prj_a: { conversationId: 'cnv_1', scroll: 9 } }, future: 1 } });
+      const s = createSettingsService({ base });
+      s.update({ layout: { sidebarWidth: 301 } });
+      expect(JSON.stringify(storedJson())).not.toContain('scroll');
+      expect(JSON.stringify(storedJson())).not.toContain('future');
+      expect((storedJson() as Settings).ui).toEqual({ perProject: { prj_a: { conversationId: 'cnv_1' } } });
+    });
   });
 });

@@ -129,6 +129,10 @@ export interface HarnessOptions extends DemoClientOptions {
   storage?: KeyValueStorage;
   /** Do not connect on creation (the test drives the loader itself). */
   startLoader?: boolean;
+  /** Timing of the writes that keep the core's copy of what the window remembers. Tests make it short. */
+  uiSync?: Parameters<typeof createRuntime>[0]['uiSync'];
+  /** What happens to a remembered change as the page closes. */
+  sendOnClose?: Parameters<typeof createRuntime>[0]['sendOnClose'];
 }
 
 export interface Harness {
@@ -147,7 +151,7 @@ export function createHarness(options: HarnessOptions = {}): Harness {
   const storage = options.storage ?? createMemoryStorage();
   const runtime = createRuntime({
     api: demo, native: fake.native, mode: 'demo', adapterFactory: factory, storage, startLoader: options.startLoader,
-    schedule: (fn) => { fn(); return 0; },
+    schedule: (fn) => { fn(); return 0; }, uiSync: options.uiSync, sendOnClose: options.sendOnClose,
   });
   return { runtime, demo, fake, adapters, created, storage };
 }
