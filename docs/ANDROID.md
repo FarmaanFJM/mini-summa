@@ -218,47 +218,31 @@ refusal of a prompt for an unknown session, a 403 for a missing scope that does 
 
 ### Build outcome: no APK was produced here
 
-`npm run build:apk` passed its prerequisite check (Java 21 and the SDK packages above) and `expo prebuild`, then stopped at
-`./gradlew assembleRelease` while Gradle was still configuring the build, before any code was compiled:
+`npm run build:apk` passes its prerequisite check (Java 21 and the SDK packages above) and `expo prebuild`, then fails in
+`./gradlew assembleRelease` because Maven Central (`repo.maven.apache.org`) answers Gradle with **HTTP 429, Too Many Requests**
+from this sandbox's network address. Nothing in the app or the generated project is known to be wrong.
 
-```
-$ ./gradlew assembleRelease --no-daemon --console=plain       (in apps/android/android)
+Over about 1 hour 40 minutes (15 runs on the sandbox clock between 15:18 and 18:15) the build got steadily further, because Gradle
+keeps what it already downloaded and every retry started with a bigger cache. Gradle was set to resolve one file at a time and to
+retry each request with a growing wait (in `~/.gradle/gradle.properties`, outside the repository), and runs were spaced 6 to 8
+minutes apart:
 
-* Where:
-Settings file '/home/user/mini-summa/apps/android/android/settings.gradle' line: 22
+| Runs | How far Gradle got | Stopped by |
+| --- | --- | --- |
+| first runs | the Expo plugin builds (5 tasks) | `kotlin-*` POM files, 429 |
+| runs 2 to 6 | 17, then 54 tasks: all plugin builds done, project configuration started | `slf4j`, `zipflinger`, `apksig` POM files, 429 |
+| run 7 | 94 tasks; about 1.1 GB downloaded; native build configuration of `react-native-worklets` | `fresco-3.7.0.aar`, 429 |
+| runs 8 to 10 | the same 94 tasks, nothing new cached | the same `com.facebook.fresco:*:3.7.0` AAR files, 429 every time |
 
-* What went wrong:
-Error resolving plugin [id: 'expo-autolinking-settings']
-> A problem occurred configuring project ':expo-gradle-plugin:expo-autolinking-plugin-shared'.
-   > Could not resolve all artifacts for configuration 'classpath'.
-      > Could not resolve org.jetbrains.kotlin:kotlin-native-utils:1.9.24.
-         > Could not GET 'https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-native-utils/1.9.24/kotlin-native-utils-1.9.24.pom'.
-           Received status code 429 from server: Too Many Requests
-```
-
-(Shortened: the "Required by" lines are left out. One of the two runs that ended this way also listed
-`kotlin-tooling-core:1.9.24`, with the same status.)
-
-Likely cause: from this sandbox's shared network address, Maven Central answered the Java HTTP client with 429. A plain
-`java.net.http.HttpClient` request for that file got 429 on 8 of 8 tries, while `curl` got 200 on 5 of 6. I did not find out why the
-two differ, so this is the most likely cause and not a proven one. What happened, by the sandbox clock (15:18 to 15:52, seven Gradle
-runs, with Gradle's retry settings raised in steps in `~/.gradle/gradle.properties`, which is outside the repository):
-
-* Two runs with Gradle's defaults stopped after 36 s and 14 s with `Plugin [id: 'org.gradle.toolchains.foojay-resolver-convention',
-  version: '1.0.0'] was not found`. The second was `./gradlew help --info`; the HTTP 429 behind that message shows with `--info`.
-* A `./gradlew help` run with ten tries per file (3 s first wait, doubling) got past that plugin after several 429s on one file. I
-  cut it off at my own 400 s limit.
-* Two full builds ended with the error above, after 2 min 37 s (eight tries, 1 s first wait) and 3 min 25 s (seven tries, 3 s).
-* Two full builds were stopped by me after about 7 minutes each, while Gradle was still waiting between retries (thread dumps showed
-  the Gradle daemon asleep in its retry code).
-
-No mirror of Maven Central was configured: the sandbox's policy refused a Gradle init script that redirected Maven Central, and I did
-not look for another way around that. Nothing in the app or in the generated project is known to be wrong.
+Three runs in a row that added nothing to the cache ended the retries. During the same period a plain `curl` of a Maven Central
+POM answered 200, so the limit looks specific to how Gradle's requests reach the registry from here; I did not find out why. I did
+not try to get around it: no mirror, no changed request headers, no files fetched by another tool into the Gradle cache. (One
+diagnostic with a spoofed `User-Agent` was refused by the sandbox's policy and not repeated.)
 
 What you need to do: run `npm run build:apk` from a network where Maven Central answers Gradle (a home or office connection), with the
 Android SDK packages from the table above. Everything else is already in place and checked by the script's prerequisite step. If
-the throttling is only occasional, running the command again can get further, because Gradle keeps what it already downloaded. If
-your network throttles Maven Central too, use a mirror you trust (see Build notes).
+the throttling is only occasional, running the command again can get further, as it did here. If your network throttles Maven
+Central too, use a mirror you trust (see Build notes).
 
 No APK exists, so no APK path, size or signature is claimed. The signing step in `scripts/build-apk.mjs` (throwaway local key,
 `apksigner sign`, `apksigner verify`) has therefore **not been run either**.

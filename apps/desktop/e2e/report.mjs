@@ -174,12 +174,12 @@ function evidenceSection(model) {
 function historySection(history, currentStartedAt) {
   const runs = history.filter((h) => h.complete).slice(-6);
   if (runs.length < 2) return '';
-  const rows = runs.map((h) => `| ${utc(h.startedAt)} | ${minutes(h.durationMs)} | ${countsLine(h.behaviours)} | ${countsLine(h.extras)} | ${h.exitCode} |${h.startedAt === currentStartedAt ? ' this report |' : ' |'}`);
+  const rows = runs.map((h) => `| ${utc(h.startedAt)}${h.startedAt === currentStartedAt ? ' (this report)' : ''} | ${minutes(h.durationMs)} | ${countsLine(h.behaviours)} | ${countsLine(h.extras)} | ${h.exitCode} |`);
   return [
     '## Recent complete runs on the machine that produced this report', '',
     'One line per `npm run e2e` that ran every test. Runs are recorded by `e2e/run.mjs` in `apps/desktop/e2e/results/runs.jsonl` (not committed).', '',
-    '| Started | Duration (build included) | Behaviours (25 + CRIT) | Extra checks | Exit code | |',
-    '| --- | --- | --- | --- | --- | --- |',
+    '| Started | Duration (build included) | Behaviours (A01 to A25 and CRIT) | Extra checks | Exit code |',
+    '| --- | --- | --- | --- | --- |',
     ...rows, '',
   ].join('\n');
 }
