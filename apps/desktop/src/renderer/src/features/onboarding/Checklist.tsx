@@ -104,11 +104,14 @@ function StepActions({ step, next, setup }: { step: Step; next: boolean; setup: 
   }
 }
 
-/** The steps with their ticks. A tick is a fact the core reports, with the words that say why. */
-export function Checklist({ setup }: { setup: SetupState }) {
+/**
+ * The steps with their ticks. A tick is a fact the core reports, with the words that say why. In the compact form a finished
+ * step is only its title, so what is left to do stays in view.
+ */
+export function Checklist({ setup, compact = false }: { setup: SetupState; compact?: boolean }) {
   const next = setup.steps.find((s) => !s.done && !s.optional);
   return (
-    <ol className="ms-onb-steps" aria-label="Setup steps">
+    <ol className="ms-onb-steps" aria-label="Setup steps" data-compact={compact ? '' : undefined}>
       {setup.steps.map((step) => (
         <li key={step.id} className="ms-onb-step" data-done={step.done ? '' : undefined}>
           <span className="ms-onb-step__mark" aria-hidden="true"><Icon name={step.done ? 'circle-check' : 'circle'} size={18} /></span>
@@ -117,8 +120,12 @@ export function Checklist({ setup }: { setup: SetupState }) {
               <span className="ms-x-hidden">{step.done ? 'Done: ' : 'To do: '}</span>
               {step.title}{step.optional ? <span className="ms-onb-step__optional"> (optional)</span> : null}
             </h3>
-            <p className="ms-x-note">{step.detail}</p>
-            <StepActions step={step} next={next?.id === step.id} setup={setup} />
+            {compact && step.done ? null : (
+              <>
+                <p className="ms-x-note">{step.detail}</p>
+                <StepActions step={step} next={next?.id === step.id} setup={setup} />
+              </>
+            )}
           </div>
         </li>
       ))}

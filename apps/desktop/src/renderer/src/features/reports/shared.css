@@ -7,6 +7,8 @@
 .ms-x-error { margin: 0; color: var(--danger); font-size: var(--fs-sm); line-height: 1.5; overflow-wrap: anywhere; }
 .ms-x-label { display: block; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
 .ms-x-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
+/* A button with no fill that starts a row: its label lines up with the text above it, not its invisible edge. */
+.ms-x-actions > .sm-btn--ghost:first-child { margin-left: -12px; }
 .ms-x-head-actions { margin-left: auto; display: flex; align-items: center; gap: var(--sp-1); flex: none; }
 .ms-x-stack { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
 .ms-x-stack--tight { gap: var(--sp-2); }

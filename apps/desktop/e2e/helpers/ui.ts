@@ -14,6 +14,10 @@ export const sectionsNav = (page: Page): Locator => page.getByRole('navigation',
 /** The sidebar row of a project. Its accessible name is the project's name followed by its facts ("Alpha, 1 live session"). */
 export const projectRow = (page: Page, name: string): Locator => projectsNav(page).getByRole('button', { name: new RegExp(`^${escapeRe(name)}(,|$)`) });
 
+/** The row of a project whose spoken facts include `fact`, for example "1 live session" or "2 reports waiting for handoff". */
+export const projectRowWith = (page: Page, name: string, fact: string): Locator =>
+  projectsNav(page).getByRole('button', { name: new RegExp(`^${escapeRe(name)}, (.*, )?${escapeRe(fact)}`) });
+
 export async function selectProject(page: Page, name: string): Promise<void> {
   await showWorkspace(page);
   const row = projectRow(page, name);
