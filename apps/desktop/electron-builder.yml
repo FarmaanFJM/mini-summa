@@ -103,3 +103,6 @@ linux:
   icon: build/icon.png
   executableName: mini-summa
   category: Utility
+
+# No auto-update channel and no publishing: releases are built and shared by hand.
+publish: null

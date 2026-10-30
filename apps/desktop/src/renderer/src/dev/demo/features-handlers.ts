@@ -215,6 +215,16 @@ const stateForVerification = (v: Conversation['verification']): DeliveryState =>
 /** The long-lived pieces a handler needs from the server, all public. */
 export function installFeatureHandlers(server: DemoServer, handlers: object): void {
   Object.assign(handlers, createFeatureHandlers(server));
+  // A test or a screenshot script can make the next call to any route fail once (featureState(...).failNext).
+  const table = handlers as Record<string, (input: unknown) => unknown>;
+  for (const [name, fn] of Object.entries(table)) {
+    table[name] = (input: unknown) => {
+      const failures = featureState(server.data).failNext;
+      const failure = failures.get(name as RouteName);
+      if (failure) { failures.delete(name as RouteName); throw failure; }
+      return fn(input);
+    };
+  }
 }
 
 export function createFeatureHandlers(server: DemoServer): HandlerMap {
@@ -231,11 +241,8 @@ export function createFeatureHandlers(server: DemoServer): HandlerMap {
   const projectOf = (id: string | null): Project | null => (id ? data().projects.find((p) => p.id === id) ?? null : null);
   const sessionOf = (key: string): SessionView | undefined => data().sessions.find((s) => s.key === key);
 
-  const guarded = <K extends RouteName>(name: K, fn: Handler<K>): Handler<K> => (async (input: RouteInput<K>) => {
-    const failure = st().failNext.get(name);
-    if (failure) { st().failNext.delete(name); throw failure; }
-    return fn(input);
-  }) as Handler<K>;
+  // Failures are injected for every route by installFeatureHandlers; this only keeps the table below readable.
+  const guarded = <K extends RouteName>(_name: K, fn: Handler<K>): Handler<K> => fn;
 
   // ----- deliveries -----
 

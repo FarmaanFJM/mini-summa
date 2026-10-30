@@ -72,9 +72,12 @@ describe('the report queue', () => {
     await user.click(screen.getByRole('button', { name: 'Project' }));
     await user.click(screen.getByRole('option', { name: 'Docs site' }));
     await user.click(screen.getByRole('button', { name: /^Waiting for handoff/ }));
-    // The one Docs report is waiting, so remove it by discarding through the core and watch the list react live.
-    const app = await renderFeature({ seed: undefined });
-    app.unmount();
+    expect(within(screen.getByRole('list', { name: 'Reports' })).getAllByRole('button')).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Project' }));
+    await user.click(screen.getByRole('option', { name: 'Trading dashboard' }));
+    expect(await screen.findByText('No reports match these filters.')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(within(screen.getByRole('list', { name: 'Reports' })).getAllByRole('button').length).toBeGreaterThan(5);
   });
 
   it('opens a report from the queue and marks it as read', async () => {
@@ -95,11 +98,12 @@ describe('the report', () => {
     const text = await screen.findByRole('region', { name: 'Full report text' });
     const body = app.server.data.reports.find((r) => r.id === FEATURE_IDS.long)!.body;
     expect(body.length).toBeGreaterThan(29_000);
-    // Every character of the report is on screen: nothing is cut off, whatever its length.
-    expect(text.textContent!.replace(/\s+/g, '')).toBe(body.replace(/\s+/g, ''));
+    // Every character of the report is on screen: nothing is cut off, whatever its length. (The fence lines become code blocks.)
+    const shown = text.cloneNode(true) as HTMLElement;
+    shown.querySelectorAll('figcaption').forEach((c) => c.remove());
+    const withoutFences = body.split('\n').filter((line) => !/^`{3,}/.test(line)).join('\n');
+    expect(shown.textContent!.replace(/\s+/g, '')).toBe(withoutFences.replace(/\s+/g, ''));
     expect(text.className).toContain('ms-mono');
-    const facts = screen.getByRole('term', { hidden: false, name: '' as never }) as unknown;
-    void facts;
     const about = document.querySelector('dl[aria-label="About this report"]')!;
     expect(textOf(about)).toContain('GitManager');
     expect(textOf(about)).toContain('Declared partial by Claude');

@@ -5,7 +5,8 @@
 // `extendSeed` changes a DemoData in place (tests pass the result as the seed). `applyFeatureScenario` does the same to a
 // running server and announces what is new, so a screenshot script can build the scene in a live page.
 import type {
-  ActivityEvent, Conversation, Delivery, DeliveryState, Device, NotificationRecord, PendingAction, Report, ReportCandidate, ReviewState, SessionKey, SessionView,
+  ActivityEvent, Conversation, Delivery, DeliveryEvent, DeliveryEventType, DeliveryState, Device, NotificationRecord, PendingAction, Report, ReportCandidate, ReviewState,
+  SessionKey, SessionView,
 } from '@minisumma/shared';
 import { featureState } from './features-handlers';
 import { createSeed, IDS } from './seed';
@@ -109,6 +110,38 @@ export interface FeatureAdditions {
   candidates: ReportCandidate[];
 }
 
+/** The history a real delivery would have, so the History disclosure and the reason for a missing destination have something to show. */
+function seedHistory(data: DemoData, deliveries: Delivery[]): void {
+  const events = featureState(data).events;
+  for (const d of deliveries) {
+    if (events.has(d.id)) continue;
+    const list: DeliveryEvent[] = [];
+    const t0 = Date.parse(d.createdAt);
+    const t1 = Math.max(t0 + 60_000, Date.parse(d.updatedAt));
+    const push = (type: DeliveryEventType, from: DeliveryState | null, to: DeliveryState | null, detail: Record<string, unknown> = {}, actor: DeliveryEvent['actor'] = { kind: 'desktop' }) => {
+      const at = new Date(t0 + ((t1 - t0) * list.length) / 8).toISOString();
+      list.push({ id: `evt_${d.id}_${list.length}`, deliveryId: d.id, at, type, from, to, actor, detail });
+    };
+    const system = { kind: 'system' } as const;
+    push('created', null, 'report_captured', { reportId: d.reportId }, system);
+    const first: DeliveryState = d.destination ? (d.destination.verificationAtFreeze === 'verified' ? 'ready_for_handoff' : 'destination_unverified') : 'destination_missing';
+    push('destination_resolved', 'report_captured', first, {
+      destination: d.destination && { title: d.destination.title, url: d.destination.url, resolvedFrom: d.destination.resolvedFrom },
+      reason: d.destination ? null : 'No ChatGPT conversation is mapped to this project yet.',
+    }, system);
+    const copied = ['copied', 'awaiting_user_send', 'user_confirmed_sent', 'delivery_uncertain'].includes(d.state);
+    if (copied) {
+      push('prepared', first, first, { partCount: 1, chars: 4200 });
+      push('part_copied', first, 'copied', { part: 1, partCount: 1 });
+    }
+    if (['awaiting_user_send', 'user_confirmed_sent', 'delivery_uncertain'].includes(d.state)) push('destination_opened', 'copied', 'awaiting_user_send', { mode: 'embedded' });
+    if (d.state === 'user_confirmed_sent') push('confirmed_sent', 'awaiting_user_send', 'user_confirmed_sent');
+    if (d.state === 'delivery_uncertain') push('marked_uncertain', 'awaiting_user_send', 'delivery_uncertain');
+    if (d.state === 'user_discarded') push('discarded', first, 'user_discarded');
+    events.set(d.id, list);
+  }
+}
+
 /** Adds the feature scenes to `data` and says what is new. */
 export function extendSeed(data: DemoData, now: Date = new Date()): FeatureAdditions {
   const gm = data.projects.find((p) => p.id === IDS.gitManager)!;
@@ -135,6 +168,7 @@ export function extendSeed(data: DemoData, now: Date = new Date()): FeatureAddit
   ];
   data.reports.unshift(...reports);
   data.deliveries.push(...deliveries);
+  seedHistory(data, data.deliveries);
 
   const candidates: ReportCandidate[] = [
     {
