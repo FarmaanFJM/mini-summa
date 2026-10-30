@@ -1,4 +1,6 @@
 // @vitest-environment node
+import fs from 'node:fs';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // The Electron objects are replaced by recorders so the real adapter code runs against them.
@@ -9,6 +11,9 @@ class FakeWebContents {
   listeners = new Map<string, (...a: any[]) => void>();
   windowOpenHandler: any = null;
   navigationHistory = { canGoBack: () => true, canGoForward: () => false, goBack: vi.fn(), goForward: vi.fn() };
+  zoomFactor = 1;
+  getZoomFactor() { return this.zoomFactor; }
+  setZoomFactor = vi.fn((factor: number) => { this.zoomFactor = factor; });
   getURL() { return 'https://chatgpt.com/'; }
   getTitle() { return 'ChatGPT'; }
   isLoading() { return false; }
@@ -132,5 +137,49 @@ describe('the embedded ChatGPT view', () => {
     hardenChatGptSession(chatGptSession());
     expect(created).toHaveLength(0);
     expect((chatGptSession() as any).setPermissionRequestHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it('the page zoom is the view\'s own: it reads and sets the zoom of this web contents and nothing else', () => {
+    const handle = createChatGptViewHandle(makeWin() as never);
+    const wc = created[0].view.webContents;
+    expect(handle.contents.getZoomFactor()).toBe(1);
+    handle.contents.setZoomFactor(0.8);
+    expect(wc.setZoomFactor).toHaveBeenCalledWith(0.8);
+    expect(handle.contents.getZoomFactor()).toBe(0.8);
+  });
+});
+
+describe('what the adapter lets the controller do to the view and the page (the only code that can reach the real ones)', () => {
+  const makeWin = () => ({ contentView: { addChildView: vi.fn() } });
+
+  it('offers no way to destroy, close, remove or replace the view, so layout changes cannot lose the page', () => {
+    const handle = createChatGptViewHandle(makeWin() as never);
+    expect(Object.keys(handle).sort()).toEqual(['contents', 'setBounds', 'setVisible']);
+    const names = Object.keys(handle.contents);
+    expect(names.filter((name) => /destroy|close|remove(?!Listener)|dispose|crash|replace/i.test(name) && name !== 'isDestroyed')).toEqual([]);
+  });
+
+  it('offers no way to run a script, add CSS, type, click, change the user agent or watch the page\'s requests', () => {
+    const handle = createChatGptViewHandle(makeWin() as never);
+    expect(Object.keys(handle.contents).sort()).toEqual([
+      'canGoBack', 'canGoForward', 'focus', 'getTitle', 'getURL', 'getZoomFactor', 'goBack', 'goForward', 'isDestroyed', 'isFocused', 'isLoading',
+      'loadURL', 'on', 'reload', 'removeListener', 'setWindowOpenHandler', 'setZoomFactor', 'stop',
+    ]);
+  });
+
+  it('no source of the main process or the preload calls anything that would do those things, or removes the view from the window', () => {
+    const files: string[] = [];
+    const walk = (d: string) => {
+      for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+        const file = path.join(d, entry.name);
+        if (entry.isDirectory()) walk(file); else if (/\.ts$/.test(entry.name)) files.push(file);
+      }
+    };
+    for (const dir of ['../../src/main', '../../src/preload']) walk(path.resolve(import.meta.dirname, dir));
+    expect(files.length).toBeGreaterThan(10);
+    const page = /\.(executeJavaScript|executeJavaScriptInIsolatedWorld|insertCSS|removeInsertedCSS|insertText|sendInputEvent|setUserAgent|startDrag)\(|\bwebFrame\b|registerPreloadScript|setPreloads|webRequest\./;
+    const lifetime = /removeChildView|webContents\??\.(close|destroy)\(|forcefullyCrashRenderer/;
+    expect(files.filter((f) => page.test(fs.readFileSync(f, 'utf8'))).map((f) => path.basename(f))).toEqual([]);
+    expect(files.filter((f) => lifetime.test(fs.readFileSync(f, 'utf8'))).map((f) => path.basename(f))).toEqual([]);
   });
 });

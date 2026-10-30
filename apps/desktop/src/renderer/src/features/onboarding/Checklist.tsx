@@ -62,6 +62,8 @@ function StepActions({ step, next, setup, save }: { step: Step; next: boolean; s
   const openProjectDialog = useUi((s) => s.openProjectDialog);
   const first = setup.facts.projects[0];
   const emphasis = next ? 'primary' : 'secondary';
+  // A session runs in a folder: the step points at a project that has one, and when none has, offers to give the first one a folder.
+  const withFolder = setup.facts.projects.find((p) => p.roots.length > 0);
 
   switch (step.id) {
     case 'claude':
@@ -96,8 +98,11 @@ function StepActions({ step, next, setup, save }: { step: Step; next: boolean; s
         <div className="ms-x-actions"><Button onClick={() => route.go({ view: 'settings', section: 'hooks' })}>{step.done ? 'Review hooks' : 'Review the changes'}</Button></div>
       );
     case 'session':
-      return step.done || !first ? null : (
-        <div className="ms-x-actions"><Button variant={emphasis} onClick={() => route.selectProject(first.id)}>Open {first.name}</Button></div>
+      if (step.done || !first) return null;
+      return withFolder ? (
+        <div className="ms-x-actions"><Button variant={emphasis} onClick={() => route.selectProject(withFolder.id)}>Open {withFolder.name}</Button></div>
+      ) : (
+        <div className="ms-x-actions"><Button variant={emphasis} onClick={() => openProjectDialog({ mode: 'edit', projectId: first.id })}>Add a folder to {first.name}</Button></div>
       );
     default:
       return null;

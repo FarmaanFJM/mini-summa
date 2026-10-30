@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ActivityEvent, Delivery, PendingAction, ReportSummary, SessionView } from '@minisumma/shared';
 import { createEventBus } from '../src/bus.ts';
-import type { ActivityInput, ClaudeDerivedEvent, ClaudeEventHandlers, CoreBase, PermissionRequestInfo } from '../src/contracts.ts';
+import type { ActivityInput, ClaudeDerivedEvent, ClaudeEventHandlers, CoreBase, NotifyHint, PermissionRequestInfo } from '../src/contracts.ts';
 import { createOrchestrator } from '../src/orchestrator.ts';
 
 const KEY = 'win|11111111-1111-4111-8111-111111111111' as const;
@@ -30,6 +30,7 @@ function harness() {
   const recorded: ActivityInput[] = [];
   const handlers: { current: ClaudeEventHandlers | null } = { current: null };
   const notified: { id: string; kind: string; target: unknown }[] = [];
+  const hints: NotifyHint[] = [];
   const permission: unknown[] = [];
   const superseded: string[] = [];
   const captured: string[] = [];
@@ -64,11 +65,11 @@ function harness() {
       resolve(match) { resolved.push(match); return 1; },
       get: (id) => entries.get(id) ?? null,
     },
-    notifications: { consider: async (a, hint) => { notified.push({ id: a.id, kind: hint.kind, target: hint.target }); return null; } },
+    notifications: { consider: async (a, hint) => { notified.push({ id: a.id, kind: hint.kind, target: hint.target }); hints.push(hint); return null; } },
     actions: { raisePermission: (i) => { permission.push(i); return null; }, supersedeOpenFor: (k) => { superseded.push(k); } },
   });
   const stop = orch.start();
-  return { orch, retention, handlers: () => handlers.current!, entries, resolved, recorded, notified, permission, superseded, captured, bus, stop, deliveriesByReport, delivery };
+  return { orch, retention, handlers: () => handlers.current!, entries, resolved, recorded, notified, hints, permission, superseded, captured, bus, stop, deliveriesByReport, delivery };
 }
 
 const summary = (id: string, over: Partial<ReportSummary> = {}): ReportSummary => ({
@@ -138,14 +139,15 @@ describe('orchestrator: Claude events', () => {
     expect(h.entries.size).toBe(0);
   });
 
-  it('words a plain turn end as exactly that, not as completion', () => {
+  it('words a plain turn end as exactly that, not as completion, and still tells the person Claude finished', () => {
     const h = harness();
     h.handlers().onDerived!(derived({ derivedId: 't', to: 'turn_ended' }), view());
     const e = h.entries.get('drv_t')!;
     expect(e.type).toBe('turn_ended');
     expect(e.severity).toBe('info');
+    expect(e.requiresAction).toBe(false);
     expect(e.description).toMatch(/does not mean the task is complete/);
-    expect(h.notified).toEqual([]);
+    expect(h.notified).toEqual([{ id: 'drv_t', kind: 'turnEnded', target: { view: 'workspace', projectId: 'p1', sessionKey: KEY } }]);
   });
 
   it('presence loss is described as unconfirmed, abnormal end notifies, normal end does not', () => {
@@ -163,6 +165,119 @@ describe('orchestrator: Claude events', () => {
     h.handlers().onSession!(view({ state: 'working' }), view());
     h.handlers().onSession!(view({ generation: 2 }), view());
     expect([...h.entries.keys()]).toEqual([`start_${KEY}_1`, `start_${KEY}_2`]);
+  });
+});
+
+describe('orchestrator: Claude finished (turnEnded)', () => {
+  it('notifies once per turn end, with normal urgency (it is not an emergency), and a second delivery of the same event is silent', () => {
+    const h = harness();
+    h.handlers().onDerived!(derived({ derivedId: 'a', to: 'turn_ended' }), view());
+    h.handlers().onDerived!(derived({ derivedId: 'a', to: 'turn_ended' }), view());
+    expect(h.notified.map((n) => n.id)).toEqual(['drv_a']);
+    expect(h.hints[0]).toMatchObject({ kind: 'turnEnded', urgency: 'normal', projectId: 'p1', sessionKey: KEY, dedupeKey: 'drv_a' });
+  });
+
+  it('sends the same target as the other session notifications, so a click opens the project and the session', () => {
+    const h = harness();
+    h.handlers().onDerived!(derived({ derivedId: 'perm', to: 'needs_permission', notify: true }), view());
+    h.handlers().onDerived!(derived({ derivedId: 'fin', from: 'working', to: 'turn_ended' }), view());
+    const targets = h.notified.map((n) => n.target);
+    expect(targets[1]).toEqual(targets[0]);
+    expect(targets[1]).toEqual({ view: 'workspace', projectId: 'p1', sessionKey: KEY });
+  });
+
+  it('does not notify a session that is not attached to a project: hooks run for every Claude Code session on this computer', () => {
+    const h = harness();
+    h.handlers().onDerived!(derived({ derivedId: 'free', to: 'turn_ended' }), view({ projectId: null, projectName: null, origin: 'external' }));
+    expect(h.entries.get('drv_free')).toMatchObject({ type: 'turn_ended', projectId: null }); // the feed still has it
+    expect(h.notified).toEqual([]);
+  });
+
+  it('notifies for a session Mini-Summa did not start, as long as it belongs to a project', () => {
+    const h = harness();
+    h.handlers().onDerived!(derived({ derivedId: 'ext', to: 'turn_ended' }), view({ origin: 'external' }));
+    expect(h.notified).toHaveLength(1);
+  });
+
+  it('never notifies for replayed history (a restart replays the log), but the feed entry is still made', () => {
+    const h = harness();
+    h.handlers().onDerived!(derived({ derivedId: 'old', to: 'turn_ended', replay: true }), view());
+    expect(h.entries.has('drv_old')).toBe(true);
+    expect(h.notified).toEqual([]);
+  });
+
+  it('does not notify again for a turn end whose feed entry already exists (restart, rebuild, duplicate delivery)', () => {
+    const h = harness();
+    h.handlers().onDerived!(derived({ derivedId: 'dup', to: 'turn_ended', replay: true }), view());
+    h.handlers().onDerived!(derived({ derivedId: 'dup', to: 'turn_ended', replay: false }), view());
+    expect(h.notified).toEqual([]);
+  });
+
+  it('does not notify for background_wait: Claude has work pending and goes on by itself, so "finished" would be untrue', () => {
+    const h = harness();
+    h.handlers().onDerived!(derived({ derivedId: 'bg', from: 'working', to: 'background_wait' }), view());
+    const e = h.entries.get('drv_bg')!;
+    expect(e).toMatchObject({ type: 'turn_ended', severity: 'info' });
+    expect(e.description).toMatch(/background work is still pending/);
+    expect(h.notified).toEqual([]);
+  });
+
+  it('notifies when the work that was pending is over and the turn ends for good', () => {
+    const h = harness();
+    h.handlers().onDerived!(derived({ derivedId: 'bg1', from: 'working', to: 'background_wait' }), view());
+    h.handlers().onDerived!(derived({ derivedId: 'bg2', from: 'working', to: 'turn_ended' }), view());
+    expect(h.notified.map((n) => [n.id, n.kind])).toEqual([['drv_bg2', 'turnEnded']]);
+  });
+
+  it('the idle observation after a turn ("waiting for you") and an interrupted turn ("idle") are feed entries or state, never a second notification', () => {
+    const h = harness();
+    h.handlers().onDerived!(derived({ derivedId: 'fin', from: 'working', to: 'turn_ended' }), view());
+    h.handlers().onDerived!(derived({ derivedId: 'wait', from: 'turn_ended', to: 'waiting_for_you' }), view());
+    h.handlers().onDerived!(derived({ derivedId: 'esc', from: 'working', to: 'idle' }), view());
+    expect(h.notified.map((n) => n.id)).toEqual(['drv_fin']);
+  });
+
+  describe('a turn that ends with a report notifies as the report only', () => {
+    it('the report path never produces a turn_ended transition, so one Stop cannot notify twice', () => {
+      const h = harness();
+      // What the reducer emits for a Stop with a valid marker: a report_ready event (no transition) and, via ReportsService, a report.
+      h.handlers().onDerived!(derived({ derivedId: 'rdy', kind: 'report_ready', to: 'report_ready', notify: true, reportId: 'r1' }), view());
+      h.orch.onReportCreated(summary('r1'), { via: 'capture' });
+      expect(h.notified.map((n) => [n.id, n.kind])).toEqual([['rep_r1', 'report']]);
+      expect([...h.entries.values()].some((e) => e.type === 'turn_ended')).toBe(false);
+    });
+
+    it('a second Stop with no work in between (from report_ready) is the same turn: no "Claude finished" after the report', () => {
+      const h = harness();
+      h.orch.onReportCreated(summary('r2'), { via: 'capture' });
+      h.handlers().onDerived!(derived({ derivedId: 'again', from: 'report_ready', to: 'turn_ended' }), view({ state: 'report_ready' }));
+      expect(h.entries.get('drv_again')).toBeDefined(); // the feed keeps it
+      expect(h.notified.map((n) => n.kind)).toEqual(['report']);
+    });
+
+    it('but a new turn after a report (work in between) does notify when it ends without one', () => {
+      const h = harness();
+      h.orch.onReportCreated(summary('r3'), { via: 'capture' });
+      h.handlers().onDerived!(derived({ derivedId: 'w', from: 'report_ready', to: 'working' }), view());
+      h.handlers().onDerived!(derived({ derivedId: 'next', from: 'working', to: 'turn_ended' }), view());
+      expect(h.notified.map((n) => n.kind)).toEqual(['report', 'turnEnded']);
+    });
+  });
+});
+
+describe('orchestrator: every notification about a session leads to that project and session', () => {
+  it.each([
+    ['needs_permission', 'permission'], ['needs_input', 'input'], ['error', 'error'], ['turn_ended', 'turnEnded'], ['presence_lost', 'presenceLost'],
+  ] as const)('%s (kind %s) targets the workspace of the session\'s own project, not the selected one', (to, kind) => {
+    const h = harness();
+    h.handlers().onDerived!(derived({ derivedId: `t_${to}`, to, notify: true }), view({ projectId: 'p-other', projectName: 'Other' }));
+    expect(h.notified).toEqual([{ id: `drv_t_${to}`, kind, target: { view: 'workspace', projectId: 'p-other', sessionKey: KEY } }]);
+  });
+
+  it('an abnormal end targets it too', () => {
+    const h = harness();
+    h.handlers().onDerived!(derived({ derivedId: 'end', to: 'ended', abnormal: true }), view({ projectId: 'p-other', projectName: 'Other' }));
+    expect(h.notified).toEqual([{ id: 'drv_end', kind: 'sessionEnded', target: { view: 'workspace', projectId: 'p-other', sessionKey: KEY } }]);
   });
 });
 

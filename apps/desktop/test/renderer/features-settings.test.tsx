@@ -45,34 +45,35 @@ describe('the settings frame', () => {
   });
 });
 
-describe('the settings frame with the sidebar collapsed to its rail', () => {
+describe('the settings frame with the sidebar collapsed', () => {
   const collapsedSeed = () => { const seed = createFeatureSeed(); seed.settings.layout.sidebarCollapsed = true; return seed; };
 
-  it('keeps the sections in a column of the view itself, because the rail has no room for them', async () => {
+  it('shows the sections in the sidebar while Settings is open, never in a second column of the view', async () => {
     const user = userEvent.setup();
     const app = await open('hooks', { seed: collapsedSeed() });
-    const rail = screen.getByRole('complementary', { name: 'Mini-Summa navigation' });
-    expect(rail.getAttribute('data-collapsed')).toBe('true');
-    expect(rail.querySelector('.ms-sidebar__slot')?.hasAttribute('hidden')).toBe(true); // nothing was put into the rail
-    const column = screen.getByRole('complementary', { name: 'Settings' });
-    expect(within(column).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? textOf(b))).toEqual(['Back', ...[
+    const side = screen.getByRole('complementary', { name: 'Mini-Summa navigation' });
+    expect(side.hasAttribute('hidden')).toBe(false);
+    expect(side.querySelector('.ms-sidebar__slot')?.hasAttribute('hidden')).toBe(false); // the sections went into the sidebar
+    expect(screen.getAllByRole('complementary')).toHaveLength(1);
+    expect(within(side).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? textOf(b))).toEqual(['Back', ...[
       'ChatGPT', 'Browser extension', 'Claude Code', 'Claude hooks', 'Notifications', 'Phones and devices', 'Remote access', 'Push notifications',
       'Review and handoff', 'Data and privacy', 'About and setup',
     ]]);
-    expect(within(column).getByRole('button', { name: 'Claude hooks' }).getAttribute('aria-current')).toBe('true');
-    await user.click(within(column).getByRole('button', { name: 'Notifications' }));
+    expect(within(side).getByRole('button', { name: 'Claude hooks' }).getAttribute('aria-current')).toBe('true');
+    await user.click(within(side).getByRole('button', { name: 'Notifications' }));
     expect(textOf(heading())).toBe('Notifications');
-    await user.click(within(column).getByRole('button', { name: 'Back' }));
+    await user.click(within(side).getByRole('button', { name: 'Back' }));
     expect(app.runtime.route.getState().view).not.toBe('settings');
   });
 
-  it('puts the sections back into the sidebar once it is expanded again', async () => {
+  it('gives the sidebar back to the person\'s choice once Settings is left, and expanding it keeps the sections where they are', async () => {
     const user = userEvent.setup();
     await open('chatgpt', { seed: collapsedSeed() });
-    expect(screen.queryByRole('complementary', { name: 'Settings' })).not.toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Expand sidebar' }));
-    await waitFor(() => expect(screen.queryByRole('complementary', { name: 'Settings' })).toBeNull());
-    expect(within(nav()).getByRole('button', { name: 'ChatGPT' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    const expand = await screen.findByRole('button', { name: 'Expand sidebar' });
+    await user.click(expand);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Expand sidebar' })).toBeNull());
+    expect(screen.getByRole('navigation', { name: 'Projects' })).toBeTruthy();
   });
 });
 
@@ -83,8 +84,7 @@ describe('ChatGPT', () => {
     const spy = vi.spyOn(app.demo, 'call');
     const group = screen.getByRole('radiogroup', { name: 'How ChatGPT opens' });
     expect(within(group).getByRole('radio', { name: /Inside Mini-Summa/ })).toHaveProperty('checked', true);
-    expect(screen.getByText(/Google sign-in is often refused inside embedded browsers/)).toBeTruthy();
-
+    
     await user.click(within(group).getByRole('radio', { name: /In your browser/ }));
     await waitFor(() => expect(patchOf(spy)).toEqual([{ chatgpt: { mode: 'external' } }]));
     expect(await screen.findByText('Saved')).toBeTruthy();
@@ -93,7 +93,7 @@ describe('ChatGPT', () => {
     const tab = screen.getByRole('radiogroup', { name: 'Which browser tab' });
     await user.click(within(tab).getByRole('radio', { name: /Use the Mini-Summa browser extension/ }));
     await waitFor(() => expect(patchOf(spy).at(-1)).toEqual({ chatgpt: { externalBrowser: 'extension' } }));
-    expect(app.runtime.store.getState().settings?.chatgpt).toEqual({ mode: 'external', externalBrowser: 'extension' });
+    expect(app.runtime.store.getState().settings?.chatgpt).toEqual({ mode: 'external', externalBrowser: 'extension', pageScale: 'auto' });
   });
 
   it('shows the embedded view as it is, live, and offers the browser when sign-in or the page is refused', async () => {
@@ -206,7 +206,7 @@ describe('Claude hooks', () => {
     expect(points).toContain('No repository file is touched, and no CLAUDE.md is needed.');
     expect(points).toContain('Sessions that Mini-Summa starts get their hooks automatically');
     expect(points).toContain('Claude Code reads hooks when a session starts');
-    expect(points).toContain('the exact changes, and a backup');
+    expect(points).not.toContain('a backup of the file'); // the dialog shows the file and its backup; the page does not repeat it
     const cards = await screen.findByRole('list', { name: 'Hooks per environment' });
     expect(textOf(cards)).toContain('Installed for 5 events');
     expect(textOf(cards)).toContain('Not installed');

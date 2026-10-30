@@ -140,6 +140,11 @@
       "id": "X07",
       "title": "A folder picked for a project that has none is saved, shown, and still there after a restart",
       "why": "Regression check for a reported defect: Browse only filled the \"Add a folder\" field, the folder joined the project through a second button, and Save then said \"No changes to save\" and discarded it while the header kept saying \"No folder yet\". This does what the report did in the real window (Browse, then Save, nothing in between) for a project made from a GitHub repository alone, checks the folder is listed, stored and shown, then restarts the app and checks it is still there and that a local session starts in it."
+    },
+    {
+      "id": "X08",
+      "title": "The embedded ChatGPT page is zoomed to follow its pane (Automatic keeps about 900 CSS pixels), fixed sizes apply, layout changes never replace the page, and the page still takes clicks, selection, scrolling and its own Copy button",
+      "why": "Mitigation check for a reported overlap of ChatGPT's floating controls with the writing blocks. The cause is a hypothesis that could not be checked against the real site: a split pane gives ChatGPT only about 500 to 650 CSS pixels, where a responsive site tends to switch to its compact layout. Mini-Summa answers by zooming the view out, never by touching the page. This proves the mechanism in the real window against a stand-in page that reports its own window.innerWidth: Automatic gives a narrow pane a wider page (at least the narrower of 900 and what the 70 percent floor allows) at several window sizes and divider positions, fixed sizes apply exactly, a wide pane stays at 100 percent; hiding, maximizing the other pane, Settings, a dialog and a window resize keep the same web contents, the same page and a typed draft; and a real click, double click, wheel and the page's own Copy button still work while zoomed. It proves nothing about ChatGPT's real layout, and the overlap itself was not reproduced."
     }
   ]
 }

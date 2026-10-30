@@ -7,18 +7,14 @@ export const CHATGPT_PARTITION = 'persist:chatgpt';
 const BACKGROUND = '#141515';
 
 /**
- * Permissions the embedded site may have. Empty on purpose: everything it asks for is refused (camera, microphone, screen
+ * Permissions the embedded site may have: exactly one. Everything else it asks for is refused (camera, microphone, screen
  * capture, clipboard-read, notifications, geolocation, device access). Typing and pasting by the user need none of them.
  *
- * Known cost, measured in Electron 45: with nothing allowed, navigator.clipboard.writeText() in the page is rejected
- * ("Write permission denied"), so a copy button that uses it fails; selecting text and pressing Ctrl+C still works. Adding
- * 'clipboard-sanitized-write' here would allow write-only, sanitized, user-initiated copies. That is a product decision.
- */
-/**
- * Everything is denied except sanitized clipboard writes: that is what a page's own "Copy" button uses after a click, it
- * can only put text or an image on the clipboard, and it cannot read anything. Without it ChatGPT's copy buttons fail
- * silently, which would make the embedded view feel broken. Reading the clipboard, the camera, the microphone,
- * notifications and the rest stay denied.
+ * 'clipboard-sanitized-write' is what a page's own "Copy" button uses after a click: it can only put text or an image on the
+ * clipboard, and it cannot read anything. Measured in Electron 45: with nothing allowed, navigator.clipboard.writeText() in
+ * the page is rejected ("Write permission denied"), so ChatGPT's copy buttons (copying a writing block as Markdown, say) would
+ * fail while selecting text and pressing Ctrl+C kept working, which makes the view feel broken. Any change to this list is a
+ * product decision; electronView.test.ts pins it.
  */
 export const CHATGPT_ALLOWED_PERMISSIONS: readonly string[] = ['clipboard-sanitized-write'];
 
@@ -70,6 +66,10 @@ export function createChatGptViewHandle(win: BrowserWindow): ViewHandle {
       goBack: () => wc.navigationHistory.goBack(),
       goForward: () => wc.navigationHistory.goForward(),
       focus: () => wc.focus(),
+      // The view's own zoom, kept per host by Chromium in this view's partition. The main window's zoom (which bounds.ts converts
+      // with) lives in another partition and is never read or set here.
+      getZoomFactor: () => wc.getZoomFactor(),
+      setZoomFactor: (factor) => wc.setZoomFactor(factor),
       on: (event, listener) => wc.on(event as never, listener as never),
       removeListener: (event, listener) => wc.removeListener(event as never, listener as never),
       setWindowOpenHandler: (handler) => wc.setWindowOpenHandler(handler),

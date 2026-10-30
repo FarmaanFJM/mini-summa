@@ -109,7 +109,7 @@ export function PushSection() {
         {testResult ? <p className="ms-x-result" data-tone={testResult.tone === 'ok' ? undefined : 'warning'} role="status">{testResult.text}</p> : null}
       </Group>
 
-      <Group title={configured ? 'Replace the key' : 'Set up push'} note="Push is optional. It tells a paired phone that something needs you while the Mini-Summa app is closed. It uses your own Firebase project, so no one else is involved.">
+      <Group title={configured ? 'Replace the key' : 'Set up push'} note="Push is optional. It uses your own Firebase project.">
         <ol className="ms-set-steps">
           <li>In the Firebase console open Project settings, then Service accounts.</li>
           <li>Choose Generate new private key and download the file.</li>
@@ -137,7 +137,6 @@ export function PushSection() {
           <li>The key stays on this PC, in a file only your account can read. It is not logged and it is not shown again.</li>
           <li>This PC sends the push. If the PC is asleep or off, no push is sent, and the phone shows nothing new until the PC is back.</li>
         </ul>
-        <p className="ms-x-note">A phone registers itself when you open the Mini-Summa app on it and allow notifications. Quiet mode and each project's Phone switch decide whether a push is sent at all.</p>
       </Group>
 
       <ConfirmDialog

@@ -1,16 +1,17 @@
-/* Activity: one readable column, grouped by day. Rows are flat; unread is a small neutral dot, and meaning is carried by words. */
+/* Activity: one readable column, grouped by day. Rows are flat on the panel; unread is a small neutral dot, and meaning is carried by words. */
 .ms-act-view .ms-view__head { gap: var(--sp-4); }
-.ms-act-body { padding-top: var(--sp-3); }
+.ms-act-body { padding-top: var(--sp-2); }
 .ms-act-feed, .ms-act-groups { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 880px; min-width: 0; }
 .ms-act-filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .ms-act-filters .sm-select { height: var(--control-h-sm); font-size: var(--fs-sm); }
 
 .ms-act-day { display: flex; flex-direction: column; gap: 2px; }
-.ms-act-day__title { padding: 0 12px 4px; color: var(--text-3); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.ms-act-day__title { padding: 0 12px 4px; color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 .ms-act-list { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; list-style: none; }
 
 .ms-act { position: relative; display: flex; align-items: flex-start; border-radius: var(--r); transition: background var(--dur); }
-.ms-act:hover { background: var(--s1); }
+.ms-act:hover { background: var(--s2); }
+.ms-act:has(.ms-act__main:active) { background: var(--s3); }
 .ms-act__main {
   flex: 1; min-width: 0; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: start; gap: 8px; padding: 9px 12px 9px 10px;
   border: 0; border-radius: var(--r); background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
@@ -19,14 +20,16 @@
 .ms-act__marker { display: inline-grid; place-items: center; height: 20px; }
 .ms-act__dot { width: 7px; height: 7px; background: var(--text); }
 .ms-act__body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.ms-act__title { color: var(--text-2); font-size: var(--fs-md); line-height: 1.4; overflow-wrap: anywhere; }
+.ms-act__title { color: var(--text-2); font-size: var(--fs); line-height: 1.4; overflow-wrap: anywhere; }
+.ms-act:hover .ms-act__title { color: var(--text); }
 .ms-act[data-unread] .ms-act__title { color: var(--text); font-weight: 600; }
 .ms-act__desc { color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.ms-act__meta { display: inline-flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.4; }
+.ms-act__meta { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--fs-xs); line-height: 1.4; }
 .ms-act[data-severity="attention"] .ms-act__sev { color: var(--warn); }
 .ms-act[data-severity="error"] .ms-act__sev { color: var(--danger); }
-.ms-act__time { color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; line-height: 20px; }
+.ms-act__time { color: var(--text-2); font-size: var(--fs-xs); white-space: nowrap; line-height: 20px; font-variant-numeric: tabular-nums; }
 .ms-act__more { position: absolute; right: 6px; top: 6px; opacity: 0; transition: opacity var(--dur); background: var(--s3); }
 .ms-act:hover .ms-act__more, .ms-act:focus-within .ms-act__more, .ms-act__more[aria-expanded="true"] { opacity: 1; }
+.ms-act__more:hover { background: var(--s4); }
 .ms-act:hover:has(.ms-act__more) .ms-act__time, .ms-act:has(.ms-act__more:focus-visible) .ms-act__time { visibility: hidden; }
 .ms-act-more { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); padding: 0 12px; }

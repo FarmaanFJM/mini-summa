@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createCore } from '@minisumma/core';
 import type { Core, CoreOptions } from '@minisumma/core';
-import { app, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, screen, session, shell, Tray } from 'electron';
+import { app, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, powerMonitor, screen, session, shell, Tray } from 'electron';
 import type { BrowserWindow, MenuItemConstructorOptions } from 'electron';
 import { badgeBitmap, badgeDescription } from './badge.ts';
 import { CH } from './channels.ts';
@@ -80,6 +80,20 @@ const notifier = createNotifier({
   create: (options) => new Notification(options),
   isSupported: () => Notification.isSupported(),
   onClick: (target) => router.navigate(target),
+  // "Claude finished" is not shown for the session the person is looking at: the window is in front (known only here), they used the
+  // computer in the last two minutes, and the core says the window shows that project and session (see isPersonViewing).
+  viewing: () => {
+    const win = windowAlive();
+    const settings = core?.services.settings.get();
+    let idleSeconds: number | null = null;
+    try { idleSeconds = powerMonitor.getSystemIdleTime(); } catch { /* this system cannot say: the notification is shown */ }
+    return {
+      windowFocused: win !== null && win.isVisible() && !win.isMinimized() && win.isFocused(),
+      idleSeconds,
+      ui: settings?.ui,
+      layout: settings?.layout,
+    };
+  },
   ...(fs.existsSync(locations.iconPath) ? { icon: locations.iconPath } : {}),
   log,
 });
@@ -240,6 +254,13 @@ async function start(launchLink: string | null): Promise<void> {
   chatgpt.onState((state) => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CH.chatgptState, state);
   });
+  // The page size of the ChatGPT view (Settings, ChatGPT) is the view's own browser zoom. The core keeps the setting; this
+  // process applies it, now and whenever it changes. Nothing is sent to the page (see pageScale.ts and chatgptView.ts).
+  chatgpt.setPageScale(running.services.settings.get().chatgpt.pageScale);
+  const stopWatchingPageScale = running.base.bus.subscribe((_seq, event) => {
+    if (event.type === 'settings.changed') chatgpt.setPageScale(event.settings.chatgpt.pageScale);
+  });
+  win.once('closed', stopWatchingPageScale);
 
   trackRendererReadiness(win.webContents, router);
   win.on('close', (event) => {

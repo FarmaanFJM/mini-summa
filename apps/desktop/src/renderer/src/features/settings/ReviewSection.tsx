@@ -61,7 +61,7 @@ export function ReviewSection() {
     <div className="ms-set-page">
       <PageStatus status={status} />
 
-      <Group title="The request" note="This text follows every report you hand to ChatGPT. Leave it empty to hand over the report without a request.">
+      <Group title="The request" note="It follows every report you hand to ChatGPT. Leave it empty to hand over the report without a request.">
         <Field label="Request to the reviewer" error={templateProblem} aside={<span className="ms-x-note">{count(template.length)} of {count(MAX_TEMPLATE)}</span>}>
           <TextArea rows={5} value={template} onChange={(e) => setTemplateDraft(e.target.value)} />
         </Field>
@@ -81,13 +81,13 @@ export function ReviewSection() {
           label="Longest part, in characters"
           className="ms-set-narrow"
           error={partProblem}
-          hint={`A message longer than this is split into parts you paste one after another. Each part says which one it is. At this size the example below is ${parts} ${parts === 1 ? 'part' : 'parts'}.`}
+          hint={`Longer messages are split into parts. At this size the example below is ${parts} ${parts === 1 ? 'part' : 'parts'}.`}
         >
           <TextInput inputMode="numeric" value={partText} onChange={(e) => setPartDraft(e.target.value)} autoComplete="off" />
         </Field>
       </Group>
 
-      <Group title="Preview" note="The message built from the settings above, around a short example report. A real report is placed between the two marker lines unchanged.">
+      <Group title="Preview" note="A real report goes between the two marker lines unchanged.">
         <pre className="ms-x-text ms-mono" aria-label="Message preview" tabIndex={0}>{preview}</pre>
       </Group>
 

@@ -1,12 +1,11 @@
-import { useMemo } from 'react';
 import type { RefCallback } from 'react';
-import { activeProjects, resolveProject } from '../../app/selectors';
 import { useApp, useRoute, useUi } from '../../app/runtime';
 import type { ViewId } from '../../app/route';
-import { Icon, IconButton, Menu } from '../../ui';
+import { Button, Icon, IconButton, Kbd } from '../../ui';
 import type { IconName } from '../../ui';
 import { useLayout } from './LayoutContext';
 import { ProjectList } from './ProjectList';
+import { QUICK_SWITCHER_HINT, useQuickSwitcher } from './QuickSwitcher';
 
 interface SidebarProps {
   /** True while a view has replaced the sidebar content (principle 14). */
@@ -14,108 +13,92 @@ interface SidebarProps {
   slotRef: RefCallback<HTMLDivElement>;
 }
 
-/** Projects on top, Activity, Reports and Settings at the bottom. One level, no tree, no second sidebar. */
+/**
+ * Whether the sidebar is on screen. A person may collapse it to give the workspace the room, but a view that has taken it over
+ * (Settings, Reports) needs it: its navigation lives there, so it is shown while that view holds it and goes back to what the
+ * person chose when the view lets go.
+ */
+export function sidebarShown(collapsed: boolean, replaced: boolean): boolean {
+  return !collapsed || replaced;
+}
+
+/** Brand, New project, a search that opens the quick switcher, one flat list of projects, and Activity, Reports and Settings at the bottom. */
 export function Sidebar({ replaced, slotRef }: SidebarProps) {
   const { layout, update } = useLayout();
-  const collapsed = layout.sidebarCollapsed;
+  const shown = sidebarShown(layout.sidebarCollapsed, replaced);
   return (
-    <aside className="ms-sidebar" aria-label="Mini-Summa navigation" data-collapsed={collapsed || undefined}>
+    <aside className="ms-sidebar" aria-label="Mini-Summa navigation" hidden={!shown}>
       <div className="ms-sidebar__default" hidden={replaced}>
-        {collapsed ? <Rail onExpand={() => update({ sidebarCollapsed: false })} /> : <Expanded onCollapse={() => update({ sidebarCollapsed: true })} />}
+        <Expanded onCollapse={() => update({ sidebarCollapsed: true })} />
       </div>
       <div className="ms-sidebar__slot" ref={slotRef} hidden={!replaced} />
     </aside>
   );
 }
 
+/** The mark and the name, as in the reference shell: the one place the brand colour is drawn besides the main action. */
+function Brand() {
+  return (
+    <div className="ms-brand">
+      <span className="ms-brand__mark" aria-hidden="true"><Icon name="layers" size={14} style={{ strokeWidth: 2.4 }} /></span>
+      <span className="ms-brand__name">Mini-Summa</span>
+    </div>
+  );
+}
+
 function Expanded({ onCollapse }: { onCollapse: () => void }) {
   const openProjectDialog = useUi((s) => s.openProjectDialog);
+  const quick = useQuickSwitcher();
   return (
     <>
       <header className="ms-sidebar__head">
-        <span className="ms-brand"><span className="ms-brand__mark" aria-hidden="true" />Mini-Summa</span>
-        <IconButton label="Collapse sidebar" icon="panel" size="sm" onClick={onCollapse} />
+        <Brand />
+        <IconButton label="Collapse sidebar" icon="chevrons-left" size="sm" onClick={onCollapse} />
       </header>
-      <nav className="ms-sidebar__section" aria-label="Projects">
-        <div className="ms-sidebar__label">
-          <span>Projects</span>
-          <IconButton label="New project" icon="plus" size="sm" onClick={() => openProjectDialog({ mode: 'create' })} />
-        </div>
-        <div className="ms-sidebar__scroll"><ProjectList /></div>
-      </nav>
-      <SidebarFooter />
+      <div className="ms-sidebar__top">
+        <Button className="ms-sidebar__new" icon="plus" onClick={() => openProjectDialog({ mode: 'create' })}>New project</Button>
+        <button type="button" className="ms-sidebar__search" aria-label="Search projects" aria-haspopup="dialog" aria-keyshortcuts="Control+Shift+P" onClick={quick.open}>
+          <Icon name="search" />
+          <span className="ms-sidebar__search-text">Search</span>
+          <Kbd>{QUICK_SWITCHER_HINT}</Kbd>
+        </button>
+      </div>
+      <nav className="ms-sidebar__projects" aria-label="Projects"><ProjectList /></nav>
+      <SidebarSections />
     </>
   );
 }
 
-function useFooterData() {
-  const counts = useApp((s) => s.counts);
-  const route = useRoute();
-  return { counts, view: route.view, go: (view: ViewId) => route.setView(view) };
-}
-
-const FOOTER: { view: ViewId; label: string; icon: IconName }[] = [
+const SECTIONS: { view: ViewId; label: string; icon: IconName }[] = [
   { view: 'activity', label: 'Activity', icon: 'activity' },
   { view: 'reports', label: 'Reports', icon: 'file-text' },
   { view: 'settings', label: 'Settings', icon: 'settings' },
 ];
 
-function SidebarFooter() {
-  const { counts, view, go } = useFooterData();
+function SidebarSections() {
+  const counts = useApp((s) => s.counts);
+  const route = useRoute();
   const numbers: Partial<Record<ViewId, number>> = { activity: counts.unreadActivity, reports: counts.reportsAwaitingHandoff };
   return (
     <nav className="ms-sidebar__foot" aria-label="Sections">
-      {FOOTER.map((item) => {
+      {SECTIONS.map((item) => {
         const n = numbers[item.view] ?? 0;
-        const label = item.view === 'activity' ? `${n} unread` : `${n} waiting for handoff`;
+        const facts = item.view === 'activity' ? `${n} unread` : `${n} waiting for handoff`;
         return (
           <button
             key={item.view}
             type="button"
             className="sm-nav-item"
-            aria-current={view === item.view ? 'true' : undefined}
-            aria-label={n > 0 && item.view !== 'settings' ? `${item.label}, ${label}` : item.label}
-            onClick={() => go(item.view)}
+            aria-current={route.view === item.view ? 'true' : undefined}
+            aria-label={n > 0 && item.view !== 'settings' ? `${item.label}, ${facts}` : item.label}
+            onClick={() => route.setView(item.view)}
           >
             <Icon name={item.icon} />
             <span className="ms-nav__label">{item.label}</span>
-            {n > 0 ? <span className="ms-nav__count ms-live" title={label}>{n}</span> : null}
+            {n > 0 ? <span className="ms-nav__count ms-live" title={facts}>{n}</span> : null}
           </button>
         );
       })}
     </nav>
-  );
-}
-
-/** The collapsed sidebar: icons only. Choosing a project moves to a menu, so nothing is lost. */
-function Rail({ onExpand }: { onExpand: () => void }) {
-  const projects = useApp((s) => s.projects);
-  const counts = useApp((s) => s.counts);
-  const route = useRoute();
-  const active = useMemo(() => activeProjects(projects), [projects]);
-  const current = resolveProject(projects, route.projectId);
-  return (
-    <div className="ms-rail">
-      <IconButton label="Expand sidebar" icon="panel" size="sm" onClick={onExpand} />
-      <Menu
-        label="Projects"
-        placement="right-start"
-        trigger={(props) => (
-          <IconButton ref={props.ref as RefCallback<HTMLButtonElement>} label={current ? `Project: ${current.name}` : 'Projects'} icon="folder" size="sm" onClick={props.onClick} onKeyDown={props.onKeyDown} aria-haspopup="menu" aria-expanded={props['aria-expanded']} />
-        )}
-        items={active.map((p) => ({ label: p.name, checked: p.id === current?.id, radio: true, onSelect: () => route.selectProject(p.id) }))}
-      />
-      <div className="ms-rail__foot">
-        {FOOTER.map((item) => {
-          const n = item.view === 'activity' ? counts.unreadActivity : item.view === 'reports' ? counts.reportsAwaitingHandoff : 0;
-          return (
-            <span key={item.view} className="ms-rail__item">
-              <IconButton label={n > 0 ? `${item.label}, ${n}` : item.label} icon={item.icon} size="sm" pressed={route.view === item.view} onClick={() => route.setView(item.view)} />
-              {n > 0 ? <span className="ms-rail__count ms-live" aria-hidden="true">{n > 99 ? '99+' : n}</span> : null}
-            </span>
-          );
-        })}
-      </div>
-    </div>
   );
 }

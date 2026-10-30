@@ -8,15 +8,18 @@
 //   2. dedupe: a dedupe key that already has a record returns null and does nothing else (also across concurrent calls).
 //   3. quiet mode (manual, or the daily window in LOCAL time, which may cross midnight): both channels are suppressed
 //      but the record is still written.
-//   4. native, then push, then one NotificationRecord and one `notification.added` event.
+//   4. native and push, then one NotificationRecord and one `notification.added` event. A kind in SUPPRESSIBLE (today only
+//      turnEnded) asks the host to skip the toast when the person is already looking at that session; the host answers
+//      `suppressed: 'viewing'` and the record says so, for the desktop and for the phone.
 //
 // Push payloads are minimal on purpose: the project name, a fixed sentence per kind and ids. No report text, task text,
 // tool input or path ever goes into a push, whatever the activity entry contains.
 //
 // Contract notes:
-//  * Channel results: native is 'suppressed_disabled' (global switch), 'suppressed_quiet', 'sent', 'unavailable' (the
-//    host cannot show notifications) or 'failed'. Push is 'suppressed_project', 'not_applicable' (no provider
-//    configured, or no phone registered), 'suppressed_quiet', 'sent' (at least one device took it) or 'failed'.
+//  * Channel results: native is 'suppressed_disabled' (global switch), 'suppressed_quiet', 'suppressed_viewing' (the person
+//    was looking at that session), 'sent', 'unavailable' (the host cannot show notifications) or 'failed'. Push is
+//    'suppressed_project', 'not_applicable' (no provider configured, or no phone registered), 'suppressed_quiet',
+//    'suppressed_viewing' (same reason as the desktop's), 'sent' (at least one device took it) or 'failed'.
 //  * Deps are typed as the narrow Picks they use (a full SettingsService / ProjectsService still fits).
 import type { ActivityEvent, LinkTarget, NativeBridge, NotificationChannelResult, NotificationRecord, ProjectNotificationPrefs, QuietMode } from '@minisumma/shared';
 import { fromJson, newId, toJson } from '@minisumma/storage';
@@ -49,11 +52,11 @@ interface NotificationRow {
 type Notifiable = Exclude<NotifyHint['kind'], 'info'>;
 
 const PREF_FLAG: Record<Notifiable, keyof ProjectNotificationPrefs> = {
-  permission: 'permission', input: 'input', error: 'error', report: 'report', sessionEnded: 'sessionEnded', presenceLost: 'presenceLost',
+  permission: 'permission', input: 'input', error: 'error', report: 'report', turnEnded: 'turnEnded', sessionEnded: 'sessionEnded', presenceLost: 'presenceLost',
 };
 
 const TITLE_PHRASE: Record<Notifiable, string> = {
-  permission: 'needs permission', input: 'needs your input', error: 'error', report: 'report ready',
+  permission: 'needs permission', input: 'needs your input', error: 'error', report: 'report ready', turnEnded: 'Claude finished',
   sessionEnded: 'session ended', presenceLost: 'session no longer visible',
 };
 
@@ -63,6 +66,7 @@ export const PUSH_BODY: Record<Notifiable, string> = {
   input: 'Claude needs your input',
   error: 'A Claude session hit an error',
   report: 'A report is ready',
+  turnEnded: 'Claude finished and is waiting for you',
   presenceLost: 'A Claude session is no longer visible',
   sessionEnded: 'A Claude session ended',
 };
@@ -72,6 +76,28 @@ export const TEST_PUSH: PushPayload = {
   body: 'This is a test notification from Mini-Summa. Nothing needs your attention.',
   data: { kind: 'info', projectId: null, activityId: 'test' },
 };
+
+/**
+ * Kinds that can be about something the person is already looking at: a turn that ended in the session on screen. Only the host
+ * knows whether its window is in front, so the core asks and the host decides. A permission request, a question, an error, a
+ * report or an end is never in this set: those are worth interrupting for even when the window is open.
+ */
+const SUPPRESSIBLE: ReadonlySet<Notifiable> = new Set<Notifiable>(['turnEnded']);
+
+/**
+ * How long the phone waits for the desktop to say "the person is looking at it". The host answers that at once (no system call is
+ * involved), whereas a toast is only confirmed later, so a slower answer means "shown" and the phone must not wait for it.
+ */
+const VIEWING_ANSWER_MS = 250;
+
+/** The value of `work` if it settles within `ms`, else null. Never rejects and leaves no timer behind. */
+function settledWithin<T>(work: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    timer.unref?.();
+    work.then((value) => { clearTimeout(timer); resolve(value); }, () => { clearTimeout(timer); resolve(null); });
+  });
+}
 
 function parseClock(value: string | undefined): number | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(value ?? '');
@@ -163,19 +189,25 @@ export function createNotificationsService(deps: NotificationsServiceDeps): Noti
         const title = `${projectLabel}: ${TITLE_PHRASE[hint.kind]}`;
         const body = activity.title; // local only; pushes never carry it
         const notifiable = hint as NotifyHint & { kind: Notifiable };
+        const suppressible = SUPPRESSIBLE.has(notifiable.kind);
 
         const sendNative = async (): Promise<NotificationChannelResult> => {
           if (!settings.notifications.native) return 'suppressed_disabled';
           if (quiet) return 'suppressed_quiet';
           try {
-            const r = await deps.native.notify({ title, body, tag: key, target: hint.target, urgency: hint.urgency, silent: false });
+            const r = await deps.native.notify({
+              title, body, tag: key, target: hint.target, urgency: hint.urgency, silent: false, ...(suppressible ? { suppressIfViewing: true } : {}),
+            });
             if (r.shown) return 'sent';
+            if (suppressible && r.suppressed === 'viewing') return 'suppressed_viewing';
             return r.reason === undefined || /unavailable|unsupported|not supported/i.test(r.reason) ? 'unavailable' : 'failed';
           } catch (err) {
             log.warn('native notification failed', { error: String(err) });
             return 'failed';
           }
         };
+
+        const nativeResult = sendNative();
 
         const sendPush = async (): Promise<NotificationChannelResult> => {
           if (!prefs.push) return 'suppressed_project';
@@ -185,6 +217,9 @@ export function createNotificationsService(deps: NotificationsServiceDeps): Noti
             const targets = deps.devices.pushTargets();
             if (targets.length === 0) return 'not_applicable';
             if (quiet) return 'suppressed_quiet';
+            // The phone is for when the person is away from the desktop, and "Claude finished" happens after every prompt: a buzz in the
+            // pocket for what they are watching on screen would only be noise, so the push follows the desktop's "looking at it".
+            if (suppressible && (await settledWithin(nativeResult, VIEWING_ANSWER_MS)) === 'suppressed_viewing') return 'suppressed_viewing';
             const { sent } = await pushTo(provider, targets, pushPayloadFor(activity, notifiable, projectLabel));
             return sent > 0 ? 'sent' : 'failed';
           } catch (err) {
@@ -194,7 +229,7 @@ export function createNotificationsService(deps: NotificationsServiceDeps): Noti
           }
         };
 
-        const [native, push] = await Promise.all([sendNative(), sendPush()]);
+        const [native, push] = await Promise.all([nativeResult, sendPush()]);
         const record: NotificationRecord = {
           id: newId('ntf'), activityId: activity.id, projectId: hint.projectId ?? activity.projectId, at, title, body, native, push, readAt: null, target: hint.target,
         };

@@ -2,7 +2,7 @@
 // the real schema, with fakes for the services it depends on. Nothing here is imported by production code.
 import { defaultNotificationPrefs, defaultSettings, mergeSettings, parseChatGptUrl, unavailableBridge } from '@minisumma/shared';
 import type {
-  ActivityEvent, ChatGptOpenResult, Conversation, ConversationVerification, DeliveryDetail, Device, NativeBridge, NativeCapabilities, NativeNotification, NavigationTarget,
+  ActivityEvent, ChatGptOpenResult, Conversation, ConversationVerification, DeliveryDetail, Device, NativeBridge, NativeCapabilities, NativeNotification, NativeNotifyResult, NavigationTarget,
   PendingAction, Project, ProjectNotificationPrefs, Report, ReportSummary, ServerEvent, SessionKey, SessionView, SettingsPatch, TargetCheck,
 } from '@minisumma/shared';
 import { fromJson, openDatabase, toJson } from '@minisumma/storage';
@@ -301,7 +301,7 @@ export interface FakeNative extends NativeBridge {
   calls: string[];
   clipboardError: Error | null;
   openImpl: (url: string) => ChatGptOpenResult | Promise<ChatGptOpenResult>;
-  notifyImpl: (n: NativeNotification) => { shown: boolean; reason?: string } | Promise<{ shown: boolean; reason?: string }>;
+  notifyImpl: (n: NativeNotification) => NativeNotifyResult | Promise<NativeNotifyResult>;
   saveImpl: (opts: { suggestedName: string; text: string }) => { path: string | null } | Promise<{ path: string | null }>;
 }
 

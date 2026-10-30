@@ -1,7 +1,8 @@
 // An in-memory Mini-Summa core. It answers the same routes with the same shapes (validating bodies with the real zod
 // schemas), mutates its data plausibly and publishes numbered events, so the renderer cannot tell it from the real thing.
 import {
-  ApiError, buildReportMessage, encodePairingPayload, mergeSettings, parseChatGptProjectLink, parseChatGptUrl, routes, splitMessage, suggestConversationTitle,
+  ApiError, buildReportMessage, encodePairingPayload, mergeSettings, normalizeRootInput, parseChatGptProjectLink, parseChatGptUrl, rootKey, routes, splitMessage,
+  suggestConversationTitle,
 } from '@minisumma/shared';
 import type {
   ActivityEvent, ChatGptOpenResult, Conversation, Counts, Delivery, DeliveryDetail, DeliveryState, EnvId, Project, ProjectRoot, Report,
@@ -54,6 +55,12 @@ export class DemoServer {
   trustPrompt = false;
   /** How long a started or resumed terminal takes to show its first sign of life (the first hook). */
   firstHookDelayMs = 400;
+  /**
+   * The folder check of the real core: a folder that does not exist, or is a file, is refused when it is added or when a project is
+   * created with it. Off by default, as in a core started without checkFolders, so the made-up paths of tests and screenshots are
+   * accepted. A test that needs the refusal sets it.
+   */
+  folderCheck: ((env: EnvId, path: string) => { code: string; message: string } | null) | null = null;
   private latencyMs: number;
   private readonly terminals = new Map<SessionKey, { shell: EchoShell; seq: number }>();
   private readonly trusting = new Map<SessionKey, TrustShell>();
@@ -276,8 +283,28 @@ export class DemoServer {
     return { url: parsed.link.url, scopeId: parsed.link.scopeId, title: input.title?.trim() || parsed.link.title };
   }
 
-  private newRoot(projectId: string, position: number, input: { path: string; env?: EnvId; label?: string | null }, fallback: EnvId): ProjectRoot {
-    return { id: uid(`${projectId}_root`), projectId, env: input.env ?? inferEnv(input.path, fallback), path: input.path, label: input.label ?? null, position };
+  /** The reading, the folder check and the canonical key of one folder, as the real core does them before a root is stored. */
+  private prepareRoot(input: { path: string; env?: EnvId; label?: string | null }, fallback: EnvId): { env: EnvId; path: string; label: string | null; key: string } {
+    const read = normalizeRootInput(input.path, { hostPlatform: 'win32', env: input.env ?? inferEnv(input.path, fallback) });
+    if (!read.ok) throw new ApiError(400, read.needsEnv ? 'needs_env' : 'invalid_root', read.message);
+    const problem = this.folderCheck?.(read.env, read.path);
+    if (problem) throw new ApiError(400, problem.code, problem.message, { field: 'path' });
+    return { env: read.env, path: read.path, label: input.label ?? null, key: rootKey(read.env, read.path) };
+  }
+
+  /** 409 when the folder already belongs to another project (archived or not) or to this one. */
+  private assertRootFree(projectId: string | null, key: string): void {
+    for (const p of this.data.projects) {
+      if (!p.roots.some((r) => rootKey(r.env, r.path) === key)) continue;
+      if (p.id !== projectId) {
+        throw new ApiError(409, 'root_in_use', `This folder already belongs to the project "${p.name}"${p.archivedAt ? ' (archived)' : ''}. A folder can belong to one project only, so remove it there first or choose a different folder.`, { projectId: p.id, projectName: p.name });
+      }
+      throw new ApiError(409, 'root_exists', 'This folder is already a root of this project. Choose a different folder.');
+    }
+  }
+
+  private newRoot(projectId: string, position: number, prepared: { env: EnvId; path: string; label: string | null }): ProjectRoot {
+    return { id: uid(`${projectId}_root`), projectId, env: prepared.env, path: prepared.path, label: prepared.label, position };
   }
 
   // ------------------------------------------------------------------------------------------ handlers
@@ -298,9 +325,17 @@ export class DemoServer {
       const body = parseBody('projects.create', i.body) as { name: string; description?: string | null; githubRepo?: string | null; chatgptProject?: { url: string; title?: string } | null; defaultEnv?: EnvId; roots: { path: string; env?: EnvId; label?: string | null }[] };
       const id = uid('prj');
       const fallback: EnvId = body.defaultEnv ?? 'win';
-      const roots = body.roots.map((r, n) => this.newRoot(id, n, r, fallback));
+      const prepared = body.roots.map((r) => this.prepareRoot(r, fallback));
+      const seen = new Set<string>();
+      for (const r of prepared) {
+        if (seen.has(r.key)) throw new ApiError(409, 'root_exists', 'The same folder is listed twice. Remove the duplicate and save again.');
+        seen.add(r.key);
+        this.assertRootFree(null, r.key);
+      }
+      const chatgptProject = this.linkChatGptProject(body.chatgptProject);
+      const roots = prepared.map((r, n) => this.newRoot(id, n, r));
       const project: Project = {
-        id, name: body.name, description: body.description ?? null, githubRepo: body.githubRepo ?? null, chatgptProject: this.linkChatGptProject(body.chatgptProject), roots,
+        id, name: body.name, description: body.description ?? null, githubRepo: body.githubRepo ?? null, chatgptProject, roots,
         defaultEnv: body.defaultEnv ?? roots[0]?.env ?? 'win', preferredConversationId: null, defaultSessionKey: null,
         notificationPrefs: structuredClone(this.data.settings.notifications.defaults), sortOrder: this.data.projects.length, archivedAt: null, createdAt: nowIso(), updatedAt: nowIso(),
       };
@@ -357,11 +392,14 @@ export class DemoServer {
     'projects.addRoot': (i) => {
       const body = parseBody('projects.addRoot', i.body) as { path: string; env?: EnvId; label?: string | null };
       const p = this.project(i.params.id);
-      p.roots.push(this.newRoot(p.id, p.roots.length, body, p.defaultEnv));
+      const prepared = this.prepareRoot(body, p.defaultEnv);
+      this.assertRootFree(p.id, prepared.key);
+      p.roots.push(this.newRoot(p.id, p.roots.length, prepared));
       return this.touchProject(p);
     },
     'projects.removeRoot': (i) => {
       const p = this.project(i.params.id);
+      if (!p.roots.some((r) => r.id === i.params.rootId)) throw new ApiError(404, 'not_found', 'That folder is not a root of this project. Reload the project and try again.');
       p.roots = p.roots.filter((r) => r.id !== i.params.rootId).map((r, n) => ({ ...r, position: n }));
       return this.touchProject(p);
     },
@@ -372,8 +410,10 @@ export class DemoServer {
       const body = parseBody('conversations.add', i.body) as { url: string; title?: string; note?: string | null; makePreferred?: boolean };
       const p = this.project(i.params.id);
       const parsed = parseChatGptUrl(body.url);
-      if (!parsed.ok) throw new ApiError(400, 'invalid_url', parsed.message);
+      if (!parsed.ok) throw new ApiError(400, 'invalid_conversation_url', parsed.message);
       const siblings = this.data.conversations.filter((c) => c.projectId === p.id);
+      const duplicate = siblings.find((c) => c.url === parsed.info.url);
+      if (duplicate) throw new ApiError(409, 'conversation_exists', `This conversation is already in the project as "${duplicate.title}". Use that one, or remove it first.`, { conversationId: duplicate.id });
       const c: Conversation = {
         id: uid('cnv'), projectId: p.id, title: body.title?.trim() || suggestConversationTitle(parsed.info), url: parsed.info.url, originalUrl: parsed.info.originalUrl,
         kind: parsed.info.kind, chatgptConversationId: parsed.info.chatgptConversationId, verification: 'unverified', verifiedAt: null, verifiedTitle: null,
@@ -389,10 +429,13 @@ export class DemoServer {
       const c = this.conversation(i.params.id);
       if (body.url !== undefined && body.url !== c.url) {
         const parsed = parseChatGptUrl(body.url);
-        if (!parsed.ok) throw new ApiError(400, 'invalid_url', parsed.message);
+        if (!parsed.ok) throw new ApiError(400, 'invalid_conversation_url', parsed.message);
+        const duplicate = this.data.conversations.find((x) => x.projectId === c.projectId && x.id !== c.id && x.url === parsed.info.url);
+        if (duplicate) throw new ApiError(409, 'conversation_exists', `This conversation is already in the project as "${duplicate.title}". Use that one, or remove it first.`, { conversationId: duplicate.id });
         Object.assign(c, { url: parsed.info.url, originalUrl: parsed.info.originalUrl, kind: parsed.info.kind, chatgptConversationId: parsed.info.chatgptConversationId, verification: 'unverified', verifiedAt: null, verifiedTitle: null });
       }
-      if (body.title !== undefined) c.title = body.title;
+      // As the real core: a blank title is the automatic one for this address, not an empty title.
+      if (body.title !== undefined) c.title = body.title.trim() || suggestConversationTitle({ kind: c.kind, chatgptConversationId: c.chatgptConversationId });
       if (body.note !== undefined) c.note = body.note;
       return this.touchConversation(c);
     },
@@ -402,8 +445,9 @@ export class DemoServer {
       this.data.conversations = this.data.conversations.filter((x) => x.id !== c.id);
       this.data.conversations.filter((x) => x.projectId === p.id).sort((a, b) => a.position - b.position).forEach((x, n) => { x.position = n; });
       this.emit({ type: 'conversation.removed', id: c.id, projectId: p.id });
+      // As the real core: removing the preferred conversation leaves the project with none preferred. Nothing is chosen for the person.
       if (p.preferredConversationId === c.id) {
-        p.preferredConversationId = this.data.conversations.filter((x) => x.projectId === p.id).sort((a, b) => a.position - b.position)[0]?.id ?? null;
+        p.preferredConversationId = null;
         this.touchProject(p);
       }
       return ok;
@@ -411,7 +455,7 @@ export class DemoServer {
     'conversations.setPreferred': (i) => {
       const { conversationId } = parseBody('conversations.setPreferred', i.body) as { conversationId: string | null };
       const p = this.project(i.params.id);
-      if (conversationId !== null && this.conversation(conversationId).projectId !== p.id) throw new ApiError(409, 'wrong_project', 'That conversation belongs to another project.');
+      if (conversationId !== null && this.conversation(conversationId).projectId !== p.id) throw new ApiError(400, 'conversation_wrong_project', "That conversation belongs to another project. Choose one of this project's conversations.");
       p.preferredConversationId = conversationId;
       return this.touchProject(p);
     },

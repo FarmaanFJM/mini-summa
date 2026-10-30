@@ -29,8 +29,8 @@ function QuietSettings({ settings, save }: { settings: Settings; save: Save }) {
   };
 
   return (
-    <Group title="Quiet mode" note="Quiet mode silences desktop notifications and phone pushes. Everything still appears in the Activity feed, so nothing is lost.">
-      <SwitchRow label="Quiet now" hint="Silence notifications until the time below." checked={on} onChange={(v) => setManual(v, choice)} />
+    <Group title="Quiet mode" note="Everything still appears in Activity.">
+      <SwitchRow label="Quiet now" checked={on} onChange={(v) => setManual(v, choice)} />
       <Field label="How long" className="ms-set-narrow">
         <Select<QuietChoice>
           value={choice}
@@ -65,7 +65,7 @@ function SchedulePicker({ quiet, save }: { quiet: QuietModeSetting; save: Save }
     <div className="ms-x-stack ms-x-stack--tight">
       <SwitchRow
         label="Quiet every day"
-        hint="A daily window in this PC's local time. It may cross midnight, for example 22:00 to 08:00."
+        hint="In this PC's local time. It may cross midnight."
         checked={schedule.enabled}
         onChange={(v) => { void save({ notifications: { quiet: { schedule: { enabled: v } } } }); }}
       />
@@ -91,10 +91,10 @@ function SchedulePicker({ quiet, save }: { quiet: QuietModeSetting; save: Save }
 function Defaults({ settings, save }: { settings: Settings; save: Save }) {
   const defaults = settings.notifications.defaults;
   return (
-    <Group title="For new projects" note="What a project starts with when you create it. Projects that already exist keep their own choices, which you can change in the table below.">
+    <Group title="For new projects" note="Projects that already exist keep their own choices.">
       <SwitchRow
         label="Notify about new projects"
-        hint="The master switch. When it is off, activity is still recorded but nothing is notified."
+        hint="Activity is still recorded when this is off."
         checked={defaults.enabled}
         onChange={(v) => { void save({ notifications: { defaults: { enabled: v } } }); }}
       />
@@ -102,7 +102,7 @@ function Defaults({ settings, save }: { settings: Settings; save: Save }) {
         <SwitchRow
           key={item.key}
           label={item.label}
-          hint={item.description}
+          hint={item.hint ? item.description : undefined}
           checked={defaults[item.key]}
           disabled={!defaults.enabled}
           onChange={(v) => { void save({ notifications: { defaults: { [item.key]: v } } }); }}
@@ -142,9 +142,9 @@ function ProjectTable() {
   };
 
   return (
-    <Group title="Per project" note="Choose what each project may notify you about. Phone is the push to your paired phones, when push is set up." actions={<SaveStatus status={status} />}>
+    <Group title="Per project" actions={<SaveStatus status={status} />}>
       {rows.length === 0 ? (
-        <p className="ms-x-note">There are no projects yet. Once you create one, its notification choices appear here.</p>
+        <p className="ms-x-note">There are no projects yet.</p>
       ) : (
         <div className="ms-set-table-wrap">
           <table className="ms-set-table" aria-label="Notifications per project">
@@ -188,7 +188,6 @@ export function NotificationsSection() {
       <Group title="On this PC">
         <SwitchRow
           label="Show desktop notifications"
-          hint="A system notification when something needs you. Clicking it opens the place that needs you."
           checked={settings.notifications.native}
           onChange={(v) => { void save({ notifications: { native: v } }); }}
         />

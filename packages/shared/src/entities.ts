@@ -388,8 +388,12 @@ export interface ActivityEvent {
   read: boolean;
 }
 
+/**
+ * What became of a notification on one channel (this PC, or the phone). `suppressed_viewing`: not shown on purpose because the
+ * person was looking at that very session in the focused window ("Claude finished" only). It is not a failure and not quiet mode.
+ */
 export type NotificationChannelResult =
-  | 'sent' | 'suppressed_quiet' | 'suppressed_project' | 'suppressed_duplicate' | 'suppressed_disabled'
+  | 'sent' | 'suppressed_quiet' | 'suppressed_project' | 'suppressed_duplicate' | 'suppressed_disabled' | 'suppressed_viewing'
   | 'unavailable' | 'failed' | 'not_applicable';
 
 export interface NotificationRecord {

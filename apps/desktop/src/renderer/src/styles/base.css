@@ -1,4 +1,4 @@
-/* Document-level defaults. Component styling lives next to the components; tokens come from mini-summa-tokens.css. */
+/* Document-level defaults, as in the Summa-UI reference (src/styles/base.css). Tokens come from the vendored bundle. */
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body, #root { height: 100%; }
@@ -9,10 +9,9 @@ body {
   overflow: hidden;
   background: var(--s0);
   color: var(--text);
-  font: 400 var(--fs-md)/1.45 var(--font);
+  font: 400 var(--fs)/1.5 var(--font);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  font-variant-numeric: tabular-nums;
 }
 
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -22,12 +21,12 @@ a { color: inherit; }
 hr { border: 0; }
 [hidden] { display: none !important; }
 
-::selection { background: rgba(141, 146, 152, 0.35); }
+::selection { background: rgba(255, 255, 255, 0.22); }
 
 /* Thin neutral scrollbars everywhere (Chromium honours scrollbar-width and scrollbar-color). */
 * { scrollbar-width: thin; scrollbar-color: var(--s4) transparent; }
 
-/* Keyboard focus for elements the presets do not style (P15, P17): 1.5px, neutral, at least 3:1. */
+/* Keyboard focus for elements the presets do not style (P15, P17): 1.5px, neutral, 4.1:1 or better on --s0 to --s3. */
 :where(button, [role="button"], [role="tab"], [role="switch"], a[href], summary, [tabindex]):focus-visible {
   outline: 1.5px solid var(--focus);
   outline-offset: 1px;
@@ -36,6 +35,7 @@ hr { border: 0; }
 
 .ms-mono { font-family: var(--mono); font-feature-settings: "zero" 1; }
 .ms-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-num { font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }

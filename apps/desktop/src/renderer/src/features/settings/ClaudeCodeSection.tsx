@@ -52,7 +52,6 @@ export function ClaudeCodeSection() {
     <div className="ms-set-page">
       <Group
         title="Environments"
-        note="Windows, each WSL distribution and Linux are separate: each has its own Claude Code, its own settings and its own sessions."
         actions={<Button size="sm" icon="refresh" loading={refreshing} onClick={() => { void refresh(true); }}>Refresh</Button>}
       >
         {state.status === 'loading' ? (

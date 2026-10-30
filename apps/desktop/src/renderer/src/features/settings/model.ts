@@ -43,13 +43,14 @@ export function countdown(expiresAt: string, now: number): { text: string; expir
 // ---------------------------------------------------------------------------------------------------------------
 // Notifications
 
-export const NOTIFICATION_SWITCHES: { key: Exclude<keyof ProjectNotificationPrefs, 'enabled'>; label: string; column: string; description: string }[] = [
+/** `hint` marks the few switches whose label alone does not say what they cover; the rest need no sentence under them. */
+export const NOTIFICATION_SWITCHES: { key: Exclude<keyof ProjectNotificationPrefs, 'enabled'>; label: string; column: string; description: string; hint?: true }[] = [
   { key: 'permission', label: 'Claude needs permission', column: 'Permission', description: 'A session is waiting for you to allow an action.' },
   { key: 'input', label: 'Claude asks you something', column: 'Input', description: 'A session asked a question and waits for your answer.' },
   { key: 'error', label: 'A session hit an error', column: 'Error', description: 'A turn or a session ended with an error.' },
   { key: 'report', label: 'A report is ready', column: 'Report', description: 'Claude declared a task finished and the report waits for its handoff.' },
-  { key: 'sessionEnded', label: 'A session ended abnormally', column: 'Ended', description: 'A session that was working stopped. A normal end only goes to the feed.' },
-  { key: 'presenceLost', label: 'A session is no longer visible', column: 'Lost', description: 'Claude Code stopped listing a session. It may have ended; this is not confirmed.' },
+  { key: 'sessionEnded', label: 'A session ended abnormally', column: 'Ended', description: 'A session that was working stopped. A normal end only goes to the feed.', hint: true },
+  { key: 'presenceLost', label: 'A session is no longer visible', column: 'Lost', description: 'Claude Code stopped listing a session. It may have ended; this is not confirmed.', hint: true },
   { key: 'push', label: 'Also send to my phone', column: 'Phone', description: 'Send a short push notification to paired phones, when push is set up.' },
 ];
 
@@ -266,10 +267,10 @@ export function pruneWords(result: Pick<PruneResult, 'removed'>): PruneWords {
 }
 
 export const RETENTION_FIELDS = [
-  { key: 'rawEventsDays', label: 'Hook events', hint: 'The raw record of what Claude Code reported. It is what lets a session be replayed.' },
-  { key: 'activityDays', label: 'Activity feed', hint: 'Entries you have read. Entries that still need you stay.' },
-  { key: 'notificationsDays', label: 'Notification records', hint: 'The record of what each notification became.' },
-  { key: 'reportsDays', label: 'Reports and handoffs', hint: 'Only finished handoffs, and the reports behind them. Anything still open stays.' },
+  { key: 'rawEventsDays', label: 'Hook events', hint: 'What lets a session be replayed.' },
+  { key: 'activityDays', label: 'Activity feed', hint: 'Entries that still need you stay.' },
+  { key: 'notificationsDays', label: 'Notification records', hint: 'What each notification became.' },
+  { key: 'reportsDays', label: 'Reports and handoffs', hint: 'Finished handoffs and their reports. Anything still open stays.' },
 ] as const satisfies readonly { key: keyof RetentionSettings; label: string; hint: string }[];
 
 const PLATFORM_NAMES: Record<string, string> = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' };

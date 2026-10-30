@@ -1,5 +1,7 @@
 // First run. Over an application that has no projects yet, a checklist says what is needed and what is already in place:
-// Claude Code found, a first project, its ChatGPT conversation, how ChatGPT opens, optional hooks, a first session.
+// Claude Code found, a first project, how ChatGPT opens, optional hooks, and for a project with a folder its ChatGPT conversation
+// and a first local session. A project needs none of a ChatGPT Project, a GitHub repository or a folder, so the steps that only a
+// folder makes possible are not asked of a project that has none.
 //
 // Every tick is read from the core (model.ts), never remembered. The checklist is never a gate: the application underneath
 // is fully usable, the panel can be hidden, and Settings brings it back.

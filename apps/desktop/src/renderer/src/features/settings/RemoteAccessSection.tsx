@@ -71,11 +71,11 @@ export function RemoteAccessSection() {
 
       <Group
         title="Phone access"
-        note="Lets a paired phone reach Mini-Summa when it is away from this PC. Mini-Summa publishes itself only to your own tailnet, so only your devices signed in to your Tailscale account can even see it."
+        note="Mini-Summa is published only to your own tailnet, so only your devices signed in to your Tailscale account can see it."
       >
         <SwitchRow
           label="Allow my phone to reach Mini-Summa through Tailscale Serve"
-          hint="Uses tailscale serve. A phone still has to be paired before it can do anything."
+          hint="A phone still has to be paired before it can do anything."
           checked={wanted}
           disabled={switching || blocked}
           onChange={(v) => { void toggle(v); }}

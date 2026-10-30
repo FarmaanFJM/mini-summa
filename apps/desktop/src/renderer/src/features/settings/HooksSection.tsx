@@ -27,7 +27,6 @@ export function HooksSection() {
           <li>No repository file is touched, and no CLAUDE.md is needed.</li>
           <li>Sessions that Mini-Summa starts get their hooks automatically, so they work without installing anything. Installing adds capture for sessions you start yourself in a normal terminal.</li>
           <li>Claude Code reads hooks when a session starts, so sessions that are already running report only after they are restarted.</li>
-          <li>Before anything is written you see the exact changes, and a backup of the file is saved first.</li>
         </ul>
       </Group>
 

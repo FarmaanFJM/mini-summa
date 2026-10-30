@@ -34,8 +34,22 @@ class FakeContents extends EventEmitter implements ViewContents {
   forwards = 0;
   history = 0;
   windowOpen: ((d: { url: string }) => { action: 'deny' }) | null = null;
+  /** The browser zoom of the view, and every value the controller asked for. Two behaviours of real Chromium, measured in Electron 45.1, are modelled: */
+  zoom = 1;
+  zoomCalls: number[] = [];
+  /** a zoom set before the first page has committed is ignored, */
+  committed = false;
+  /** and zoom is kept per host: a page on another host starts at that host's own zoom, 1 the first time. */
+  private hostZoom = new Map<string, number>();
   constructor(public plan: (url: string) => Plan) { super(); }
 
+  getZoomFactor() { return this.zoom; }
+  setZoomFactor(factor: number) {
+    this.zoomCalls.push(factor);
+    if (!this.committed) return;
+    this.zoom = factor;
+    this.hostZoom.set(new URL(this.url).host, factor);
+  }
   getURL() { return this.url; }
   getTitle() { return this.title; }
   isLoading() { return this.loading; }
@@ -101,6 +115,8 @@ class FakeContents extends EventEmitter implements ViewContents {
   }
 
   private finish(url: string, title: string) {
+    this.committed = true;
+    this.zoom = this.hostZoom.get(new URL(url).host) ?? 1; // at commit, before did-navigate is emitted
     this.url = url;
     this.title = title;
     this.emit('did-navigate', {}, url);
@@ -632,5 +648,260 @@ describe('navigate, history and state', () => {
     contents.emit('render-process-gone', {}, { reason: 'crashed' });
     expect(view.getState().status).toBe('error');
     expect(view.getState().note).toMatch(/crashed/);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Page size: the view's own browser zoom. (pageScale.test.ts covers the decision; this covers when it is applied.)
+
+describe('page size of the view', () => {
+  const rectOf = (width: number) => ({ x: 300, y: 50, width, height: 800 });
+  const infoZoomLogs = (deps: ReturnType<typeof setup>['deps']) => deps.log.info.mock.calls.filter((c) => c[0] === 'chatgpt page zoom').length;
+
+  it('Automatic zooms a narrow pane out so the page gets about 900 CSS pixels, and leaves a wide pane at 100 percent', async () => {
+    const { view, contents } = setup(); // RECT is 700 DIP wide
+    await view.open(CONV, { focus: false, reason: 'user' });
+    expect(contents.zoom).toBe(0.77);
+    view.setBounds(rectOf(500));
+    expect(contents.zoom).toBe(0.7);
+    view.setBounds(rectOf(800));
+    expect(contents.zoom).toBe(0.88);
+    view.setBounds(rectOf(900));
+    expect(contents.zoom).toBe(1);
+    view.setBounds(rectOf(1200));
+    expect(contents.zoom).toBe(1);
+    expect(view.pageZoom).toBe(1);
+  });
+
+  it('follows the window as it is resized, maximized and shrunk', async () => {
+    const { view, contents, win } = setup({ window: { width: 1000, height: 700, zoomFactor: 1 } });
+    view.setBounds({ x: 0, y: 0, width: 1000, height: 700 });
+    await view.open(CONV, { focus: false, reason: 'user' });
+    expect(contents.zoom).toBe(1);
+    win.current = { width: 800, height: 600, zoomFactor: 1 }; // the view is clamped into the smaller window: 800 DIP
+    view.reapply();
+    expect(contents.zoom).toBe(0.88);
+    win.current = { width: 1920, height: 1080, zoomFactor: 1 };
+    view.reapply();
+    expect(contents.zoom).toBe(1); // the rectangle is still 1000 wide
+  });
+
+  it.each([['100', 1], ['90', 0.9], ['80', 0.8], ['70', 0.7]] as const)('%s percent is applied whatever the pane does', async (scale, factor) => {
+    const { view, contents } = setup();
+    await view.open(CONV, { focus: false, reason: 'user' });
+    view.setPageScale(scale);
+    expect(contents.zoom).toBe(factor);
+    for (const width of [300, 700, 1200]) {
+      view.setBounds(rectOf(width));
+      expect(contents.zoom).toBe(factor);
+    }
+  });
+
+  it('a change of the setting takes effect at once, and Automatic returns to the pane\'s own zoom', async () => {
+    const { view, contents } = setup();
+    await view.open(CONV, { focus: false, reason: 'user' });
+    expect(contents.zoom).toBe(0.77);
+    view.setPageScale('90');
+    expect(contents.zoom).toBe(0.9);
+    view.setPageScale('100');
+    expect(contents.zoom).toBe(1);
+    view.setPageScale('auto');
+    expect(contents.zoom).toBe(0.77);
+  });
+
+  it('a setting this build does not know is treated as Automatic', async () => {
+    const { view, contents } = setup();
+    await view.open(CONV, { focus: false, reason: 'user' });
+    view.setPageScale('70');
+    expect(contents.zoom).toBe(0.7);
+    view.setPageScale('150' as never);
+    expect(contents.zoom).toBe(0.77);
+  });
+
+  it('a setting made before the view exists is applied when the first page has committed (Chromium ignores it earlier)', async () => {
+    const { view, contents, deps } = setup();
+    view.setPageScale('80');
+    expect(deps.createView).not.toHaveBeenCalled();
+    await view.open(CONV, { focus: false, reason: 'user' });
+    expect(contents.zoom).toBe(0.8);
+    // It was asked for while the view was still empty, and ignored; the commit of the page is what made it stick.
+    expect(contents.zoomCalls.at(-1)).toBe(0.8);
+  });
+
+  it('zoom set at the moment the view is created is retried after the page commits, and the log says so only once it took effect', async () => {
+    const { view, contents, deps } = setup();
+    view.setPageScale('90');
+    const loading = view.open(CONV, { focus: false, reason: 'user' });
+    expect(contents.zoom).toBe(1);
+    expect(infoZoomLogs(deps)).toBe(0);
+    await loading;
+    expect(contents.zoom).toBe(0.9);
+    expect(infoZoomLogs(deps)).toBe(1);
+    expect(deps.log.info).toHaveBeenCalledWith('chatgpt page zoom', { factor: 0.9, setting: '90', paneWidthDip: 700 });
+  });
+
+  it('applies the zoom again after a navigation to another host reset it (the sign-in host), and after dom-ready', async () => {
+    const { view, contents } = setup();
+    await view.open(CONV, { focus: false, reason: 'user' });
+    expect(contents.zoom).toBe(0.77);
+
+    // ChatGPT sends the page to the sign-in host. Real Chromium shows that host at its own zoom, 1, before did-navigate arrives.
+    await contents.loadURL(LOGIN);
+    expect(contents.zoom).toBe(0.77);
+    // Back on chatgpt.com the zoom it was left at is still in force, and is right.
+    await contents.loadURL(`https://chatgpt.com/c/${OTHER}`);
+    expect(contents.zoom).toBe(0.77);
+
+    // dom-ready is a second chance in case the zoom was reset after the navigation event.
+    contents.zoom = 1;
+    contents.emit('dom-ready');
+    expect(contents.zoom).toBe(0.77);
+
+    // A change of the setting while on the sign-in host applies there too.
+    await contents.loadURL(LOGIN);
+    view.setPageScale('70');
+    expect(contents.zoom).toBe(0.7);
+    await contents.loadURL(CONV);
+    expect(contents.zoom).toBe(0.7);
+  });
+
+  it('sets nothing when the zoom is already right, so an idle window costs the page nothing', async () => {
+    const { view, contents } = setup();
+    await view.open(CONV, { focus: false, reason: 'user' });
+    const before = contents.zoomCalls.length;
+    view.reapply();
+    view.reapply();
+    view.setBounds(RECT);
+    view.setBounds({ ...RECT });
+    view.setPageScale('auto');
+    view.setOverlayActive(true);
+    view.setOverlayActive(false);
+    contents.emit('dom-ready');
+    contents.emit('did-navigate-in-page', {}, CONV, true);
+    expect(contents.zoomCalls).toHaveLength(before);
+  });
+
+  it('moves in steps: a pane dragged one pixel at a time changes the zoom at most once per percent', async () => {
+    const { view, contents } = setup();
+    await view.open(CONV, { focus: false, reason: 'user' });
+    contents.zoomCalls.length = 0;
+    for (let width = 900; width >= 400; width -= 1) view.setBounds(rectOf(width));
+    // 900 wide is 1 and 630 and narrower is 0.7: 31 distinct values in between, and no more calls than values.
+    expect(contents.zoomCalls.length).toBeLessThanOrEqual(31);
+    expect(new Set(contents.zoomCalls).size).toBe(contents.zoomCalls.length);
+  });
+
+  it('a hidden pane keeps its zoom, and the zoom follows the width it comes back with', async () => {
+    const { view, contents } = setup();
+    await view.open(CONV, { focus: false, reason: 'user' });
+    expect(contents.zoom).toBe(0.77);
+    const before = contents.zoomCalls.length;
+    view.setBounds(null);
+    expect(contents.zoom).toBe(0.77);
+    expect(contents.zoomCalls).toHaveLength(before);
+    view.setBounds(rectOf(1100));
+    expect(contents.zoom).toBe(1);
+  });
+
+  it('is decided from the width the view really has in DIP, not from the renderer\'s CSS pixels and not from the renderer\'s zoom', async () => {
+    // The same 800 CSS pixel rectangle is 900 DIP when the renderer is at 112.5 percent and 800 DIP at 100 percent.
+    const zoomed = setup({ window: { width: 1600, height: 900, zoomFactor: 1.125 }, bounds: false });
+    zoomed.view.setBounds({ x: 0, y: 0, width: 800, height: 400 });
+    await zoomed.view.open(CONV, { focus: false, reason: 'user' });
+    expect(zoomed.handle.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 900, height: 450 });
+    expect(zoomed.contents.zoom).toBe(1);
+
+    const plain = setup({ window: { width: 1600, height: 900, zoomFactor: 1 }, bounds: false });
+    plain.view.setBounds({ x: 0, y: 0, width: 800, height: 400 });
+    await plain.view.open(CONV, { focus: false, reason: 'user' });
+    expect(plain.handle.setBounds).toHaveBeenLastCalledWith({ x: 0, y: 0, width: 800, height: 400 });
+    expect(plain.contents.zoom).toBe(0.88);
+
+    // A fixed size ignores the renderer's zoom altogether, and changing the renderer's zoom never sets anything on the view but its own zoom.
+    plain.view.setPageScale('90');
+    plain.win.current = { width: 1600, height: 900, zoomFactor: 1.5 };
+    plain.view.reapply();
+    expect(plain.contents.zoom).toBe(0.9);
+  });
+
+  it('never touches the page: whatever the controller does, the only members of the web contents it reaches for are the ones in ViewContents', async () => {
+    // Every property the controller reads or calls on the contents is recorded. A script, a stylesheet, a click, typed text or a
+    // user-agent change would each need a member that is not in this list.
+    const allowed = new Set([
+      'getURL', 'getTitle', 'isLoading', 'isFocused', 'isDestroyed', 'loadURL', 'reload', 'stop', 'canGoBack', 'canGoForward', 'goBack', 'goForward',
+      'focus', 'getZoomFactor', 'setZoomFactor', 'on', 'removeListener', 'setWindowOpenHandler',
+    ]);
+    const reached = new Set<string>();
+    const fake = new FakeContents(() => ({ type: 'ok' }));
+    const spy = new Proxy(fake, {
+      get(target, prop) {
+        const value = Reflect.get(target, prop, target) as unknown;
+        if (typeof prop === 'string' && typeof value === 'function') { reached.add(prop); return (value as (...args: unknown[]) => unknown).bind(target); }
+        return value;
+      },
+    });
+    const handle = { contents: spy, setBounds: vi.fn(), setVisible: vi.fn() } satisfies ViewHandle;
+    const view = new ChatGptView({
+      createView: () => handle, content: () => ({ width: 1600, height: 900, zoomFactor: 1 }), requestWorkspace: vi.fn(), revealWindow: vi.fn(), openExternal: vi.fn(),
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }, timing: TIMING,
+    });
+    view.setBounds(RECT);
+    await view.open(CONV, { focus: true, reason: 'handoff' });
+    await view.navigate(`https://chatgpt.com/c/${OTHER}`);
+    view.setPageScale('70');
+    view.setBounds(rectOf(500));
+    view.setOverlayActive(true);
+    view.setOverlayActive(false);
+    fake.history = 1;
+    view.back(); view.forward(); view.reload(); view.focus();
+    fake.emit('render-process-gone', {}, { reason: 'crashed' });
+    expect([...reached].filter((name) => !allowed.has(name))).toEqual([]);
+    expect(reached.has('setZoomFactor')).toBe(true); // and the zoom is the one thing it sets on the page's view
+  });
+});
+
+describe('the view is never destroyed because of layout', () => {
+  it('createView is called once across hide, show, resize, maximizing the other pane, overlays, setting changes, navigations and a closed window', async () => {
+    const { view, deps, contents, handle, win } = setup();
+    await view.open(CONV, { focus: false, reason: 'user' });
+    expect(deps.createView).toHaveBeenCalledTimes(1);
+    const loads = [...contents.loads];
+
+    // hide and show (a different workspace view, such as Settings, hides the pane with a null rectangle)
+    view.setBounds(null);
+    expect(handle.setVisible).toHaveBeenLastCalledWith(false);
+    view.setBounds(RECT);
+    expect(handle.setVisible).toHaveBeenLastCalledWith(true);
+    // resize and maximize of the window
+    win.current = { width: 1000, height: 600, zoomFactor: 1 };
+    view.reapply();
+    win.current = { width: 1920, height: 1080, zoomFactor: 1 };
+    view.reapply();
+    // the other pane maximized: this pane is hidden, then comes back wide when it is restored
+    view.setBounds(null);
+    view.setBounds({ x: 0, y: 50, width: 1700, height: 900 });
+    view.setBounds(RECT);
+    // dialogs, menus and a divider drag cover the pane, several at a time
+    view.setOverlayActive(true);
+    view.setOverlayActive(true);
+    view.setOverlayActive(false);
+    // the page size changes
+    for (const scale of ['70', 'auto', '100', '80', 'auto'] as const) view.setPageScale(scale);
+    // another host and back
+    await contents.loadURL(LOGIN);
+    await contents.loadURL(CONV);
+    // the window goes away for a moment and returns
+    win.current = null;
+    view.reapply();
+    expect(handle.setVisible).toHaveBeenLastCalledWith(false);
+    win.current = { width: 1600, height: 900, zoomFactor: 1 };
+    view.reapply();
+    expect(handle.setVisible).toHaveBeenLastCalledWith(true);
+
+    expect(deps.createView).toHaveBeenCalledTimes(1);
+    expect(contents.destroyed).toBe(false);
+    expect(contents.reloads).toBe(0);
+    expect(contents.loads).toEqual([...loads, LOGIN, CONV]); // only the two loads this test made itself
+    expect(deps.log.info.mock.calls.filter((c) => c[0] === 'chatgpt view created')).toHaveLength(1);
   });
 });

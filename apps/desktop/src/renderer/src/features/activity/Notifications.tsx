@@ -23,7 +23,7 @@ export function NotificationList() {
   if (status === 'error' && items.length === 0) {
     return <EmptyState tone="error" action={<Button onClick={() => { void loader.reloadList('notifications'); }}>Try again</Button>}>Notifications could not be loaded. {error}</EmptyState>;
   }
-  if (items.length === 0) return <EmptyState>No notifications yet. Each one is listed here, including the ones that were not shown.</EmptyState>;
+  if (items.length === 0) return <EmptyState>No notifications yet.</EmptyState>;
 
   return (
     <div className="ms-act-groups">

@@ -55,13 +55,17 @@ export interface DialogProps {
   children?: ReactNode;
   footer?: ReactNode;
   className?: string;
+  /** Centred (default), or high on the screen like a palette. */
+  placement?: 'center' | 'top';
+  /** Names the dialog for assistive technology without drawing the title: a palette is named by its own input. */
+  hideTitle?: boolean;
 }
 
 /**
  * Modal dialog. Focus is trapped and restored, Esc closes the topmost one, the page behind is inert, and the native
  * ChatGPT view is hidden so the dialog is never drawn underneath it.
  */
-export function Dialog({ open, onClose, title, description, size = 'md', role = 'dialog', dismissOnBackdrop, initialFocus, busy, children, footer, className }: DialogProps) {
+export function Dialog({ open, onClose, title, description, size = 'md', role = 'dialog', dismissOnBackdrop, initialFocus, busy, children, footer, className, placement = 'center', hideTitle }: DialogProps) {
   const id = useId();
   const titleId = `${id}-title`;
   const descId = `${id}-desc`;
@@ -124,7 +128,7 @@ export function Dialog({ open, onClose, title, description, size = 'md', role = 
 
   return createPortal(
     <div
-      className="sm-backdrop"
+      className={cx('sm-backdrop', placement === 'top' && 'sm-backdrop--top')}
       data-ms-layer="dialog"
       inert={covered}
       onMouseDown={(e) => { if (e.target === e.currentTarget && dismissible && !busy) onClose(); }}
@@ -139,7 +143,7 @@ export function Dialog({ open, onClose, title, description, size = 'md', role = 
         className={cx('sm-dialog', `ms-dialog--${size}`, className)}
         onKeyDown={onSurfaceKeyDown}
       >
-        <h2 id={titleId} className="sm-dialog__title">{title}</h2>
+        <h2 id={titleId} className={cx('sm-dialog__title', hideTitle && 'ms-dialog__title--hidden')}>{title}</h2>
         {description ? <p id={descId} className="ms-dialog__desc">{description}</p> : null}
         <div className="sm-dialog__body ms-dialog__body">{children}</div>
         {footer ? <div className="sm-dialog__foot">{footer}</div> : null}

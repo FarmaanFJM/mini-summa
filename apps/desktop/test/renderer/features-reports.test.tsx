@@ -10,19 +10,27 @@ import { callsTo, renderFeature, textOf } from './features-helpers';
 const card = () => screen.getByRole('region', { name: 'Handoff to ChatGPT' });
 const buttons = (root: HTMLElement) => within(root).queryAllByRole('button').map((b) => textOf(b));
 
-describe('the report queue with the sidebar collapsed to its rail', () => {
-  it('moves the queue into a column of the view, and opening a report works from there', async () => {
+describe('the report queue with the sidebar collapsed', () => {
+  it('opens the sidebar for the queue while Reports is shown, never as a second column, and hands the choice back on Back', async () => {
     const user = userEvent.setup();
     const seed = createFeatureSeed();
     seed.settings.layout.sidebarCollapsed = true;
-    await renderFeature({ seed });
-    const column = screen.getByRole('complementary', { name: 'Reports' });
-    expect(within(screen.getByRole('complementary', { name: 'Mini-Summa navigation' })).queryByRole('list', { name: 'Reports' })).toBeNull();
-    const list = within(column).getByRole('list', { name: 'Reports' });
+    const app = await renderFeature({ seed });
+    // The person collapsed the sidebar, but the queue lives there: it is on screen while Reports holds it, and there is exactly one.
+    const side = screen.getByRole('complementary', { name: 'Mini-Summa navigation' });
+    expect(side.hasAttribute('hidden')).toBe(false);
+    expect(screen.queryByRole('complementary', { name: 'Reports' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Expand sidebar' })).toBeNull();
+    const list = within(side).getByRole('list', { name: 'Reports' });
     await user.click(within(list).getByRole('button', { name: /Add branch protection checks/ }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Add branch protection checks' })).toBeTruthy();
     expect(within(await screen.findByRole('region', { name: 'Handoff to ChatGPT' })).getByRole('button', { name: 'I sent it' })).toBeTruthy();
-    await user.click(within(column).getByRole('button', { name: 'Back' }));
+
+    await user.click(within(side).getByRole('button', { name: 'Back' }));
+    expect(app.runtime.route.getState().view).toBe('workspace');
+    // What the person chose comes back: collapsed, with the way to open it again.
+    expect(await screen.findByRole('button', { name: 'Expand sidebar' })).toBeTruthy();
+    expect(document.querySelector('aside[aria-label="Mini-Summa navigation"]')?.hasAttribute('hidden')).toBe(true);
   });
 });
 

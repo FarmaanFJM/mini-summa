@@ -412,7 +412,7 @@ export interface ActivityService {
 }
 
 export interface NotifyHint {
-  kind: 'permission' | 'input' | 'error' | 'report' | 'sessionEnded' | 'presenceLost' | 'info';
+  kind: 'permission' | 'input' | 'error' | 'report' | 'turnEnded' | 'sessionEnded' | 'presenceLost' | 'info';
   projectId: string | null;
   sessionKey?: SessionKey | null;
   urgency: 'normal' | 'critical';

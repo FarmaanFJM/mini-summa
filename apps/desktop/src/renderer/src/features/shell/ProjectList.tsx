@@ -33,7 +33,8 @@ export function ProjectList() {
 
   const active = useMemo(() => activeProjects(projects), [projects]);
   const stats = useMemo(() => statsByProject(active, sessions, reports), [active, sessions, reports]);
-  const selectedId = resolveProject(projects, route.projectId)?.id ?? null;
+  // One highlight at a time: the project is the current place only while the workspace is what is on screen.
+  const selectedId = route.view === 'workspace' ? resolveProject(projects, route.projectId)?.id ?? null : null;
 
   // Placeholders mean "on its way". When nothing is on its way, say what is wrong instead of looking busy.
   if (!loaded && loadError) return <p className="ms-sidebar__empty">Could not load projects.</p>;
@@ -85,26 +86,20 @@ interface RowProps {
 function ProjectRow({ project, stats, selected, onSelect, onEdit, onArchive, onDelete }: RowProps) {
   const [menu, setMenu] = useState<{ open: boolean; point: { x: number; y: number } | null }>({ open: false, point: null });
   const s = stats ?? { liveSessions: 0, needsAttention: false, waitingReports: 0 };
+  const facts = projectLabel(project.name, s);
   return (
     <li className="ms-project" data-selected={selected || undefined} data-menu-open={menu.open || undefined}>
       <button
         type="button"
         className="ms-project__main"
         aria-current={selected ? 'true' : undefined}
-        aria-label={projectLabel(project.name, s)}
+        aria-label={facts}
+        title={facts}
         onClick={onSelect}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ open: true, point: { x: e.clientX, y: e.clientY } }); }}
       >
         <span className="ms-project__name">{project.name}</span>
-        <span className="ms-project__meta ms-live">
-          {s.needsAttention ? <span className="ms-dot ms-dot--attention" role="img" aria-label="Needs your attention" title="A session needs your attention" /> : null}
-          {s.liveSessions > 0 ? (
-            <span className="ms-meta" title={plural(s.liveSessions, 'live session')}><Icon name="terminal" size={14} />{s.liveSessions}</span>
-          ) : null}
-          {s.waitingReports > 0 ? (
-            <span className="ms-meta" title={`${plural(s.waitingReports, 'report')} waiting for handoff`}><Icon name="file-text" size={14} />{s.waitingReports}</span>
-          ) : null}
-        </span>
+        {s.needsAttention ? <span className="ms-dot ms-dot--attention ms-live" role="img" aria-label="Needs your attention" /> : null}
       </button>
       <Menu
         label={`Actions for ${project.name}`}
@@ -127,10 +122,10 @@ function ProjectRow({ project, stats, selected, onSelect, onEdit, onArchive, onD
           />
         )}
         items={[
-          { label: 'Edit project', icon: 'pencil', onSelect: onEdit },
-          { label: 'Archive project', icon: 'archive', onSelect: onArchive },
+          { label: 'Project settings', icon: 'sliders', onSelect: onEdit },
+          { label: 'Archive', icon: 'archive', onSelect: onArchive },
           { type: 'separator' },
-          { label: 'Delete project', icon: 'trash', danger: true, onSelect: onDelete },
+          { label: 'Delete', icon: 'trash', danger: true, onSelect: onDelete },
         ]}
       />
     </li>

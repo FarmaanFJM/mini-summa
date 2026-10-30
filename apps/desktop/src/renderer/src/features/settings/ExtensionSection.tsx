@@ -28,7 +28,7 @@ export function ExtensionSection() {
 
   return (
     <div className="ms-set-page">
-      <Group title="Connection" note="Optional. In external browser mode the extension brings the ChatGPT tab you already have open to the front instead of opening another one. It uses the browser's tab and window functions only and cannot see the page.">
+      <Group title="Connection" note="It brings a ChatGPT tab you already have open to the front, and cannot see the page.">
         <dl className="ms-x-kv" aria-label="Extension connection">
           <dt>Now</dt>
           <dd>{connected ? 'A browser extension is connected.' : 'No extension is connected.'}</dd>

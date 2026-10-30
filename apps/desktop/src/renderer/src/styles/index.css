@@ -1,6 +1,6 @@
 /*
-  Order matters: the vendored Summa-UI tokens, then the Mini-Summa palette that overrides their values, then the
-  vendored presets (which only read tokens), then the app's own layers.
+  Order matters: the vendored Summa-UI tokens (the source of truth, never overridden), then what Mini-Summa adds on top of them,
+  then the vendored presets (which only read tokens), then the app's own layers.
 */
 @import '../../../../../../third_party/summa-ui-guidance/css/tokens.css';
 @import './mini-summa-tokens.css';

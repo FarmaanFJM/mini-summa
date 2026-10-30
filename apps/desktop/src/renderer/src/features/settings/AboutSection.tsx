@@ -12,7 +12,7 @@ export function AboutSection() {
 
   return (
     <div className="ms-set-page">
-      <Group title="Setup" note="What Mini-Summa needs before it is useful. Each tick is read from your PC as it is now.">
+      <Group title="Setup">
         <SetupChecklist />
       </Group>
 

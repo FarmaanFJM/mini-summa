@@ -82,8 +82,9 @@ describe('offline', () => {
     expect(screen.getByText('Showing the last known state.')).toBeTruthy();
     expect(screen.getByRole('button', { name: /^GitManager/ })).toBeTruthy(); // not blanked out
     expect(appRoot().getAttribute('data-connection')).toBe('reconnecting');
-    // Live numbers are dimmed while they cannot be trusted.
-    expect(within(screen.getByRole('button', { name: /^GitManager/ })).getByTitle('3 live sessions').closest('.ms-live')).toBeTruthy();
+    // What is live is dimmed while it cannot be trusted: the attention marker of a project and the counts of the sections.
+    expect(within(screen.getByRole('button', { name: /^GitManager/ })).getByRole('img', { name: 'Needs your attention' }).closest('.ms-live')).toBeTruthy();
+    expect(screen.getByTitle('4 unread').closest('.ms-live')).toBeTruthy();
 
     // Something changes in the core while the window is away.
     await app.demo.demo.server.call('projects.update', { params: { id: IDS.atlas }, body: { name: 'Atlas Gateway' } });

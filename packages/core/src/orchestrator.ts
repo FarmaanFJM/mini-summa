@@ -10,7 +10,8 @@
 //  * Entry ids derive from the cause (the reducer's derived id), so replaying the log after a restart can never
 //    create a second entry or send a second notification.
 //  * "Turn ended" is worded as exactly that. Stop is not task completion; only a report marker (a declaration by the
-//    model, never proof) produces "Report ready".
+//    model, never proof) produces "Report ready". A turn that ends without one still notifies ("Claude finished", kind
+//    turnEnded), so a session that is waiting for the person is never silent; one Stop produces one or the other, never both.
 //  * Notifications are never produced for replayed history and only for entries that were newly created.
 import { shortSessionId } from '@minisumma/shared';
 import type { ActivityEvent, Delivery, LinkTarget, PendingAction, ReportSummary, SessionKey, SessionView } from '@minisumma/shared';
@@ -203,12 +204,25 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
           description: 'Claude has been idle at the prompt. Inferred from an idle notification.' });
         break;
       case 'turn_ended':
-      case 'background_wait':
-        activity.record({ ...base2, type: 'turn_ended', severity: 'info', title: `Turn ended: ${label(view)}`,
+      case 'background_wait': {
+        const { activity: entry, created } = activity.record({ ...base2, type: 'turn_ended', severity: 'info', title: `Turn ended: ${label(view)}`,
           description: to === 'background_wait'
             ? 'Claude finished a turn but background work is still pending. No report was declared.'
             : 'No report was declared. A turn ending does not mean the task is complete.' });
+        // "Claude finished": the Stop hook arrived and the turn carried no report. The reducer does not flag this transition for
+        // notification (`event.notify` is false), so the decision is made here, and it is narrower than the transition:
+        //  * only turn_ended. background_wait means Claude has work pending and will go on by itself: nobody has to come, and
+        //    "finished" would be untrue. (Known gap: background work that never ends, such as a dev server, keeps a session in
+        //    background_wait for good, so it never notifies. The feed entry above still records the turn.)
+        //  * never straight after a report (from === 'report_ready'). A Stop that declares a report sets that state without a
+        //    transition, so one Stop cannot produce both; but a second Stop with no work in between (a stop hook that sent Claude on
+        //    for one more step, or a duplicate delivery) would otherwise follow the report notification with a "finished" for the
+        //    same turn. A real new turn always passes through `working` first.
+        //  * only for a session that belongs to a project. Hooks are installed for every Claude Code session on this computer;
+        //    "finished" for each unrelated one would bury the ones that matter, and an unassigned session has no project switch.
+        if (created && canNotify && to === 'turn_ended' && from !== 'report_ready' && view.projectId) notify(entry, hint('turnEnded', 'normal'));
         break;
+      }
       default:
         break; // working and idle are state, not feed entries
     }

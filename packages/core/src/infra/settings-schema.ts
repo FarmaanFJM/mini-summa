@@ -50,7 +50,7 @@ export const SETTINGS_SPEC: SettingsSpec<Omit<Settings, 'ui'>> = {
       until: { t: 'instant' },
       schedule: { enabled: bool, from: { t: 'time' }, to: { t: 'time' } },
     },
-    defaults: { enabled: bool, permission: bool, input: bool, error: bool, report: bool, sessionEnded: bool, presenceLost: bool, push: bool },
+    defaults: { enabled: bool, permission: bool, input: bool, error: bool, report: bool, turnEnded: bool, sessionEnded: bool, presenceLost: bool, push: bool },
   },
   review: { requestTemplate: { t: 'str', max: 4000 }, includeSessionRef: bool, maxPartChars: int(2000, 100_000) },
   sessions: { discoveryIntervalSec: int(5, 600), remoteControlByDefault: bool, claudeCommand: { t: 'str', max: 512, nullable: true } },

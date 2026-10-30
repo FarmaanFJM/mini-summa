@@ -1,10 +1,13 @@
 // The embedded ChatGPT view: behaviour only, no Electron imports (electronView.ts adapts a real WebContentsView).
 //
 // Rules this file keeps:
-//  * Mini-Summa never reads or touches the page: no scripts, no DOM access, no clicks, no typing, no user-agent change.
-//    It looks only at the address, the title, whether a load is running and why a load failed.
+//  * Mini-Summa never reads or touches the page: no scripts, no DOM access, no clicks, no typing, no user-agent change, no
+//    injected CSS. It looks only at the address, the title, whether a load is running and why a load failed. The one thing it
+//    sets is the view's own browser zoom (the page size setting, pageScale.ts): a property of the view, like Ctrl and minus in a
+//    browser, not something done to the page.
 //  * The view is created on first need and never destroyed because of layout changes, so scroll position, drafts and the
-//    login survive the renderer showing, hiding or moving the pane.
+//    login survive the renderer showing, hiding or moving the pane. Hiding is setVisible(false), moving is setBounds, a dialog
+//    over the pane is setOverlayActive: none of them can destroy it, because ViewHandle has no way to. Do not add one.
 //  * Navigation of the top frame is restricted with the shared classifyNavigation policy.
 //  * open() reports only what it could observe. `verified` is true when the final address is the requested page AND the
 //    view does not look like a sign-in page, a security check or a failed load. It is an address check, not a content check.
@@ -13,10 +16,16 @@
 //  * If the renderer has not placed the pane when open() is called, the view is NOT navigated: the result says the pane
 //    is not on screen. Loading a hidden pane would change what the user sees later without any action of theirs.
 //  * A view that was never asked to load anything does not exist, so the renderer's empty state is never covered.
+//  * The page zoom follows the pane: it is decided again whenever the bounds change, the setting changes, and after every
+//    main-frame navigation. Chromium keeps zoom per host, so a page on another host (the sign-in host, say) starts at that
+//    host's own zoom, which is 1.0 the first time (measured in Electron 45.1), and a zoom set before the first page has
+//    committed is ignored.
 import { classifyNavigation, parseChatGptUrl, sameChatGptPage } from '@minisumma/shared';
 import type { ChatGptOpenResult, ChatGptViewState, Rect } from '@minisumma/shared';
 import { sameRect, toViewBounds } from './bounds.ts';
 import type { Logger } from './log.ts';
+import { chooseZoomFactor, isPageScale, sameZoom } from './pageScale.ts';
+import type { PageScale } from './pageScale.ts';
 import { isExternalUrl } from './validation.ts';
 import { classifyFailure, deriveViewState, EMPTY_VIEW_STATE } from './viewState.ts';
 import type { ViewObservation } from './viewState.ts';
@@ -36,6 +45,10 @@ export interface ViewContents {
   goBack(): void;
   goForward(): void;
   focus(): void;
+  /** The view's browser zoom (1 is 100 percent). It is not the renderer's: the main window has its own, which bounds.ts converts with. */
+  getZoomFactor(): number;
+  /** Ignored by Chromium until a page has been committed, which is why the controller applies it again after navigations. */
+  setZoomFactor(factor: number): void;
   on(event: string, listener: (...args: any[]) => void): unknown;
   removeListener(event: string, listener: (...args: any[]) => void): unknown;
   setWindowOpenHandler(handler: (details: { url: string }) => { action: 'deny' }): void;
@@ -81,6 +94,10 @@ export class ChatGptView {
   private rect: Rect | null = null;
   private overlay = false;
   private applied: { bounds: Rect | null; visible: boolean } = { bounds: null, visible: false };
+  /** The person's page size choice. Settings default it to Automatic; the shell sets the stored value before the first page loads. */
+  private pageScale: PageScale = 'auto';
+  /** Width of the native view in DIP the last time it had bounds. Kept while the pane is hidden, so the zoom does not jump around. */
+  private paneWidth: number | null = null;
   private obs: ViewObservation = { url: null, title: null, loading: false, failure: null };
   private state: ChatGptViewState = EMPTY_VIEW_STATE;
   private readonly listeners = new Set<(s: ChatGptViewState) => void>();
@@ -106,7 +123,10 @@ export class ChatGptView {
     this.reapply();
   }
 
-  /** Re-derives the native bounds from the last rectangle; called on resize, maximize, fullscreen, zoom and display changes. */
+  /**
+   * Re-derives the native bounds from the last rectangle; called on resize, maximize, fullscreen, zoom and display changes.
+   * Hiding never destroys anything: a null rectangle, a covered pane and a window too small for the pane all end in setVisible(false).
+   */
   reapply(): void {
     const view = this.view;
     if (!view) return;
@@ -115,7 +135,23 @@ export class ChatGptView {
     const visible = bounds !== null && !this.overlay;
     if (bounds && !sameRect(bounds, this.applied.bounds)) { view.setBounds(bounds); this.applied.bounds = bounds; }
     if (visible !== this.applied.visible) { view.setVisible(visible); this.applied.visible = visible; }
+    if (bounds) this.paneWidth = bounds.width;
+    this.applyZoom();
   }
+
+  /**
+   * The person's page size choice (Settings, ChatGPT). Takes effect at once when the view exists, otherwise when it is created.
+   * A value this build does not know is treated as Automatic, which is what a stored setting from another build falls back to.
+   */
+  setPageScale(scale: PageScale): void {
+    const next = isPageScale(scale) ? scale : 'auto';
+    if (next === this.pageScale) return;
+    this.pageScale = next;
+    this.applyZoom();
+  }
+
+  /** The zoom factor the view should have now (1 is 100 percent). */
+  get pageZoom(): number { return chooseZoomFactor(this.pageScale, this.paneWidth); }
 
   /** Whether the pane is placed and not covered by an overlay right now. */
   get showing(): boolean { return this.applied.visible; }
@@ -260,9 +296,26 @@ export class ChatGptView {
     if (this.view) return this.view;
     const handle = this.deps.createView();
     this.view = handle;
+    // One line per creation: a second one in the log would mean something destroyed the view, which nothing is meant to do.
+    this.deps.log.info('chatgpt view created');
     this.wire(handle.contents);
     this.reapply();
     return handle;
+  }
+
+  /**
+   * Gives the view the zoom the setting and the pane width ask for. Looks at the view's real zoom rather than remembering what was
+   * set, so a navigation that reset it (another host) or a set that Chromium ignored (no page yet) is simply tried again.
+   */
+  private applyZoom(): void {
+    const c = this.view?.contents;
+    if (!c || c.isDestroyed()) return;
+    const want = chooseZoomFactor(this.pageScale, this.paneWidth);
+    if (sameZoom(c.getZoomFactor(), want)) return;
+    c.setZoomFactor(want);
+    // Logged only when it took effect: before the first page commits (and on an error page) Chromium ignores the call, and the
+    // next bounds change or navigation tries again without filling the log.
+    if (sameZoom(c.getZoomFactor(), want)) this.deps.log.info('chatgpt page zoom', { factor: want, setting: this.pageScale, paneWidthDip: this.paneWidth });
   }
 
   private waitForBounds(): Promise<boolean> {
@@ -399,7 +452,10 @@ export class ChatGptView {
     c.on('did-start-loading', () => { this.obs.loading = true; this.refresh(); });
     c.on('did-stop-loading', () => { this.obs.loading = false; this.syncFromContents(); this.refresh(); });
     c.on('did-finish-load', () => { this.obs.loading = false; this.syncFromContents(); this.refresh(); });
-    c.on('did-navigate', (_e: unknown, url: string) => { this.obs.url = url; this.obs.failure = null; this.refresh(); });
+    // A page on another host starts at that host's own zoom (see the header), so every committed main-frame navigation, and the
+    // page becoming ready, is a reason to look at the zoom again. Both are cheap: nothing is set when it is already right.
+    c.on('did-navigate', (_e: unknown, url: string) => { this.obs.url = url; this.obs.failure = null; this.refresh(); this.applyZoom(); });
+    c.on('dom-ready', () => this.applyZoom());
     c.on('did-navigate-in-page', (_e: unknown, url: string, isMainFrame: boolean) => { if (isMainFrame) { this.obs.url = url; this.refresh(); } });
     c.on('page-title-updated', (_e: unknown, title: string) => { this.obs.title = title; this.refresh(); });
     c.on('did-fail-load', (_e: unknown, code: number, description: string, validatedUrl: string, isMainFrame: boolean) => {

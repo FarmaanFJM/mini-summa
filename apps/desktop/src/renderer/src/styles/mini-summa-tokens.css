@@ -1,76 +1,59 @@
 /*
-  Mini-Summa palette, defined once.
+  What Mini-Summa adds on top of the Summa-UI tokens.
 
-  The VALUES below come from the product owner's design direction for Mini-Summa (2026-10-30), not from the vendored
-  Summa-UI bundle. The token NAMES are the bundle's, so every sm-* preset keeps working. This file is loaded after
-  third_party/summa-ui-guidance/css/tokens.css and overrides its values; the vendored files are never edited.
-  See docs/UI_PRINCIPLE_EXCEPTIONS.md for where the owner's values differ from the bundle.
+  third_party/summa-ui-guidance/css/tokens.css is loaded first and is the source of truth for surfaces (--s0 to --s4), lines,
+  text, accent, focus, select, danger, warn, radius, spacing, type scale and shadow. Nothing in this file overrides one of its
+  values. The vendored files are never edited.
 
-  Owner values:   --s0 #0C0D0E  --s1 #141618  --s3 #202326  --line #2B2E31  --text #ECEEEF  --text-2 #8D9298  --accent #10B981
-  Derived values: --s2, --s4 (so elevation still runs dark to light), --text-3 (3:1 or better on every surface),
-                  --line-strong, and the terminal palette (4.5:1 or better on --term-bg, checked with a WCAG script).
+  Only three things live here, because the bundle has no token for them:
+    --s5               one step beyond --s4 (hover and pressed on menu, dialog and tooltip surfaces)
+    --control-h-sm     a compact control for toolbars and tab strips (the bundle has 32px and 40px)
+    --term-*           the terminal: its palette, font and metrics, read by terminals/xtermAdapter at creation time
+
+  Contrast of the bundle's text on its surfaces (WCAG, computed; see docs/UI_PRINCIPLE_EXCEPTIONS.md, X1):
+    --text    15.5 on --s0, 14.5 on --s1, 13.2 on --s2, 11.7 on --s3, 10.0 on --s4
+    --text-2   7.5 on --s0,  7.0 on --s1,  6.3 on --s2,  5.6 on --s3,  4.8 on --s4
+    --text-3   3.8 on --s0,  3.6 on --s1,  3.2 on --s2,  2.9 on --s3,  2.5 on --s4
+  So text a person has to read uses --text or --text-2. --text-3 is for placeholders, disabled controls and decoration only.
 */
 :root {
-  color-scheme: dark;
+  /* The bundle's presets hard-code #444545 for pressed secondary buttons and for hover on --s4 surfaces. Named once, here. */
+  --s5: #444545;
 
-  /* Surfaces: page is darkest, each elevation step is lighter (P02). */
-  --s0: #0c0d0e; /* page, terminal */
-  --s1: #141618; /* panels, sidebar, pane headers */
-  --s2: #1a1d1f; /* inputs, hovered rows (derived) */
-  --s3: #202326; /* raised controls, selected rows, dialogs */
-  --s4: #272a2d; /* menus, popovers, pressed (derived) */
-  --s5: #31353a; /* pressed and hover on --s4 surfaces; the bundle hard-codes #444545 here (derived) */
-
-  --line: #2b2e31; /* opaque hairline; borders are used sparingly (P01) */
-  --line-strong: #3a3f43; /* the single outline on floating overlays (derived) */
-
-  --text: #eceeef;
-  --text-2: #8d9298;
-  --text-3: #6f767d; /* 3.9:1 on --s1, 3.1:1 on --s4 (derived) */
-
-  /* Emerald: brand and the primary action of a view only. */
-  --accent: #10b981;
-  --accent-hover: #34c997;
-  --accent-ink: #04281d;
-  --accent-soft: rgba(16, 185, 129, 0.14);
-  --accent-text: #3dd6a0;
-
-  /* Neutral interaction states (P15, P17). */
-  --focus: rgba(236, 238, 239, 0.5);
-  --select: rgba(255, 255, 255, 0.07);
-  --select-strong: rgba(255, 255, 255, 0.14);
-
-  /* Compact density (owner direction): a smaller control height for toolbars and navigation. */
   --control-h-sm: 28px;
-  --fs-md: 13px;
 
-  /* Terminal: one place for its palette, font and metrics. xtermAdapter reads these at creation time. */
-  --term-bg: #0c0d0e;
-  --term-fg: #dde0e3;
-  --term-cursor: #eceeef;
-  --term-cursor-accent: #0c0d0e;
-  --term-selection: rgba(141, 146, 152, 0.34);
-  --term-scrollbar: rgba(141, 146, 152, 0.28);
-  --term-scrollbar-hover: rgba(141, 146, 152, 0.45);
+  /*
+    Terminal. The background is the main panel's surface (--s1), so the terminal reads as part of the panel instead of as a
+    darker hole in it. The colours are program output (Claude Code, compilers, test runners), so they are not interface colours:
+    muted, evenly weighted, no neon, and every one except ANSI black clears 4.5:1 on --term-bg (computed, see X1 and X7).
+    The neutrals follow the bundle's text colours so they sit beside the interface without a colour cast.
+  */
+  --term-bg: var(--s1);
+  --term-fg: #dcdddc;
+  --term-cursor: var(--text);
+  --term-cursor-accent: var(--s1);
+  --term-selection: rgba(163, 166, 164, 0.34);
+  --term-scrollbar: rgba(163, 166, 164, 0.28);
+  --term-scrollbar-hover: rgba(163, 166, 164, 0.45);
   --term-font: "Cascadia Mono", Consolas, "JetBrains Mono", ui-monospace, "SF Mono", Menlo, "DejaVu Sans Mono", monospace;
   --term-font-size: 13;
   --term-line-height: 1.22;
 
-  /* ANSI 0 to 15. Muted, evenly weighted, no neon and no lime; every colour except black clears 4.5:1 on --term-bg. */
-  --term-black: #22262a;
+  /* ANSI 0 to 15. Black is a fill colour (it equals --s3), never text. */
+  --term-black: #2c2d2d;
   --term-red: #e2706f;
   --term-green: #5fba8d;
   --term-yellow: #d7b567;
   --term-blue: #6aa0e8;
   --term-magenta: #b890e0;
   --term-cyan: #55bfcb;
-  --term-white: #c3c8cd;
-  --term-bright-black: #7a828a;
+  --term-white: #c4c6c5;
+  --term-bright-black: #868b89;
   --term-bright-red: #f0888a;
   --term-bright-green: #7dd0a6;
   --term-bright-yellow: #e9c985;
   --term-bright-blue: #8ab8f2;
   --term-bright-magenta: #cfaaf0;
   --term-bright-cyan: #79d4de;
-  --term-bright-white: #f4f6f7;
+  --term-bright-white: #f3f4f3;
 }

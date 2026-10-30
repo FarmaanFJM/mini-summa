@@ -10,7 +10,7 @@ import { pluralize } from '../text';
 import { CandidateDetail, useCandidates } from './Candidates';
 import { ReportDetail } from './ReportDetail';
 import { ReportQueue } from './ReportQueue';
-import { SideNavigator } from './SideNavigator';
+import { SidebarContent } from '../shell/SidebarSlot';
 import type { QueueMode } from './ReportQueue';
 
 export { PendingActionsInbox } from './PendingActions';
@@ -29,8 +29,8 @@ export default function ReportsView() {
   const waiting = useMemo(() => reports.filter(isAwaitingHandoff).length, [reports]);
 
   return (
-    <section className="ms-view ms-rep ms-x-withnav" aria-label="Reports">
-      <SideNavigator title="Reports" width={320} onBack={() => route.back()}>
+    <section className="ms-rep" aria-label="Reports">
+      <SidebarContent title="Reports" onBack={() => route.back()}>
         <ReportQueue
           mode={mode}
           onMode={setMode}
@@ -39,28 +39,26 @@ export default function ReportsView() {
           selectedCandidateId={candidateId}
           onSelectCandidate={setCandidateId}
         />
-      </SideNavigator>
-      <div className="ms-x-withnav__main">
-        {mode === 'other' ? (
-          <CandidateDetail
-            candidate={candidate}
-            onPromoted={(report) => { setMode('reports'); setCandidateId(null); void candidates.reload(); route.go({ reportId: report.id }); }}
-          />
-        ) : reportId ? (
-          <ReportDetail key={reportId} reportId={reportId} />
-        ) : (
-          <>
-            <header className="ms-view__head"><h1 className="ms-view__title">Reports</h1></header>
-            <div className="ms-view__body">
-              <EmptyState>
-                {waiting > 0
-                  ? `${pluralize(waiting, 'report')} ${waiting === 1 ? 'is' : 'are'} waiting for handoff. Choose one to read it and hand it to ChatGPT.`
-                  : 'Choose a report to read it. Nothing is waiting for handoff.'}
-              </EmptyState>
-            </div>
-          </>
-        )}
-      </div>
+      </SidebarContent>
+      {mode === 'other' ? (
+        <CandidateDetail
+          candidate={candidate}
+          onPromoted={(report) => { setMode('reports'); setCandidateId(null); void candidates.reload(); route.go({ reportId: report.id }); }}
+        />
+      ) : reportId ? (
+        <ReportDetail key={reportId} reportId={reportId} />
+      ) : (
+        <div className="ms-view">
+          <header className="ms-view__head"><h1 className="ms-view__title">Reports</h1></header>
+          <div className="ms-view__body">
+            <EmptyState>
+              {waiting > 0
+                ? `${pluralize(waiting, 'report')} ${waiting === 1 ? 'is' : 'are'} waiting for handoff. Choose one to read it and hand it to ChatGPT.`
+                : 'Choose a report to read it. Nothing is waiting for handoff.'}
+            </EmptyState>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

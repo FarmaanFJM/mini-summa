@@ -5,7 +5,7 @@ import { PUSH_BODY, createNotificationsService, quietReason } from '../../src/wo
 import { FakeDevices, FakeProjects, FakePush, KEY_A, activityEvent, fakeNative, fakeSettings, hasEmDash, makeEnv, notifyHint } from './helpers.ts';
 
 type Kind = Exclude<NotifyHint['kind'], 'info'>;
-const KINDS: Kind[] = ['permission', 'input', 'error', 'report', 'sessionEnded', 'presenceLost'];
+const KINDS: Kind[] = ['permission', 'input', 'error', 'report', 'turnEnded', 'sessionEnded', 'presenceLost'];
 
 function setup(opts: { push?: 'none' | FakePush } = {}) {
   const env = makeEnv('2026-10-30T10:00:00.000Z');
@@ -51,7 +51,7 @@ describe('notifications: preferences', () => {
   it.each(KINDS)('honours the project flag for %s', async (kind) => {
     const t = setup();
     const flag = kind as keyof ProjectNotificationPrefs;
-    t.projects.setPrefs(t.project.id, { permission: true, input: true, error: true, report: true, sessionEnded: true, presenceLost: true, [flag]: false });
+    t.projects.setPrefs(t.project.id, { permission: true, input: true, error: true, report: true, turnEnded: true, sessionEnded: true, presenceLost: true, [flag]: false });
     expect(await t.consider({ h: { kind, dedupeKey: `${kind}_off` } })).toBeNull();
     for (const other of KINDS.filter((k) => k !== kind)) {
       expect(await t.consider({ h: { kind: other, dedupeKey: `${other}_on` } })).not.toBeNull();
@@ -90,7 +90,8 @@ describe('notifications: what the desktop sees', () => {
 
   it.each([
     ['permission', 'GitManager: needs permission'], ['input', 'GitManager: needs your input'], ['error', 'GitManager: error'],
-    ['report', 'GitManager: report ready'], ['sessionEnded', 'GitManager: session ended'], ['presenceLost', 'GitManager: session no longer visible'],
+    ['report', 'GitManager: report ready'], ['turnEnded', 'GitManager: Claude finished'], ['sessionEnded', 'GitManager: session ended'],
+    ['presenceLost', 'GitManager: session no longer visible'],
   ] as const)('titles a %s notification "%s"', async (kind, title) => {
     const t = setup();
     t.projects.setPrefs(t.project.id, { sessionEnded: true }); // off by default
@@ -121,6 +122,108 @@ describe('notifications: what the desktop sees', () => {
     t.native.notifyImpl = () => { throw new Error('toast service crashed'); };
     expect((await t.consider())!.native).toBe('failed');
     expect(t.env.log.lines.some((l) => l.level === 'warn')).toBe(true);
+  });
+});
+
+describe('notifications: Claude finished (turnEnded) and the person who is already looking', () => {
+  const SESSION = { sessionKey: KEY_A, target: { view: 'workspace' as const, projectId: 'prj_gm', sessionKey: KEY_A } };
+  const viewing = { shown: false, suppressed: 'viewing' as const, reason: 'The window is in front on this session.' };
+  const finished = (t: ReturnType<typeof setup>, key = 'drv_fin') => t.consider({ a: { id: key, type: 'turn_ended', title: 'Turn ended: GitManager / a1b2c3d4', sessionKey: KEY_A }, h: { kind: 'turnEnded', dedupeKey: key, ...SESSION } });
+
+  it('is on by default, shows "<project>: Claude finished" with the turn-ended entry as its body and the session as its target', async () => {
+    const t = setup();
+    const record = (await finished(t))!;
+    expect(record).toMatchObject({ title: 'GitManager: Claude finished', body: 'Turn ended: GitManager / a1b2c3d4', native: 'sent', push: 'sent', target: SESSION.target });
+    expect(t.native.notifications).toHaveLength(1);
+    expect(hasEmDash(record)).toBe(false);
+  });
+
+  it('can be switched off for one project without touching the other kinds, and the global default applies to a session without a project', async () => {
+    const t = setup();
+    t.projects.setPrefs(t.project.id, { turnEnded: false });
+    expect(await finished(t)).toBeNull();
+    expect(t.native.notifications).toHaveLength(0);
+    expect(await t.consider({ h: { kind: 'permission', dedupeKey: 'still_on' } })).not.toBeNull();
+    t.settings.set({ notifications: { defaults: { turnEnded: false } } });
+    expect(await t.svc.consider(activityEvent(), notifyHint({ kind: 'turnEnded', projectId: null, dedupeKey: 'orphan' }))).toBeNull();
+  });
+
+  it('asks the host to skip it when the person is looking at the session, and for no other kind', async () => {
+    const t = setup();
+    t.projects.setPrefs(t.project.id, { sessionEnded: true });
+    await finished(t);
+    for (const kind of KINDS.filter((k) => k !== 'turnEnded')) await t.consider({ h: { kind, dedupeKey: `other_${kind}` } });
+    const flagged = t.native.notifications.filter((n) => n.suppressIfViewing === true);
+    expect(flagged.map((n) => n.tag)).toEqual(['drv_fin']);
+    expect(t.native.notifications).toHaveLength(KINDS.length);
+  });
+
+  it('records "suppressed_viewing" for the desktop AND the phone, writes the record, and does not push', async () => {
+    const t = setup();
+    t.native.notifyImpl = () => viewing;
+    const record = (await finished(t))!;
+    expect(record).toMatchObject({ native: 'suppressed_viewing', push: 'suppressed_viewing', readAt: null, title: 'GitManager: Claude finished' });
+    expect((t.push as FakePush).sent).toHaveLength(0);
+    expect(t.svc.list()).toEqual([record]);
+    expect(t.env.of('notification.added')).toEqual([{ type: 'notification.added', notification: record }]);
+    expect(await finished(t)).toBeNull(); // the same turn never comes back as a notification later
+    expect(t.native.notifications).toHaveLength(1);
+  });
+
+  it('still pushes to the phone when the desktop showed it, even if the toast is slow to confirm', async () => {
+    const t = setup();
+    let confirm!: () => void;
+    t.native.notifyImpl = () => new Promise((resolve) => { confirm = () => resolve({ shown: true }); });
+    const pending = finished(t);
+    await new Promise((r) => setTimeout(r, 450)); // longer than the wait for a "looking at it" answer, far shorter than the toast timeout
+    expect((t.push as FakePush).sent).toHaveLength(1); // the phone did not wait for the toast
+    confirm();
+    expect(await pending).toMatchObject({ native: 'sent', push: 'sent' });
+  });
+
+  it.each([
+    ['the project turned push off', (t: ReturnType<typeof setup>) => t.projects.setPrefs(t.project.id, { push: false }), 'suppressed_project'],
+    ['no phone has registered', (t: ReturnType<typeof setup>) => { t.devices.targets = []; }, 'not_applicable'],
+    ['push is not configured', (t: ReturnType<typeof setup>) => { (t.push as FakePush).isConfigured = false; }, 'not_applicable'],
+  ])('keeps the phone channel\'s own reason when %s (it was never going to be sent)', async (_name, tweak, expected) => {
+    const t = setup();
+    tweak(t);
+    t.native.notifyImpl = () => viewing;
+    expect(await finished(t)).toMatchObject({ native: 'suppressed_viewing', push: expected });
+  });
+
+  it('does not ask the host while quiet mode is on, and does not claim the person was looking', async () => {
+    const t = setup();
+    t.settings.set({ notifications: { quiet: { enabled: true, until: null } } });
+    expect(await finished(t)).toMatchObject({ native: 'suppressed_quiet', push: 'suppressed_quiet' });
+    expect(t.native.notifications).toHaveLength(0);
+  });
+
+  it('cannot tell whether anyone is looking when desktop notifications are off, so the phone still gets it', async () => {
+    const t = setup();
+    t.settings.set({ notifications: { native: false } });
+    expect(await finished(t)).toMatchObject({ native: 'suppressed_disabled', push: 'sent' });
+  });
+
+  it.each(KINDS.filter((k) => k !== 'turnEnded'))('never records %s as "looked at", whatever the host answers: those interrupt on purpose', async (kind) => {
+    const t = setup();
+    t.projects.setPrefs(t.project.id, { sessionEnded: true });
+    t.native.notifyImpl = () => viewing;
+    const record = (await t.consider({ h: { kind, dedupeKey: `x_${kind}` } }))!;
+    expect(record.native).not.toBe('suppressed_viewing');
+    expect(record.push).toBe('sent');
+    expect(t.native.notifications[0].suppressIfViewing).toBeUndefined();
+  });
+
+  it('puts only the project name, a fixed sentence and ids into the push, never the turn text', async () => {
+    const t = setup();
+    await t.consider({
+      a: { id: 'drv_secret', type: 'turn_ended', title: 'Turn ended: GitManager / a1b2c3d4', description: 'TOP SECRET LAST MESSAGE', sessionKey: KEY_A },
+      h: { kind: 'turnEnded', dedupeKey: 'drv_secret', ...SESSION },
+    });
+    const payload = (t.push as FakePush).sent[0].payload;
+    expect(payload).toEqual({ title: 'GitManager', body: 'Claude finished and is waiting for you', data: { kind: 'turnEnded', projectId: t.project.id, activityId: 'drv_secret', sessionKey: KEY_A } });
+    expect(JSON.stringify(payload)).not.toContain('SECRET');
   });
 });
 
@@ -252,7 +355,8 @@ describe('notifications: push', () => {
 
   it.each([
     ['permission', 'Claude is waiting for permission'], ['input', 'Claude needs your input'], ['error', 'A Claude session hit an error'],
-    ['report', 'A report is ready'], ['presenceLost', 'A Claude session is no longer visible'], ['sessionEnded', 'A Claude session ended'],
+    ['report', 'A report is ready'], ['turnEnded', 'Claude finished and is waiting for you'], ['presenceLost', 'A Claude session is no longer visible'],
+    ['sessionEnded', 'A Claude session ended'],
   ] as const)('says "%s" with the fixed sentence "%s"', async (kind, sentence) => {
     const t = setup();
     t.projects.setPrefs(t.project.id, { sessionEnded: true }); // off by default

@@ -1,12 +1,12 @@
 // A view takes over the sidebar instead of opening a second one beside it (principle 14). This is the contract the settings view
 // (and any other view with its own secondary navigation) relies on, tested with a stand-in view so it does not depend on one.
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 import { RuntimeProvider, useRoute } from '../../src/renderer/src/app/runtime';
-import { LayoutProvider } from '../../src/renderer/src/features/shell/LayoutContext';
-import { Sidebar } from '../../src/renderer/src/features/shell/Sidebar';
+import { LayoutProvider, useLayout } from '../../src/renderer/src/features/shell/LayoutContext';
+import { Sidebar, sidebarShown } from '../../src/renderer/src/features/shell/Sidebar';
 import { SidebarContent, SidebarSlotContext, useSidebarSlotHost } from '../../src/renderer/src/features/shell/SidebarSlot';
 import { createHarness, until } from './helpers';
 
@@ -119,5 +119,55 @@ describe('a view that replaces the sidebar', () => {
     expect(projectNav().closest('[hidden]')).not.toBeNull();
     await user.click(screen.getByRole('button', { name: 'release all' }));
     expect(projectNav().closest('[hidden]')).toBeNull();
+  });
+});
+
+describe('a view that replaces the sidebar, with the sidebar collapsed', () => {
+  function Collapser() {
+    const { update } = useLayout();
+    const route = useRoute();
+    return (
+      <>
+        <button type="button" onClick={() => update({ sidebarCollapsed: true })}>test: collapse</button>
+        <button type="button" onClick={() => route.setView('settings')}>test: open settings</button>
+      </>
+    );
+  }
+  function CollapsedFrame() {
+    const host = useSidebarSlotHost();
+    const view = useRoute().view;
+    return (
+      <SidebarSlotContext.Provider value={host.value}>
+        <Sidebar replaced={host.replaced} slotRef={host.setSlot} />
+        <Collapser />
+        {view === 'settings' ? <StandInView name="Settings" /> : null}
+      </SidebarSlotContext.Provider>
+    );
+  }
+  const aside = () => document.querySelector('aside[aria-label="Mini-Summa navigation"]') as HTMLElement;
+
+  it('says when the sidebar is on screen: when it is not collapsed, or when a view holds it', () => {
+    expect(sidebarShown(false, false)).toBe(true);
+    expect(sidebarShown(true, false)).toBe(false);
+    expect(sidebarShown(true, true)).toBe(true);
+    expect(sidebarShown(false, true)).toBe(true);
+  });
+
+  it('shows the sidebar for the view that needs it (never a second column), and gives it back to the person\'s choice afterwards', async () => {
+    const user = userEvent.setup();
+    const harness = createHarness();
+    render(<RuntimeProvider runtime={harness.runtime}><LayoutProvider><CollapsedFrame /></LayoutProvider></RuntimeProvider>);
+    await screen.findByRole('button', { name: /^GitManager/ });
+    await user.click(screen.getByRole('button', { name: 'test: collapse' }));
+    expect(aside().hasAttribute('hidden')).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: 'test: open settings' }));
+    expect(aside().hasAttribute('hidden')).toBe(false);
+    expect(within(aside()).getByRole('heading', { level: 2, name: 'Settings' })).toBeTruthy();
+    expect(within(aside()).getByRole('button', { name: 'Section one' })).toBeTruthy();
+    expect(document.querySelectorAll('aside')).toHaveLength(1);
+
+    await user.click(within(aside()).getByRole('button', { name: 'Back' }));
+    expect(aside().hasAttribute('hidden')).toBe(true);
   });
 });

@@ -85,7 +85,7 @@ function Retention({ onDirty }: { onDirty: (dirty: boolean) => void }) {
   return (
     <Group
       title="How long to keep history"
-      note="Records older than these limits can be removed by a cleanup. 0 keeps everything. Nothing is removed on its own: it happens only when you run a cleanup below."
+      note="0 keeps everything. Nothing is removed until you run a cleanup below."
       actions={<SaveStatus status={status} />}
     >
       <div className="ms-set-fields">
@@ -147,7 +147,7 @@ function CleanUp({ onChanged, unsavedLimits }: { onChanged: () => Promise<void>;
   return (
     <Group
       title="Clean up now"
-      note="Look at what your limits would remove before anything is removed. Activity that still needs you, entries you have not read, and handoffs that are still open always stay."
+      note="Activity that still needs you, entries you have not read, and handoffs that are still open always stay."
     >
       <div className="ms-x-actions">
         <Button loading={state.step === 'checking'} disabled={unsavedLimits || state.step === 'removing'} onClick={() => { void preview(); }}>Preview the cleanup</Button>

@@ -8,6 +8,11 @@
 // Electron takes integer DIP. Edges are rounded rather than sizes, so two panes that touch in CSS pixels still touch
 // after conversion, and the result is clamped into the content area so a stale rectangle can never hang outside the
 // window while the renderer catches up with a resize.
+//
+// Two zoom factors exist here and must not be confused. This file converts with the RENDERER's: the main window page's own
+// factor. The page INSIDE the view has a zoom of its own (pageScale.ts decides it, chatgptView.ts sets it), and ChatGPT lays
+// itself out in the CSS pixels of THAT zoom: its width is the width returned here divided by that factor. Neither depends on the
+// other, and neither depends on the display scale. The width returned here, in DIP, is what pageScale.ts looks at.
 import type { Rect } from '@minisumma/shared';
 
 export interface ContentSize { width: number; height: number }

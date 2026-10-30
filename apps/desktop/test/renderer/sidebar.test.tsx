@@ -31,11 +31,15 @@ describe('sidebar', () => {
     expect(within(row('Docs site')).queryByRole('img', { name: 'Needs your attention' })).toBeNull();
   });
 
-  it('shows no number where there is nothing to count', async () => {
+  it('keeps the row clean: the facts are in its name and tooltip, not in icons or numbers inside it', async () => {
     await renderApp();
-    const docs = row('Docs site');
-    expect(docs.querySelector('[title*="live session"]')).toBeNull();
-    expect(docs.querySelector('[title*="report"]')).not.toBeNull();
+    for (const name of ['GitManager', 'Atlas API', 'Docs site', 'Trading dashboard']) {
+      const r = row(name);
+      expect(r.getAttribute('title')).toBe(r.getAttribute('aria-label'));
+      expect(r.textContent).toBe(name); // no count, no label, nothing but the name
+      expect(r.querySelector('svg')).toBeNull(); // no terminal or report icon
+    }
+    expect(row('Docs site').getAttribute('title')).toBe('Docs site, 1 report waiting for handoff');
   });
 
   it('shows the unread and waiting counts at the bottom, and no count for Settings', async () => {
@@ -92,9 +96,9 @@ describe('sidebar', () => {
     const user = userEvent.setup();
     await renderApp();
     await user.click(screen.getByRole('button', { name: 'Actions for Atlas API' }));
-    expect(screen.getByRole('menuitem', { name: 'Edit project' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: 'Archive project' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: 'Delete project' }).className).toContain('sm-menu__item--danger');
+    expect(screen.getAllByRole('menuitem').map((i) => i.textContent)).toEqual(['Project settings', 'Archive', 'Delete']); // the destructive one is last
+    expect(screen.getByRole('menuitem', { name: 'Delete' }).className).toContain('sm-menu__item--danger');
+    expect(screen.getByRole('menuitem', { name: 'Delete' }).querySelector('svg')).not.toBeNull(); // danger text plus an icon (P19)
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('menu')).toBeNull();
 
@@ -102,11 +106,21 @@ describe('sidebar', () => {
     expect(screen.getByRole('menu', { name: 'Actions for Docs site' })).toBeTruthy();
   });
 
-  it('asks for a new project from the plus button', async () => {
+  it('asks for a new project from the New project button, which is a plain button and not an accent', async () => {
     const user = userEvent.setup();
     await renderApp();
-    await user.click(screen.getByRole('button', { name: 'New project' }));
+    const button = screen.getByRole('button', { name: 'New project' });
+    expect(button.className).not.toContain('sm-btn--primary'); // emerald is for the one main action of a view
+    await user.click(button);
     expect(screen.getByRole('dialog', { name: 'New project' })).toBeTruthy();
+  });
+
+  it('opens project settings from the row menu, with the project the row belongs to', async () => {
+    const user = userEvent.setup();
+    const app = await renderApp();
+    await user.click(screen.getByRole('button', { name: 'Actions for Atlas API' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Project settings' }));
+    expect(app.runtime.ui.getState().projectDialog).toEqual({ mode: 'edit', projectId: IDS.atlas });
   });
 });
 
@@ -116,7 +130,7 @@ describe('archiving and deleting', () => {
     const app = await renderApp();
     const calls = vi.spyOn(app.demo, 'call');
     await user.click(screen.getByRole('button', { name: 'Actions for Docs site' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Archive project' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Archive' }));
     const dialog = screen.getByRole('dialog', { name: 'Archive Docs site?' });
     expect(dialog.textContent).toContain('kept');
     expect(dialog.textContent).toContain('1 report');
@@ -135,7 +149,7 @@ describe('archiving and deleting', () => {
     const app = await renderApp();
     const calls = vi.spyOn(app.demo, 'call');
     await user.click(screen.getByRole('button', { name: 'Actions for Trading dashboard' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Delete project' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Delete Trading dashboard?' });
     expect(dialog.textContent).toContain('removes the project');
     expect(dialog.textContent).toContain('2 reports');
@@ -157,7 +171,7 @@ describe('archiving and deleting', () => {
     const app = await renderApp();
     const calls = vi.spyOn(app.demo, 'call');
     await user.click(screen.getByRole('button', { name: 'Actions for Atlas API' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Delete project' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(calls.mock.calls.some((c) => c[0] === 'projects.remove')).toBe(false);
@@ -172,7 +186,7 @@ describe('archiving and deleting', () => {
       name === 'projects.remove' ? Promise.reject(new Error('The database is locked.')) : (original as (...a: unknown[]) => unknown)(name, ...rest)
     )) as never);
     await user.click(screen.getByRole('button', { name: 'Actions for Atlas API' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Delete project' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
     await user.click(screen.getByRole('button', { name: 'Delete project' }));
     expect(await screen.findByText('The database is locked.')).toBeTruthy();
     expect(screen.getByRole('alertdialog')).toBeTruthy();
@@ -185,7 +199,7 @@ describe('removing a project that has running Claude terminals', () => {
     const app = await renderApp();
     const calls = vi.spyOn(app.demo, 'call');
     await user.click(screen.getByRole('button', { name: 'Actions for Atlas API' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Archive project' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Archive' }));
     const dialog = screen.getByRole('dialog', { name: 'Archive Atlas API?' });
     expect(dialog.textContent).toContain('Removing it also ends its running Claude terminal. You can resume the session later.');
     await user.click(within(dialog).getByRole('button', { name: 'Archive project' }));
@@ -200,7 +214,7 @@ describe('removing a project that has running Claude terminals', () => {
     const app = await renderApp();
     const calls = vi.spyOn(app.demo, 'call');
     await user.click(screen.getByRole('button', { name: 'Actions for GitManager' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Delete project' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
     const dialog = screen.getByRole('alertdialog', { name: 'Delete GitManager?' });
     expect(dialog.textContent).toContain('Removing it also ends its 2 running Claude terminals. You can resume the sessions later.');
     expect(dialog.textContent).toContain('1 session started outside Mini-Summa keeps running.');
@@ -214,7 +228,7 @@ describe('removing a project that has running Claude terminals', () => {
     const app = await renderApp();
     const calls = vi.spyOn(app.demo, 'call');
     await user.click(screen.getByRole('button', { name: 'Actions for Trading dashboard' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Delete project' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Delete' }));
     const dialog = screen.getByRole('alertdialog');
     expect(dialog.textContent).not.toContain('terminal');
     expect(dialog.textContent).toContain('1 session started outside Mini-Summa keeps running.'); // the background session
@@ -232,7 +246,7 @@ describe('removing a project that has running Claude terminals', () => {
     app.demo.demo.server.data.sessions.push(hidden as never);
 
     await user.click(screen.getByRole('button', { name: 'Actions for Docs site' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Archive project' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Archive' }));
     const dialog = screen.getByRole('dialog', { name: 'Archive Docs site?' });
     expect(dialog.textContent).not.toContain('terminal');
     await user.click(within(dialog).getByRole('button', { name: 'Archive project' }));
@@ -259,5 +273,72 @@ describe('the sidebar before and without data', () => {
     await renderApp({ scenario: 'empty' });
     expect(await screen.findByText('No projects yet.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Create project' }).className).toContain('sm-btn--primary');
+  });
+});
+
+describe('the sidebar as a part of the shell', () => {
+  const inOrder = (...nodes: Element[]) => nodes.every((n, i) => i === 0 || (nodes[i - 1].compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0);
+
+  it('is brand, New project, a search entry, one flat list of projects, then Activity, Reports and Settings', async () => {
+    await renderApp();
+    const side = screen.getByRole('complementary', { name: 'Mini-Summa navigation' });
+    expect(within(side).getByText('Mini-Summa')).toBeTruthy();
+    const newProject = within(side).getByRole('button', { name: 'New project' });
+    const search = within(side).getByRole('button', { name: 'Search projects' });
+    const projects = within(side).getByRole('navigation', { name: 'Projects' });
+    const sections = within(side).getByRole('navigation', { name: 'Sections' });
+    expect(inOrder(newProject, search, projects, sections)).toBe(true);
+    // One flat list: no group headings, no nested lists.
+    expect(projects.querySelectorAll('ul ul')).toHaveLength(0);
+    expect(within(projects).queryAllByRole('heading')).toHaveLength(0);
+    expect(within(sections).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Activity, 4 unread', 'Reports, 4 waiting for handoff', 'Settings']);
+    // No initials and no avatars: nothing in the sidebar draws a letter in a circle.
+    expect(side.querySelector('img, [class*="avatar"]')).toBeNull();
+  });
+
+  it('marks one place as current: the project only while the workspace is shown, the section otherwise', async () => {
+    const user = userEvent.setup();
+    await renderApp();
+    expect(row('GitManager').getAttribute('aria-current')).toBe('true');
+    await user.click(screen.getByRole('button', { name: 'Activity, 4 unread' }));
+    expect(screen.getByRole('button', { name: 'Activity, 4 unread' }).getAttribute('aria-current')).toBe('true');
+    expect(within(screen.getByRole('navigation', { name: 'Projects' })).queryAllByRole('button').filter((b) => b.getAttribute('aria-current') === 'true')).toHaveLength(0);
+    await user.click(row('Docs site'));
+    expect(row('Docs site').getAttribute('aria-current')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Activity, 4 unread' }).getAttribute('aria-current')).toBeNull();
+  });
+
+  it('collapses to nothing but a tab on the edge (no rail of icons), and the tab brings it back', async () => {
+    const user = userEvent.setup();
+    await renderApp();
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    expect(screen.queryByRole('navigation', { name: 'Projects' })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Sections' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'New project' })).toBeNull();
+    const tab = screen.getByRole('button', { name: 'Expand sidebar' });
+    expect(tab.getAttribute('aria-expanded')).toBe('false');
+    // The tab is the only control left of the sidebar: no folder icon per project, no initials.
+    expect(document.querySelectorAll('.ms-edge button')).toHaveLength(1);
+    await user.click(tab);
+    expect(screen.queryByRole('button', { name: 'Expand sidebar' })).toBeNull();
+    expect(row('GitManager')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Collapse sidebar' }).hasAttribute('aria-pressed')).toBe(false);
+  });
+
+  it('tells, on the tab, that a session is waiting for the person while the sidebar is away', async () => {
+    const user = userEvent.setup();
+    await renderApp(); // GitManager and Trading dashboard have a session that needs the person
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    const tab = screen.getByRole('button', { name: 'Expand sidebar' });
+    expect(tab.getAttribute('aria-description')).toBe('A session needs your attention');
+    expect(tab.querySelector('.ms-dot--attention')).not.toBeNull();
+  });
+
+  it('keeps nothing but the shell\'s own controls in the tab order of a collapsed sidebar', async () => {
+    const user = userEvent.setup();
+    await renderApp();
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    const side = document.querySelector('aside[aria-label="Mini-Summa navigation"]') as HTMLElement;
+    expect(side.hasAttribute('hidden')).toBe(true); // display none: its buttons are not reachable by Tab or a screen reader
   });
 });

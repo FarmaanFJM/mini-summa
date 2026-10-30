@@ -64,7 +64,7 @@ function PairPhone() {
   const toggle = (scope: GrantableScope, on: boolean) => setScopes((cur) => (on ? GRANTABLE_SCOPES.filter((s) => s === scope || cur.includes(s)) : cur.filter((s) => s !== scope)));
 
   return (
-    <Group title="Pair a phone" note="Install the Mini-Summa app on the phone, then scan the code below with it. The code works once, for five minutes.">
+    <Group title="Pair a phone" note="Scan the code with the Mini-Summa app. It works once, for five minutes.">
       {arrived ? (
         <div className="ms-x-result" role="status">
           <p>{arrived.name} is paired. It may {scopesInWords(arrived.scopes).toLowerCase()}.</p>
@@ -111,7 +111,7 @@ export function PhoneSection() {
 
   return (
     <div className="ms-set-page">
-      <Group title="Paired devices" note="Phones and the browser extension that can reach Mini-Summa. A device only sees what its permissions allow.">
+      <Group title="Paired devices">
         {status === 'loading' && devices.length === 0 ? (
           <div className="ms-skeleton-list ms-skeleton-list--wide" aria-busy="true" aria-label="Loading devices"><div className="ms-skeleton-row" /></div>
         ) : active.length === 0 ? (

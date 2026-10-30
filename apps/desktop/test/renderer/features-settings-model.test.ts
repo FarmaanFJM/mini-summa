@@ -166,7 +166,7 @@ describe('the setup steps', () => {
   const env = (over: Partial<EnvironmentInfo> & { id: EnvironmentInfo['id'] }): EnvironmentInfo => ({
     label: 'Windows', available: true, claude: { path: 'C:\\claude.exe', version: '2.1.4', error: null }, node: { path: null, version: null }, configDir: null, hooks: null, notes: [], ...over,
   });
-  const project = (id: string, name = id): Project => ({ id, name } as Project);
+  const project = (id: string, name = id): Project => ({ id, name, roots: [{ id: `${id}_root`, projectId: id, env: 'win', path: 'C:\\Dev\\Project', label: null, position: 0 }] } as Project);
   const conversation = (projectId: string): Conversation => ({ id: `c_${projectId}`, projectId } as Conversation);
   const session = (origin: SessionView['origin']): SessionView => ({ key: 'win|x', origin } as unknown as SessionView);
   const hooks = (installed: boolean): HookStatus => ({

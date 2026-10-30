@@ -1,7 +1,7 @@
-import type { ChatGptViewState } from '@minisumma/shared';
+import type { ChatGptViewState, Settings } from '@minisumma/shared';
 import { useEffect, useState } from 'react';
 import { useNative } from '../../app/native';
-import { Button, Icon, Radio } from '../../ui';
+import { Button, Field, Icon, Radio, Select } from '../../ui';
 import { Group, PageStatus } from './controls';
 import { viewStatusWords } from './model';
 import { useSettings } from './useSettings';
@@ -20,10 +20,15 @@ export function useChatGptView(enabled: boolean): ChatGptViewState | null {
   return state;
 }
 
-function Choice({ name, checked, onChange, label, hint }: { name: string; checked: boolean; onChange: () => void; label: string; hint: string }) {
+type PageScale = Settings['chatgpt']['pageScale'];
+const PAGE_SCALES: { value: PageScale; label: string }[] = [
+  { value: 'auto', label: 'Automatic' }, { value: '100', label: '100%' }, { value: '90', label: '90%' }, { value: '80', label: '80%' }, { value: '70', label: '70%' },
+];
+
+function Choice({ name, checked, onChange, label, hint }: { name: string; checked: boolean; onChange: () => void; label: string; hint?: string }) {
   return (
     <div className="ms-set-choice">
-      <Radio name={name} checked={checked} onChange={onChange} label={<span className="ms-set-choice__text"><span className="ms-x-row__label">{label}</span><span className="ms-x-row__hint">{hint}</span></span>} />
+      <Radio name={name} checked={checked} onChange={onChange} label={<span className="ms-set-choice__text"><span className="ms-x-row__label">{label}</span>{hint ? <span className="ms-x-row__hint">{hint}</span> : null}</span>} />
     </div>
   );
 }
@@ -39,25 +44,25 @@ export function ChatGptSection() {
     <div className="ms-set-page">
       <PageStatus status={status} />
 
-      <Group title="How ChatGPT opens" note="Google sign-in is often refused inside embedded browsers. If ChatGPT will not let you sign in here, use your browser instead: copying a report and opening the conversation work the same in both.">
+      <Group title="How ChatGPT opens">
         <div role="radiogroup" aria-label="How ChatGPT opens" className="ms-x-stack ms-x-stack--tight">
           <Choice
             name="chatgpt-mode" checked={mode === 'embedded'} onChange={() => { void save({ chatgpt: { mode: 'embedded' } }); }}
-            label="Inside Mini-Summa" hint="ChatGPT opens in a view next to Claude, with its own sign-in. Mini-Summa never reads or changes the page."
+            label="Inside Mini-Summa" hint="Mini-Summa never reads or changes the page."
           />
           <Choice
             name="chatgpt-mode" checked={mode === 'external'} onChange={() => { void save({ chatgpt: { mode: 'external' } }); }}
-            label="In your browser" hint="Mini-Summa opens the conversation in your browser. Nothing is shown inside Mini-Summa."
+            label="In your browser"
           />
         </div>
       </Group>
 
       {mode === 'external' ? (
-        <Group title="Which browser tab" note="The extension can bring a ChatGPT tab you already have open to the front instead of opening another one. It is optional.">
+        <Group title="Which browser tab">
           <div role="radiogroup" aria-label="Which browser tab" className="ms-x-stack ms-x-stack--tight">
             <Choice
               name="chatgpt-browser" checked={settings.chatgpt.externalBrowser === 'default'} onChange={() => { void save({ chatgpt: { externalBrowser: 'default' } }); }}
-              label="Open a new tab in the default browser" hint="Works everywhere. Opening the same conversation twice gives two tabs."
+              label="Open a new tab in the default browser" hint="Opening the same conversation twice gives two tabs."
             />
             <Choice
               name="chatgpt-browser" checked={settings.chatgpt.externalBrowser === 'extension'} onChange={() => { void save({ chatgpt: { externalBrowser: 'extension' } }); }}
@@ -67,6 +72,9 @@ export function ChatGptSection() {
         </Group>
       ) : (
         <Group title="The embedded view">
+          <Field label="Page size" hint="Automatic zooms out only when the pane is narrow." className="ms-set-narrow">
+            <Select<PageScale> value={settings.chatgpt.pageScale} options={PAGE_SCALES} onChange={(pageScale) => { void save({ chatgpt: { pageScale } }); }} />
+          </Field>
           {!native.hasEmbeddedChatGpt ? (
             <p className="ms-x-note">The embedded view exists only in the desktop app. This window cannot show it, so ChatGPT opens in your browser.</p>
           ) : (
