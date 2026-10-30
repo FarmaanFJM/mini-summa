@@ -73,6 +73,17 @@ describe('describeAction: the true outcome in the product wording', () => {
   });
 });
 
+describe('describeAction for a permission request', () => {
+  const perm = makeAction({ kind: 'permission' });
+  it('words the outcome as answered, not sent', () => {
+    expect(describeAction({ ...perm, status: 'executed' }).headline).toBe('Approved');
+    expect(describeAction({ ...perm, status: 'rejected' }).headline).toBe('Rejected');
+    expect(describeAction({ ...perm, status: 'failed', failure: 'The dialog was gone.' }).headline).toBe('Could not answer: The dialog was gone.');
+    expect(describeAction({ ...perm, status: 'superseded' }).headline).toContain('moved on');
+    expect(describeAction({ ...perm, status: 'pending' }).final).toBe(false);
+  });
+});
+
 describe('canDecide: who may approve', () => {
   const ctx = { scopes: ['read', 'approve'] as const, deviceId: 'dev_1' };
   it('allows a phone with the approve scope on a request from the system', () => {

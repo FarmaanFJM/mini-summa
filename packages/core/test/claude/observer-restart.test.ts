@@ -6,7 +6,7 @@ import { createEventBus } from '../../src/bus.ts';
 import { createFakeManaged, createFakeProjects, createFakeSettings } from './helpers/observer-fakes.ts';
 import { keyOf, makeHarness } from './helpers/observer-harness.ts';
 import type { Harness } from './helpers/observer-harness.ts';
-import { S1, S2, S3, discoveryEntry, fixtureEntries, hookEntry, hookPayload } from './helpers/observer-hook.ts';
+import { S1, S2, S3, discoveryEntry, fixtureEntries, hookEntry, hookPayload, isoAt } from './helpers/observer-hook.ts';
 import { systemClock } from '../../src/contracts.ts';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -39,7 +39,8 @@ function world() {
 async function history(a: Harness): Promise<void> {
   a.projects.add({ id: 'p1', name: 'Proj', roots: [{ path: '/w/proj' }] });
   await a.sessions.flush();
-  a.managed.seed({ key: keyOf('posix', S3), projectId: 'p1', cwd: '/w/proj' }, true);
+  // started before its hooks (whose times are the fixed ones of the helpers), as a real run would have been
+  a.managed.seed({ key: keyOf('posix', S3), projectId: 'p1', cwd: '/w/proj', startedAt: isoAt(0) }, true);
   await a.feed([
     ev(1, 'SessionStart', { source: 'startup' }, S1),
     ev(2, 'UserPromptSubmit', { prompt_id: 'a1' }, S1),
@@ -153,6 +154,61 @@ describe('a second instance on the same database', () => {
     await w.start();
     expect(w.managed.prompted).toContain(k3);
     expect(w.managed.get(k3)?.prompted).toBe(true);
+  });
+});
+
+describe('a terminal that is running when the service starts', () => {
+  const ALLOWED = ['idle', 'turn_ended', 'waiting_for_you', 'report_ready', 'unknown'] as never;
+
+  it('is judged by the wall clock when its start was not seen: started after the newest hook means still starting', async () => {
+    const w = world();
+    const a = await w.start();
+    await history(a);
+    const k3 = keyOf('posix', S3);
+    expect(a.view(k3)).toMatchObject({ state: 'turn_ended' });
+    await a.cleanup();
+
+    w.managed.change(k3, { startedAt: '2099-01-01T00:00:00.000Z' }); // (re)started after everything the log knows
+    const late = await w.start();
+    expect(late.view(k3)).toMatchObject({ availability: 'live', state: 'unknown', stateLabel: 'Starting', attention: null });
+    expect(await late.sessions.typeInto(k3, { text: 'go', submit: true, expectGeneration: null, allowedStates: ALLOWED })).toMatchObject({
+      ok: false, code: 'state_not_allowed', problem: expect.stringContaining('has not finished starting'),
+    });
+    expect(w.managed.typed).toEqual([]);
+    await late.cleanup();
+
+    w.managed.change(k3, { startedAt: isoAt(0) }); // started before its newest hook: that hook is its sign of life
+    const early = await w.start();
+    expect(early.view(k3)).toMatchObject({ state: 'turn_ended', stateLabel: 'Turn ended' });
+  });
+
+  it('a terminal that the new run marked disconnected is not "starting": it is not running at all', async () => {
+    const w = world();
+    const a = await w.start();
+    await history(a);
+    const k3 = keyOf('posix', S3);
+    await a.cleanup();
+    w.managed.change(k3, { status: 'disconnected', pid: null, exitReason: 'app_restart', startedAt: '2099-01-01T00:00:00.000Z' });
+    const b = await w.start();
+    expect(b.view(k3)).toMatchObject({ availability: 'disconnected', state: 'turn_ended', stateLabel: 'Turn ended (last known)' });
+    expect(b.sessions.targetCheck(k3, null).problem).toMatch(/lost the connection/);
+  });
+
+  it('a resume in the new run starts "starting" again, however much history the log holds', async () => {
+    const w = world();
+    const a = await w.start();
+    await history(a);
+    const k3 = keyOf('posix', S3);
+    await a.cleanup();
+    w.managed.change(k3, { status: 'disconnected', pid: null, exitReason: 'app_restart' });
+    const b = await w.start();
+    await b.sessions.start('p1', { mode: 'resume', resumeKey: k3 }, { kind: 'desktop' });
+    expect(b.view(k3)).toMatchObject({ availability: 'live', state: 'unknown', stateLabel: 'Starting', attention: null });
+    expect(await b.sessions.typeInto(k3, { text: 'go', submit: true, expectGeneration: null, allowedStates: ALLOWED })).toMatchObject({ ok: false, code: 'state_not_allowed' });
+    await b.feed([hookEntry({ n: 40, payload: hookPayload('SessionStart', S3, { cwd: '/w/proj', source: 'resume' }) })]);
+    // (this history never had a SessionStart, so the reducer has no start marker to prove a second process against: same generation)
+    expect(b.view(k3)).toMatchObject({ state: 'idle', stateEvidence: 'hook:SessionStart', generation: 1 });
+    expect(await b.sessions.typeInto(k3, { text: 'go', submit: true, expectGeneration: 1, allowedStates: ALLOWED })).toMatchObject({ ok: true });
   });
 });
 

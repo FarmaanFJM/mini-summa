@@ -31,6 +31,7 @@ export function SettingsScreen() {
   const toast = useToast();
   const [confirmUnpair, setConfirmUnpair] = useState(false);
   const [unpairing, setUnpairing] = useState(false);
+  const [unpairError, setUnpairError] = useState<string | null>(null);
   const { device, scopes, endpoint, state } = snap;
   const version = Constants.expoConfig?.version ?? 'unknown';
   const canNotify = scopes.includes('notify') || scopes.includes('desktop');
@@ -42,7 +43,16 @@ export function SettingsScreen() {
 
   const unpair = async () => {
     setUnpairing(true);
-    try { await session.unpair(); } finally { setUnpairing(false); setConfirmUnpair(false); }
+    setUnpairError(null);
+    try {
+      await session.unpair();
+      setConfirmUnpair(false);
+    } catch {
+      // The token is still stored, so say so instead of closing the dialog as if it worked.
+      setUnpairError('Could not remove the saved pairing from this phone. Try again.');
+    } finally {
+      setUnpairing(false);
+    }
   };
 
   return (
@@ -102,8 +112,9 @@ export function SettingsScreen() {
         confirmLabel="Unpair phone"
         confirmVariant="danger"
         busy={unpairing}
+        error={unpairError}
         onConfirm={() => { void unpair(); }}
-        onCancel={() => setConfirmUnpair(false)}
+        onCancel={() => { setConfirmUnpair(false); setUnpairError(null); }}
       />
     </Screen>
   );

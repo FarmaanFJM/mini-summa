@@ -42,6 +42,7 @@ export default defineConfig({
         renderer: {
           root: resolve(here, 'src/renderer'),
           plugins: [react()],
+          resolve: { dedupe: ['react', 'react-dom'] },
         },
       }
     : {}),

@@ -166,6 +166,16 @@ describe('settings', () => {
     expect(screen.getByText('Test notification sent to this phone')).toBeOnTheScreen();
   });
 
+  it('keeps the dialog open and says so if the saved pairing cannot be removed', async () => {
+    const { store } = await mountSettings();
+    (store.clear as jest.Mock).mockRejectedValueOnce(new Error('keystore unavailable'));
+    await fireEvent.press(screen.getByText('Unpair this phone'));
+    await fireEvent.press(screen.getByText('Unpair phone'));
+    await flush();
+    expect(screen.getByText('Could not remove the saved pairing from this phone. Try again.')).toBeOnTheScreen();
+    expect(screen.getByText('Unpair this phone?')).toBeOnTheScreen();
+  });
+
   it('unpairs only after confirmation, and wipes secure storage', async () => {
     const { store } = await mountSettings();
     await fireEvent.press(screen.getByText('Unpair this phone'));

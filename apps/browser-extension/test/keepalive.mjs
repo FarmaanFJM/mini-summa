@@ -22,7 +22,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
-import { FakeCore, findChromium, sleep, waitFor } from './support.mjs';
+import { CANARY_EXPECTED, CANARY_URL, FakeCore, LOOPBACK_HOSTS, findChromium, isolationFailure, sleep, waitFor } from './support.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const extDir = path.resolve(process.env.MINISUMMA_EXT_DIR ?? path.join(here, '..', 'dist'));
@@ -64,7 +64,7 @@ async function startBrowser(chromePath, tmp, tag) {
     `--user-data-dir=${profile}`, '--remote-debugging-port=0',
     `--disable-extensions-except=${extDir}`, `--load-extension=${extDir}`,
     '--no-first-run', '--no-default-browser-check', '--no-proxy-server', '--disable-quic',
-    '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost',
+    `--host-resolver-rules=${['MAP * ~NOTFOUND', ...LOOPBACK_HOSTS.map((h) => `EXCLUDE ${h}`)].join(', ')}`,
     ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []), // the container runs as root
     'about:blank',
   ];
@@ -74,6 +74,13 @@ async function startBrowser(chromePath, tmp, tag) {
   const [port, browserPath] = text.trim().split('\n');
   const cdp = new Cdp(`ws://127.0.0.1:${port}${browserPath}`);
   await cdp.open();
+  // Fail closed, before anything else: a public name must not resolve in this browser. If the resolver rules are missing
+  // or ignored, stop here. (This script never opens a ChatGPT address; the check is the same one the other scripts make.)
+  const { targetId: canaryTarget } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+  const { sessionId: canarySession } = await cdp.send('Target.attachToTarget', { targetId: canaryTarget, flatten: true });
+  const canary = await cdp.send('Page.navigate', { url: CANARY_URL }, canarySession);
+  await cdp.send('Target.closeTarget', { targetId: canaryTarget }).catch(() => undefined);
+  if (!CANARY_EXPECTED.test(canary.errorText ?? 'loaded')) { child.kill('SIGKILL'); throw isolationFailure(canary.errorText ?? 'loaded'); }
   const workerTarget = async () => {
     const { targetInfos } = await cdp.send('Target.getTargets');
     return targetInfos.find((t) => t.type === 'service_worker' && new URL(t.url).host === extensionId) ?? null;

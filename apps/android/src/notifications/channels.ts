@@ -1,6 +1,7 @@
 // Android notification channels. One high-importance channel for things that need you, one default channel for the rest.
-// The ids are part of the contract with the desktop's push sender: set `android.notification.channel_id` to
-// NEEDS_YOU_CHANNEL for permission, input and error pushes. Anything else lands in the default channel.
+// The desktop's push sender sets no channel id, so Android files its pushes under the app's default FCM channel. That is
+// NEEDS_YOU_CHANNEL (see app.config.ts), because everything the PC pushes is something that is waiting for the person.
+// A sender that wants a quieter push can set `android.notification.channel_id` to UPDATES_CHANNEL.
 import * as Notifications from 'expo-notifications';
 
 export const NEEDS_YOU_CHANNEL = 'needs-you';

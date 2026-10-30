@@ -1,15 +1,22 @@
 /*
  * Handling of the shared `bridge.request` actions (focus_or_open, list_chatgpt_tabs).
  *
- * CHROME APIS USED FOR TABS AND WINDOWS (this is the complete list; test/api-surface.test.ts fails if the code and
- * this list disagree, and if any other file touches chrome.tabs or chrome.windows)
+ * CHROME APIS USED FOR TABS AND WINDOWS (this is the complete list; test/policy.test.ts fails if the code and this list
+ * disagree, and if any other file touches chrome.tabs or chrome.windows)
  *
  *   chrome.tabs.query     find open tabs whose URL matches the ChatGPT patterns (always called with a `url` filter,
- *                         never without one, so the browser never hands this code tabs from other sites)
+ *                         never without one)
  *   chrome.tabs.get       re-read one tab: status, final URL, title
  *   chrome.tabs.update    make an existing tab the active tab of its window (only { active: true })
  *   chrome.tabs.create    open the conversation when no tab shows it (only { url })
  *   chrome.windows.update bring that tab's window to the front (only { focused: true, drawAttention: false })
+ *
+ * PERMISSIONS. None of these calls needs the "tabs" permission, and the manifest does not request it. A browser shows an
+ * extension the address (`url`, `pendingUrl`) and `title` of a tab only when the extension has host access to that tab's
+ * site: here chatgpt.com, www.chatgpt.com, chat.openai.com and the loopback core. So this code can never see the
+ * address or title of a tab on any other site; such a tab comes back without those fields. A tab that has finished
+ * loading but shows no address is therefore on another site (for example a sign-in page after a redirect) and is
+ * reported as not being the requested page.
  *
  * Not used, on purpose: chrome.scripting, content scripts, chrome.tabs.executeScript, chrome.webNavigation,
  * chrome.webRequest, chrome.debugger, chrome.tabs.sendMessage, chrome.tabs.captureVisibleTab, chrome.windows.create,
@@ -103,6 +110,7 @@ const looksLikeErrorPage = (tab: Tab, url: string): boolean => {
   try { return title === new URL(url).hostname.toLowerCase(); } catch { return false; }
 };
 
+const OTHER_SITE_NOTE = 'The tab finished loading on another site, for example a sign-in page. The browser does not show this extension that address.';
 const ERROR_PAGE_NOTE = 'The browser may be showing an error page instead of the conversation: it labelled the tab with the site name only.';
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 const isIdentified = (t: Tab): t is IdentifiedTab => typeof t.id === 'number' && typeof t.windowId === 'number' && typeof t.url === 'string' && t.url !== '';
@@ -144,7 +152,12 @@ export function createBridge(deps: BridgeDeps): Bridge {
     }
   };
 
-  /** Poll until the tab has been complete at one address for SETTLE_MS, or give up after the load timeout. */
+  /**
+   * Poll until the tab has been complete at one address for SETTLE_MS, or give up after the load timeout.
+   * Without the "tabs" permission the browser leaves out the address of a tab on a site this extension has no host access
+   * to. A tab that is complete with no visible address has therefore finished loading on another site, and counts as
+   * loaded; a tab that is still loading has no address yet either, and does not.
+   */
   const waitForLoad = async (tabId: number): Promise<{ tab: Tab; settled: boolean }> => {
     const deadline = now() + loadTimeoutMs;
     let stableSince: number | null = null;
@@ -152,7 +165,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
     for (;;) {
       const tab = await chrome.tabs.get(tabId);
       const url = tab.url ?? '';
-      if (tab.status === 'complete' && url !== '' && url !== 'about:blank') {
+      if (tab.status === 'complete' && url !== 'about:blank') {
         if (stableSince === null || url !== stableUrl) { stableSince = now(); stableUrl = url; }
         if (now() - stableSince >= SETTLE_MS) return { tab, settled: true };
       } else {
@@ -208,8 +221,9 @@ export function createBridge(deps: BridgeDeps): Bridge {
     const urlMatches = sameUrl && !errorPage;
     const note = [
       !loaded.settled ? `The tab was opened but did not finish loading within ${Math.round(loadTimeoutMs / 1000)} seconds.`
-        : !sameUrl ? 'The tab finished loading at a different address, for example a sign-in page.'
-          : errorPage ? ERROR_PAGE_NOTE : undefined,
+        : url === '' ? OTHER_SITE_NOTE
+          : !sameUrl ? 'The tab finished loading at a different address, for example a sign-in page.'
+            : errorPage ? ERROR_PAGE_NOTE : undefined,
       win.problem,
     ].filter(Boolean).join(' ') || undefined;
     return {

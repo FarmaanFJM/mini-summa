@@ -36,7 +36,7 @@ const MESSAGES: Record<PairingErrorKind, string> = {
   code_expired: 'This pairing code has expired. In Mini-Summa on your PC, create a new pairing code and scan it.',
   code_used: 'This pairing code was already used. Each code works once. Create a new one in Mini-Summa on your PC.',
   code_invalid: 'Your PC did not recognise this code. Check the code, or create a new pairing code in Mini-Summa on your PC.',
-  too_many_attempts: 'Too many attempts. Wait a minute, then try again.',
+  too_many_attempts: 'Too many wrong codes. This pairing code is cancelled. Create a new one in Mini-Summa on your PC and scan it.',
   refused: 'Your PC refused this pairing. Create a new pairing code in Mini-Summa on your PC and try again.',
 };
 

@@ -209,13 +209,48 @@ describe('focus_or_open without a tab', () => {
     expect(d.note).toMatch(/different address/);
   });
 
-  it('reports urlMatches false when the load ends on another site', async () => {
+  it('reports a load that ends on another site as not matching, without its address, and does not wait for the time limit', async () => {
+    // Without the tabs permission the browser does not show the extension the address or title of a tab on a site it has
+    // no host access to, so the finished tab comes back with neither.
+    const { browser, clock, focus } = setup();
+    browser.addWindow(true);
+    browser.pages.set(U1, { finalUrl: 'https://auth.example.com/log-in', title: 'Sign in' });
+    const d = data(await focus(U1));
+    expect(d).toMatchObject({ mode: 'opened', url: '', title: '', urlMatches: false, verified: false, opened: true });
+    expect(d.note).toMatch(/another site/);
+    expect(JSON.stringify(d)).not.toContain('auth.example.com');
+    expect(JSON.stringify(d)).not.toContain('Sign in');
+    expect(clock.now()).toBeLessThan(2000); // 300 ms load plus the settle window, not the 15 s limit
+  });
+
+  it('also catches a script redirect to another site right after the load event', async () => {
     const { browser, focus } = setup();
     browser.addWindow(true);
-    browser.pages.set(U1, { finalUrl: 'https://auth.example.com/log-in' });
+    browser.pages.set(U1, { redirectAfterMs: 200, redirectTo: 'https://auth.example.com/log-in' });
     const d = data(await focus(U1));
-    expect(d.urlMatches).toBe(false);
-    expect(d.url).toBe('https://auth.example.com/log-in');
+    expect(d).toMatchObject({ url: '', urlMatches: false, verified: false });
+    expect(d.note).toMatch(/another site/);
+  });
+
+  it('does not mistake a tab that is still loading (no address yet) for one that finished on another site', async () => {
+    const { browser, focus } = setup();
+    browser.addWindow(true);
+    browser.pages.set(U1, { hang: true });
+    const d = data(await focus(U1));
+    expect(d).toMatchObject({ url: '', urlMatches: false, verified: null });
+    expect(d.note).toMatch(/15 seconds/);
+    expect(d.note).not.toMatch(/another site/);
+  });
+
+  it('never gets the address or title of a tab on another site, not even for tabs it lists or looks for', async () => {
+    const { browser, bridge } = setup();
+    const w = browser.addWindow(true);
+    browser.addTab({ windowId: w, url: 'https://bank.example.com/account', title: 'My bank' });
+    browser.addTab({ windowId: w, url: U1, title: 'One', active: true });
+    const out = await bridge.handle({ kind: 'list_chatgpt_tabs' });
+    expect(JSON.stringify(out)).not.toMatch(/bank|My bank/);
+    // even a filter aimed straight at that site finds nothing: the browser does not match addresses it does not show
+    expect(await browser.chrome.tabs.query({ url: ['https://bank.example.com/*'] })).toEqual([]);
   });
 
   it('notices a client side redirect that happens shortly after the load event', async () => {

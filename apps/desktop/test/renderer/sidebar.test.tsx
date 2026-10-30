@@ -4,6 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { IDS } from '../../src/renderer/src/dev/demo/seed';
 import { renderApp, until } from './helpers';
 
+// The activity, reports and settings views belong to another worker: the shell is tested with stand-ins (stubViews.tsx).
+vi.mock('../../src/renderer/src/features/activity', async () => ({ default: (await import('./stubViews')).ActivityStandIn }));
+vi.mock('../../src/renderer/src/features/reports', async () => ({ default: (await import('./stubViews')).ReportsStandIn }));
+vi.mock('../../src/renderer/src/features/settings', async () => ({ default: (await import('./stubViews')).SettingsStandIn }));
+
 const row = (name: RegExp | string) => screen.getByRole('button', { name: typeof name === 'string' ? new RegExp(`^${name}(,|$)`) : name });
 const MUTATING = /^(sessions\.(start|stop|bind|setDefault)|projects\.(update|remove|create)|conversations\.(add|remove|update|setPreferred)|settings\.update)$/;
 

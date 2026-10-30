@@ -4,6 +4,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { IDS } from '../../src/renderer/src/dev/demo/seed';
 import { renderApp } from './helpers';
 
+// The activity, reports and settings views belong to another worker: the shell is tested with stand-ins (stubViews.tsx).
+vi.mock('../../src/renderer/src/features/activity', async () => ({ default: (await import('./stubViews')).ActivityStandIn }));
+vi.mock('../../src/renderer/src/features/reports', async () => ({ default: (await import('./stubViews')).ReportsStandIn }));
+vi.mock('../../src/renderer/src/features/settings', async () => ({ default: (await import('./stubViews')).SettingsStandIn }));
+
 async function openCreate() {
   const user = userEvent.setup();
   const app = await renderApp();

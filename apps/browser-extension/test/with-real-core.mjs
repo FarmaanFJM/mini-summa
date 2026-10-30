@@ -15,8 +15,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
-import { STAND_IN_HOSTS, StandIn, convId, convUrl, findChromium, makeCertificate, sleep, waitFor } from './support.mjs';
+import { StandIn, convId, convUrl, findChromium, launchBrowser, makeCertificate, sleep, waitFor } from './support.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..', '..');
@@ -68,21 +67,13 @@ async function main() {
     await standIn.start(makeCertificate(tmp));
     core = await startCore(path.join(tmp, 'core-data'));
     console.log(`Core:      ${core.baseUrl} (packages/core headless runner)\nExtension: ${extDir}`);
-    const rules = [...STAND_IN_HOSTS.map((h) => `MAP ${h} 127.0.0.1:${standIn.port}`), 'MAP * ~NOTFOUND', 'EXCLUDE 127.0.0.1', 'EXCLUDE localhost'].join(', ');
-    context = await chromium.launchPersistentContext(path.join(tmp, 'profile'), {
-      executablePath: findChromium(), headless: false, ignoreHTTPSErrors: true,
-      args: [`--disable-extensions-except=${extDir}`, `--load-extension=${extDir}`, `--host-resolver-rules=${rules}`, '--ignore-certificate-errors', '--no-proxy-server', '--disable-quic', '--no-first-run', '--no-default-browser-check'],
-    });
+    // launchBrowser proves the network isolation (an unmapped public name must fail to resolve, the ChatGPT names must be
+    // answered by the local stand-in) before it hands the browser out, and closes it again if the proof fails.
+    context = await launchBrowser({ chromePath: findChromium(), extensionDir: extDir, profileDir: path.join(tmp, 'profile'), standIn });
     const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker', { timeout: 20_000 });
     const extensionId = new URL(worker.url()).host;
     const inWorker = async (fn, arg) => (await waitFor(() => context.serviceWorkers().find((w) => w.url().startsWith(`chrome-extension://${extensionId}/`)))).evaluate(fn, arg);
     const tabsShowing = async (url) => (await inWorker(async () => (await chrome.tabs.query({})).map((t) => ({ id: t.id, url: t.url ?? '', active: t.active, windowId: t.windowId })))).filter((t) => t.url === url);
-
-    // Canary: nothing outside this machine may resolve.
-    const canary = await context.newPage();
-    const canaryError = await canary.goto('https://example.com/').then(() => 'loaded', (e) => String(e.message));
-    assert.match(canaryError, /ERR_NAME_NOT_RESOLVED/);
-    await canary.close();
 
     let project; let conversation1; let conversation2; let deviceId;
     await step('the core is set to open links through the extension and has two mapped conversations', async () => {
@@ -162,16 +153,28 @@ async function main() {
       assert.equal(result.finalUrl, 'https://chatgpt.com/auth/login');
     });
 
-    await step('a page that never answers: whatever the core reports, it must not claim the conversation was verified', async () => {
+    await step('a page that ends on another site is reported by the core as opened but not verified, without that address', async () => {
+      const conversationA = await core.call('POST', `/projects/${project.id}/conversations`, { url: convUrl('a'), title: 'Other site' });
+      const result = await core.call('POST', `/conversations/${conversationA.id}/open`);
+      console.log(`        core answered: ${JSON.stringify(result)}`);
+      assert.equal(result.ok, true);
+      assert.equal(result.opened, true);
+      assert.equal(result.verified, false);
+      assert.equal(result.finalUrl, null);
+      assert.match(result.note ?? '', /another site/);
+    });
+
+    await step('a page that never answers: the extension gives up at 15 s and the core (18 s limit) passes that on, unverified', async () => {
       const conversation8 = await core.call('POST', `/projects/${project.id}/conversations`, { url: convUrl(8), title: 'Eight' });
       const started = Date.now();
       const result = await core.call('POST', `/conversations/${conversation8.id}/open`);
-      const seconds = Math.round((Date.now() - started) / 100) / 10;
-      // Informational: the extension waits up to 15 s for a load, the core's bridge timeout is its own setting.
-      console.log(`        after ${seconds} s the core answered: ${JSON.stringify(result)}`);
-      assert.notEqual(result.verified, true);
-      assert.ok((result.note ?? '').length > 10 || result.ok === false);
-      await sleep(12_000); // let the extension's own answer arrive late, which the core must ignore without trouble
+      const seconds = (Date.now() - started) / 1000;
+      console.log(`        after ${seconds.toFixed(1)} s the core answered: ${JSON.stringify(result)}`);
+      assert.ok(seconds >= 15 && seconds < 18, `the extension's own 15 s limit decided, not the core's timeout (${seconds.toFixed(1)} s)`);
+      assert.equal(result.ok, true);
+      assert.equal(result.opened, true);
+      assert.equal(result.verified, null, 'never claimed');
+      assert.match(result.note ?? '', /15 seconds/);
       const again = await core.call('POST', `/conversations/${conversation1.id}/open`);
       assert.equal(again.ok, true, 'the connection is still healthy afterwards');
     });

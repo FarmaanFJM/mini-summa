@@ -139,6 +139,16 @@ describe('session tabs', () => {
     expect(model.openTabs[IDS.dashboard]).toEqual([IDS.s.dashFailed]);
   });
 
+  it('also opens a tab for a managed session whose terminal was lost, so the person can decide what to do', () => {
+    const model = withAutoTabs(emptyTabs(), sessions);
+    expect(model.openTabs[IDS.docs]).toEqual([IDS.s.docsDisconnected]);
+  });
+
+  it('does not open a tab by itself for a session that ended quietly', () => {
+    const model = withAutoTabs(emptyTabs(), sessions);
+    expect(model.openTabs[IDS.atlas]).not.toContain(IDS.s.atlasResumable);
+  });
+
   it('shows managed live sessions first, then other managed ones, then observed ones', () => {
     let model = withAutoTabs(emptyTabs(), sessions);
     model = openTab(model, IDS.gitManager, IDS.s.gmExternal as SessionKey);
@@ -162,7 +172,7 @@ describe('session tabs', () => {
 
   it('never shows a session that belongs to another project', () => {
     const model = openTab(withAutoTabs(emptyTabs(), sessions), IDS.docs, IDS.s.gmWorking as SessionKey);
-    expect(visibleTabs(model, IDS.docs, sessions).map((s) => s.key)).toEqual([]);
+    expect(visibleTabs(model, IDS.docs, sessions).map((s) => s.key)).toEqual([IDS.s.docsDisconnected]); // its own, not the GitManager one
   });
 
   it('shows an unassigned session opened from this project', () => {

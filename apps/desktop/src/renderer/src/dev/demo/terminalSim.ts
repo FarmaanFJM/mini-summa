@@ -158,3 +158,54 @@ export class EchoShell {
     return out;
   }
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// The first screen of a freshly started Claude Code
+
+const clearScreen = `${ESC}[2J${ESC}[H`;
+
+/**
+ * "Do you trust the files in this folder?" appears before any hook runs, so the session shows as "Starting" until it is
+ * answered. "No, exit" is the default: a blind Enter ends the session, which is why Mini-Summa never types here for you.
+ */
+export class TrustShell {
+  private selected: 1 | 2 = 2;
+
+  constructor(private readonly cwd: string) {}
+
+  /** The whole screen, redrawn whenever the selection moves. */
+  screen(): string {
+    const mark = (n: 1 | 2): Part => (this.selected === n ? [`❯ ${n}.`, cyan] : `  ${n}.`);
+    return clearScreen + box(60, dim, [
+      [['Do you trust the files in this folder?', bold]],
+      [],
+      [this.cwd.length > 56 ? `…${this.cwd.slice(-55)}` : this.cwd],
+      [],
+      ['Claude Code may read files in this folder. Reading'],
+      ['untrusted files may lead it to behave in unexpected'],
+      ['ways. With your permission it may also run files here.'],
+      [],
+      [mark(1), ' Yes, proceed'],
+      [mark(2), ' No, exit'],
+      [],
+      [['Enter to confirm · Esc to exit', dim]],
+    ]);
+  }
+
+  /** What to print for this input, and the decision once there is one. */
+  feed(data: string): { out: string; decision: 'yes' | 'no' | null } {
+    if (data === `${ESC}[A`) { this.selected = 1; return { out: this.screen(), decision: null }; }
+    if (data === `${ESC}[B`) { this.selected = 2; return { out: this.screen(), decision: null }; }
+    if (data === '1') return { out: '', decision: 'yes' };
+    if (data === '2' || data === ESC) return { out: '', decision: 'no' };
+    if (data.includes('\r')) return { out: '', decision: this.selected === 1 ? 'yes' : 'no' };
+    return { out: '', decision: null };
+  }
+}
+
+/** What the terminal shows once the folder is trusted: the same welcome as any session, with the cursor in the input box. */
+export function readyScreen(cwd: string): string {
+  return clearScreen + banner(cwd) + lines(dim('Type a message to start. Nothing typed here runs in the demo.'), '') + promptBox();
+}
+
+export const declinedScreen = (): string => clearScreen + lines(dim('Claude Code exited without starting. The folder was not trusted.'), '');

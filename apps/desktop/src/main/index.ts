@@ -168,7 +168,7 @@ function coreOptions(): CoreOptions {
     native: bridge,
     port: 0,
     uiDir: locations.uiDir,
-    log,
+    // No `log`: the core writes its own <dataDir>/logs/core.log. This process logs to <userData>/logs/main.log.
     overrides: {
       // Hooks run as `Mini-Summa.exe capture.mjs` in Node mode, so no separate Node install is needed.
       captureScript: locations.captureScript,

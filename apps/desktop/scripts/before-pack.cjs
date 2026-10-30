@@ -18,6 +18,14 @@ module.exports = async function beforePack(context) {
   } else {
     need('out/renderer/index.html', 'Run "npx electron-vite build" in apps/desktop (the renderer must build).');
   }
+  // The hook script is rebuilt every time (esbuild takes milliseconds), so a package never carries a stale one.
+  const repoRoot = path.resolve(projectDir, '..', '..');
+  const win = process.platform === 'win32';
+  try {
+    execFileSync(win ? 'npm.cmd' : 'npm', ['run', 'build:hook', '-w', '@minisumma/claude-integration'], { cwd: repoRoot, shell: win, stdio: ['ignore', 'ignore', 'inherit'] });
+  } catch (error) {
+    problems.push(`The hook script could not be built (npm run build:hook -w @minisumma/claude-integration): ${error.message}`);
+  }
   need('../../packages/claude-integration/dist/capture.mjs', 'Run "npm run build:hook -w @minisumma/claude-integration".');
   for (const icon of ['build/icon.ico', 'build/icon.png', 'resources/icon.png', 'resources/tray.png']) need(icon, 'Run "node apps/desktop/scripts/make-icons.mjs".');
 

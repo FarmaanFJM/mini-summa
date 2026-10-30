@@ -8,7 +8,6 @@ import { createRuntime, RuntimeProvider } from '../../src/renderer/src/app/runti
 import type { Runtime } from '../../src/renderer/src/app/runtime';
 import { createMemoryStorage } from '../../src/renderer/src/app/storage';
 import type { KeyValueStorage } from '../../src/renderer/src/app/storage';
-import { Shell } from '../../src/renderer/src/features/shell/Shell';
 import { Toaster } from '../../src/renderer/src/ui';
 import { createDemoClient } from '../../src/renderer/src/dev/demoClient';
 import type { DemoClient, DemoClientOptions } from '../../src/renderer/src/dev/demoClient';
@@ -155,15 +154,20 @@ export function createHarness(options: HarnessOptions = {}): Harness {
 
 export interface RenderedApp extends Harness, RenderResult {}
 
-/** Boot the app and wait until the project list is on screen. */
+/**
+ * Boot the shell on the demo core and wait until the project list is on screen. It is the shell without the onboarding gate:
+ * the gate and the activity, reports and settings views belong to the feature worker. A test of the shell stands those views
+ * in (see stubViews.tsx); a test of one of those views simply navigates to it. The shell is imported here, not at the top, so
+ * a test file that only needs the doubles above never loads it.
+ */
 export async function renderApp(options: HarnessOptions = {}): Promise<RenderedApp> {
+  const { Shell } = await import('../../src/renderer/src/features/shell/Shell');
   const harness = createHarness(options);
   // A fresh #root every time: RTL refuses to render again into a container whose root it has unmounted.
   document.getElementById('root')?.remove();
   const container = document.createElement('div');
   container.id = 'root';
   document.body.appendChild(container);
-  // The app without the onboarding gate: that gate belongs to the feature worker and has its own tests.
   const view = render(<RuntimeProvider runtime={harness.runtime}><Shell /><Toaster /></RuntimeProvider>, { container });
   if (options.startLoader !== false && (options.scenario ?? 'normal') === 'normal') {
     await screen.findByRole('button', { name: /^GitManager/ });

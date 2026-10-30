@@ -56,7 +56,7 @@ export function SessionProvider({ children, store: injected, createManager }: Se
     if (!credentials) return null;
     const onRevoked = () => {
       // Clear first: even if the UI is gone, the token must not stay on the phone.
-      void store.clear().finally(() => {
+      void store.clear().catch(() => undefined).finally(() => {
         setNotice(REVOKED_MESSAGE);
         setCredentials(null);
         setPhase('unpaired');

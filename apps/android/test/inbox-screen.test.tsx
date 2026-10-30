@@ -63,9 +63,11 @@ describe('inbox with the approve permission', () => {
     expect(manager.getSnapshot().status).toBe('connected');
   });
 
-  it('shows an empty state when nothing waits, and recent outcomes below', async () => {
+  it('shows an empty state when nothing waits, and recent outcomes below, worded by kind', async () => {
     const done = makeAction({ id: 'act_old', kind: 'claude_prompt', status: 'executed', decidedAt: '2026-10-30T08:30:00.000Z', summary: 'Run the tests' });
-    await mount(<InboxScreen />, { seed: { actions: [done] } });
+    const answered = makeAction({ id: 'act_perm', kind: 'permission', status: 'executed', decidedAt: '2026-10-30T08:00:00.000Z' });
+    await mount(<InboxScreen />, { seed: { actions: [done, answered] } });
+    expect(screen.getByText('Approved')).toBeOnTheScreen();
     expect(screen.getByText('No requests are waiting for you.')).toBeOnTheScreen();
     expect(screen.getByText('Recent')).toBeOnTheScreen();
     expect(screen.getByText('Sent')).toBeOnTheScreen();

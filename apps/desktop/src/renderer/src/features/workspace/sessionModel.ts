@@ -127,6 +127,35 @@ export function noticeFor(session: SessionView, actions: readonly PendingAction[
   return null;
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// A terminal that has not finished starting
+
+/**
+ * A freshly started or resumed Claude Code shows its theme and security screens, and "Do you trust the files in this
+ * folder?" with "No, exit" selected, before any hook runs. Until the first hook arrives the core reports the session as
+ * state "unknown" labelled "Starting". The terminal is the only place to answer, so the person is pointed to it.
+ */
+export const STARTING_HINT = 'Claude may be waiting for you to answer a question in the terminal, such as whether you trust this folder.';
+
+/** How long a session stays in "Starting" before the hint appears. Most starts finish well inside it. */
+export const STARTING_HINT_AFTER_MS = 6000;
+
+/** A managed, running terminal that has not shown a state yet. */
+export function isStartingUp(session: Pick<SessionView, 'origin' | 'availability' | 'state'>): boolean {
+  return session.origin === 'managed' && session.availability === 'live' && session.state === 'unknown';
+}
+
+/**
+ * May Mini-Summa offer to type for the person into this session (send a prompt, answer a permission request)? Only into a
+ * managed, running terminal that has shown a state. While it is still starting, a blind Enter can land on the trust
+ * dialog, whose default is "No, exit", and end the session, so no automated typing is offered at all. This does not
+ * restrict the person: what they type themselves in the terminal always reaches it.
+ */
+export function canOfferTyping(session: Pick<SessionView, 'origin' | 'availability' | 'state'>): boolean {
+  return session.origin === 'managed' && session.availability === 'live' && session.state !== 'unknown'
+    && session.state !== 'ended' && session.state !== 'presence_lost';
+}
+
 export const OBSERVED_WHY: Record<'external' | 'background', string> = {
   external: 'This session was started outside Mini-Summa, in another terminal. Mini-Summa sees it through Claude Code hooks, so it can show its state but cannot type into it.',
   background: 'This is a background session. It has no terminal that Mini-Summa could type into; it is observed through Claude Code hooks.',

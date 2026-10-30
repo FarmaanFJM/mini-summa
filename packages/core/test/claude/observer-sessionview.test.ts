@@ -36,7 +36,7 @@ const managed = (o: Partial<ManagedSessionRecord> = {}): ManagedSessionRecord =>
 });
 
 const facts = (o: Partial<SessionFacts> = {}): SessionFacts => ({
-  firstAt: null, lastHookAt: null, hookCount: 0, lastHookSeq: 0, startedAtHook: null, name: null, sessionEndReason: null, stateSince: null, abnormalEnd: false, endedAt: null, ...o,
+  firstAt: null, lastHookAt: null, hookCount: 0, lastHookSeq: 0, lastHookTid: null, startedAtHook: null, name: null, sessionEndReason: null, stateSince: null, abnormalEnd: false, endedAt: null, ...o,
 });
 
 const attribution = (o: Partial<Attribution> = {}): Attribution => ({ projectId: 'p1', projectName: 'Proj', resolution: 'matched', ...o });
@@ -229,7 +229,7 @@ describe('a managed terminal', () => {
 
 describe('isStarting: has this terminal shown a sign of life since it was started?', () => {
   const run = (o: Partial<ManagedSessionRecord> = {}) => ({ status: 'running' as const, startedAt: '2026-01-02T09:00:00.000Z', ...o });
-  const hook = (lastHookAt: string | null, lastHookSeq: number) => ({ lastHookAt, lastHookSeq });
+  const hook = (lastHookAt: string | null, lastHookSeq: number, lastHookTid: string | null = `t-${lastHookSeq}`) => ({ lastHookAt, lastHookSeq, lastHookTid });
 
   it('is never true for anything but a running managed terminal', () => {
     expect(isStarting(null, null)).toBe(false);
@@ -238,7 +238,7 @@ describe('isStarting: has this terminal shown a sign of life since it was starte
   });
 
   describe('when the start of the run was seen (a position in the log)', () => {
-    const baseline = { startedAt: '2026-01-02T09:00:00.000Z', seq: 40 };
+    const baseline = { startedAt: '2026-01-02T09:00:00.000Z', seq: 40, waiting: new Set<string>() };
     it.each([
       ['no hook at all yet', null, true],
       ['only hooks from before the start', hook('2026-01-01T12:00:00.000Z', 38), true],
@@ -247,6 +247,13 @@ describe('isStarting: has this terminal shown a sign of life since it was starte
       ['later hooks', hook('2026-01-02T09:05:00.000Z', 90), false],
     ])('%s', (_name, facts, expected) => {
       expect(isStarting(run(), facts, baseline)).toBe(expected);
+    });
+
+    it('does not count a receipt that was already waiting in a spool when the run began (the earlier process\'s last hook, ingested late)', () => {
+      const withWaiting = { ...baseline, waiting: new Set(['t-last-of-the-old-process']) };
+      expect(isStarting(run(), hook('2026-01-02T08:59:59.000Z', 41, 't-last-of-the-old-process'), withWaiting)).toBe(true);
+      expect(isStarting(run(), hook('2026-01-02T09:00:02.000Z', 42, 't-first-of-the-new-process'), withWaiting)).toBe(false);
+      expect(isStarting(run(), hook('2026-01-02T09:00:02.000Z', 41, null), withWaiting)).toBe(false); // a receipt without an id cannot be excluded
     });
 
     it('does not depend on wall clocks: a hook stamped BEFORE the start (a lagging WSL clock) still counts when it arrives after it', () => {

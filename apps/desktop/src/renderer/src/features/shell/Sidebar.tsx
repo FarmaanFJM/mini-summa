@@ -103,7 +103,7 @@ function Rail({ onExpand }: { onExpand: () => void }) {
         trigger={(props) => (
           <IconButton ref={props.ref as RefCallback<HTMLButtonElement>} label={current ? `Project: ${current.name}` : 'Projects'} icon="folder" size="sm" onClick={props.onClick} onKeyDown={props.onKeyDown} aria-haspopup="menu" aria-expanded={props['aria-expanded']} />
         )}
-        items={active.map((p) => ({ label: p.name, checked: p.id === current?.id, onSelect: () => route.selectProject(p.id) }))}
+        items={active.map((p) => ({ label: p.name, checked: p.id === current?.id, radio: true, onSelect: () => route.selectProject(p.id) }))}
       />
       <div className="ms-rail__foot">
         {FOOTER.map((item) => {

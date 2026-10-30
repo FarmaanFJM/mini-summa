@@ -82,7 +82,7 @@ export function PairScreen() {
   const attempts = error instanceof PairingError ? error.attempts : [];
 
   return (
-    <KeyboardAvoidingView style={styles.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={styles.page} behavior="padding">
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + space.s5, paddingBottom: insets.bottom + space.s6 }]} keyboardShouldPersistTaps="handled">
         <Text variant="title" accessibilityRole="header">Pair this phone</Text>
 

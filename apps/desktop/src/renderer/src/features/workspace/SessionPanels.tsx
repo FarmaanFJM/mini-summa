@@ -1,18 +1,37 @@
 import { envLabel } from '@minisumma/shared';
 import type { Project, SessionView } from '@minisumma/shared';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useReducer } from 'react';
 import { activeProjects } from '../../app/selectors';
-import { useApi, useApp } from '../../app/runtime';
+import { useApi, useApp, useUi } from '../../app/runtime';
 import { Button, Icon, Menu, toast } from '../../ui';
-import { formatRelative, noticeFor, OBSERVED_WHY, RESOLUTION_TEXT } from './sessionModel';
+import { formatRelative, isStartingUp, noticeFor, OBSERVED_WHY, RESOLUTION_TEXT, STARTING_HINT, STARTING_HINT_AFTER_MS } from './sessionModel';
+import type { Notice } from './sessionModel';
 import { StateDot } from './sessionParts';
 
 export interface ResumeProps { onResume: () => void; resuming: boolean }
 
-/** A calm line under the banner: what Claude is waiting for, or what happened to a session that is no longer running. */
+/** True once more than `ms` have passed since `since` (a timestamp; null means never). It re-renders its component at that moment. */
+function useElapsed(since: number | null, ms: number): boolean {
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  const elapsed = since !== null && Date.now() - since > ms;
+  useEffect(() => {
+    if (since === null || elapsed) return undefined;
+    const id = window.setTimeout(tick, Math.max(0, since + ms - Date.now()) + 1);
+    return () => window.clearTimeout(id);
+  }, [since, ms, elapsed]);
+  return elapsed;
+}
+
+/**
+ * A calm line under the banner: what Claude is waiting for, or what happened to a session that is no longer running. A
+ * terminal that has stayed in "Starting" for a few seconds gets the hint that Claude may be asking something in it.
+ */
 export function SessionNotice({ session, onResume, resuming }: { session: SessionView } & ResumeProps) {
   const actions = useApp((s) => s.actions);
-  const notice = noticeFor(session, actions);
+  const startingSince = useUi((s) => s.startingSince[session.key]?.since ?? null);
+  const hintDue = useElapsed(isStartingUp(session) ? startingSince : null, STARTING_HINT_AFTER_MS);
+  const starting: Notice | null = hintDue ? { tone: 'info', text: STARTING_HINT, canResume: false } : null;
+  const notice = noticeFor(session, actions) ?? starting;
   if (!notice) return null;
   return (
     <div className="ms-notice" data-tone={notice.tone} role="status">
@@ -80,7 +99,7 @@ export function ObservedPanel({ session, onResume, resuming }: { session: Sessio
             </Button>
           )}
           items={[
-            ...choices.map((p) => ({ label: p.name, checked: p.id === session.projectId, onSelect: () => { void assign(p); } })),
+            ...choices.map((p) => ({ label: p.name, checked: p.id === session.projectId, radio: true, onSelect: () => { void assign(p); } })),
             ...(session.projectId ? [{ type: 'separator' as const }, { label: 'Remove from project', onSelect: () => { void assign(null); } }] : []),
           ]}
         />

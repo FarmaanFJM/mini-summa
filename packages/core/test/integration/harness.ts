@@ -26,7 +26,8 @@ export interface Harness {
   root: string;
   /** Create a project whose repository folder really exists. */
   project(name: string, opts?: { conversations?: string[]; github?: string }): Promise<{ project: Project; dir: string; conversations: Conversation[] }>;
-  start(projectId: string, opts?: { name?: string }): Promise<SessionView>;
+  /** Starts a managed session and, unless told otherwise, waits until Claude has finished starting (its first hook arrived). */
+  start(projectId: string, opts?: { name?: string; waitReady?: boolean }): Promise<SessionView>;
   /** Type into the terminal of a managed session the way a person at the keyboard would. */
   type(key: SessionKey, text: string, opts?: { submit?: boolean }): Promise<void>;
   waitFor<T>(what: string, fn: () => T | undefined | false | Promise<T | undefined | false>, timeoutMs?: number): Promise<T>;
@@ -84,7 +85,12 @@ export async function startHarness(opts: { dataDir?: string; root?: string; core
       return { project: await client.call('projects.get', { params: { id: project.id } }), dir, conversations };
     },
     async start(projectId, o = {}) {
-      return client.call('sessions.start', { params: { id: projectId }, body: { mode: 'new', name: o.name } });
+      const started = await client.call('sessions.start', { params: { id: projectId }, body: { mode: 'new', name: o.name } });
+      if (o.waitReady === false) return started;
+      return waitFor(`session ${started.key} to finish starting`, async () => {
+        const v = await client.call('sessions.get', { params: { key: started.key } });
+        return v.state !== 'unknown' ? v : undefined;
+      });
     },
     async type(key, text, o = {}) {
       let t = attached.get(key);

@@ -43,6 +43,15 @@ export function ClaudePane({ project, visible, maximized, onToggleMaximize }: Cl
     if (s && (s.projectId === project.id || s.projectId === null)) ui.getState().openTab(project.id, chosen);
   }, [chosen, tabs, sessions, project.id, ui]);
 
+  // What is shown stays shown. Without a choice the first tab is displayed, and tabs re-sort when a session stops; remembering
+  // the displayed one keeps the person on the session they were looking at (and its "ended" notice) instead of jumping away.
+  const { selectSession } = route;
+  useEffect(() => {
+    if (!selected || chosen === selected.key) return;
+    if (chosen && sessions.some((x) => x.key === chosen && (x.projectId === project.id || x.projectId === null))) return; // its tab is about to open
+    selectSession(project.id, selected.key);
+  }, [selected, chosen, sessions, project.id, selectSession]);
+
   // Toasts sit over this pane, so the native ChatGPT view never covers them.
   useEffect(() => {
     if (!visible || !root.current) return undefined;

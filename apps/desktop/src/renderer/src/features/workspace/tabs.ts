@@ -13,11 +13,14 @@ export interface TabModel {
 
 export const emptyTabs = (): TabModel => ({ openTabs: {}, dismissed: [] });
 
-/** A managed session the person should see without asking: it is running, or it just ended badly. */
+/**
+ * A managed session the person should see without asking: it is running, it just ended badly, or Mini-Summa lost its
+ * terminal (after a restart, say) and the person has to decide what to do about it.
+ */
 const deservesTab = (s: SessionView): boolean =>
-  s.origin === 'managed' && (s.availability === 'live' || s.attention?.kind === 'abnormal_end' || s.attention?.kind === 'error');
+  s.origin === 'managed' && (s.availability === 'live' || s.availability === 'disconnected' || s.attention?.kind === 'abnormal_end' || s.attention?.kind === 'error');
 
-/** Open a tab for every managed session worth showing (live, or ended with an error) that has none yet and was not closed on purpose. */
+/** Open a tab for every managed session worth showing (live, lost, or ended with an error) that has none yet and was not closed on purpose. */
 export function withAutoTabs(model: TabModel, sessions: readonly SessionView[]): TabModel {
   let next = model;
   for (const s of sessions) {

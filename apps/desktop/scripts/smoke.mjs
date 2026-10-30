@@ -174,10 +174,10 @@ function appEnv(extra = {}) {
   };
 }
 
-async function launch(extra) {
+async function launch(extra, extraArgs = []) {
   // Launched like `electron .`: the app directory, so Electron reads package.json (name, version) as it does for a developer.
   // Playwright adds --no-sandbox itself unless chromiumSandbox is true.
-  const app = await electron.launch({ executablePath, args: [...sandboxArgs, appRoot], env: appEnv(extra), timeout: 60_000, chromiumSandbox: !!asUser });
+  const app = await electron.launch({ executablePath, args: [...sandboxArgs, appRoot, ...extraArgs], env: appEnv(extra), timeout: 60_000, chromiumSandbox: !!asUser });
   const out = [];
   app.process().stdout?.on('data', (d) => out.push(String(d)));
   app.process().stderr?.on('data', (d) => out.push(String(d)));
@@ -293,7 +293,7 @@ try {
     assert.equal(o.mode, 'embedded');
     assert.equal(o.port, 0);
     assert.equal(o.hasNative, true);
-    assert.equal(o.hasLog, true);
+    assert.equal(o.hasLog, false, 'the core must use its own logger, not the main process one');
     assert.equal(o.uiDir, path.join(appRoot, 'out', 'renderer'));
     assert.equal(o.overrides.claudeBin, fakeClaude);
     assert.deepEqual(o.overrides.nodeRuntime, { command: electronBinary, runAsNode: true });
@@ -654,6 +654,19 @@ try {
     assert.equal(after.url, conv(ID.other));
   });
 
+  await check('navigate() from the renderer loads a ChatGPT address in the same view, and does nothing for the page already shown', async () => {
+    const before = await viewProbe(app);
+    const hitsBefore = hits.get('chatgpt.com/c/' + ID.ok) ?? 0;
+    await page.evaluate((u) => window.miniSumma.chatgpt.navigate(u), conv(ID.ok));
+    await until(async () => (await viewProbe(app)).url === conv(ID.ok) && (await page.evaluate(() => window.miniSumma.chatgpt.getState())).status === 'ready', 8000);
+    assert.equal((await viewProbe(app)).id, before.id);
+    assert.equal(hits.get('chatgpt.com/c/' + ID.ok), hitsBefore + 1);
+    await page.evaluate((u) => window.miniSumma.chatgpt.navigate(u), conv(ID.ok));
+    await sleep(300);
+    assert.equal(hits.get('chatgpt.com/c/' + ID.ok), hitsBefore + 1, 'navigate() reloaded the page that was already shown');
+    await page.evaluate(() => window.miniSumma.chatgpt.focus());
+  });
+
   await check('a conversation that redirects to the sign-in page is opened but NOT verified; state says login_required', async () => {
     const r = await (await fetch(`${core}/__test/open?url=${encodeURIComponent(conv(ID.login))}&focus=0&reason=verify`)).json();
     assert.deepEqual([r.ok, r.opened, r.verified], [true, true, false]);
@@ -885,16 +898,27 @@ try {
       assert.equal(found.length, 1);
       assert.equal(found[0].value, 'yes');
     });
-    await check('the log has the startup lines and never the desktop token', async () => {
+    await check('the main-process log has the startup line and never the desktop token', async () => {
       const log = fs.readFileSync(path.join(profileDir, 'logs', 'main.log'), 'utf8');
-      assert.match(log, /stub core started/);
       assert.match(log, /core started/);
       assert.ok(!log.includes(first.token), 'desktop token found in main.log');
-      assert.ok(!log.includes('must-not-be-logged'), 'a field named token was not redacted');
-      assert.match(log, /\[redacted\]/);
+      // The redaction itself is covered by the unit tests; here the real log must simply never carry the token.
+      assert.ok(!fs.readFileSync(path.join(profileDir, 'logs', 'main.log'), 'utf8').includes(first.token));
     });
     await second.app.evaluate(({ app: a }) => { setTimeout(() => a.quit(), 10); });
     await withTimeout(second.exited, 30_000, 'second run exit').catch(() => second.app.close());
+
+    // Cold start from a link (Windows launches the exe with the link as an argument).
+    const third = await launch({}, ['minisumma://reports?report=rep_cold&delivery=dlv_cold']).catch((error) => { results.push({ name: 'cold start with a link', ok: false, error: error.message }); console.log(`FAIL  cold start with a link\n      ${error.message}`); return null; });
+    if (third) {
+      await check('a link on the command line of the first launch reaches the page even if it registers its listener late', async () => {
+        await sleep(500);
+        const target = await third.page.evaluate(() => new Promise((resolve) => { window.miniSumma.app.onNavigate(resolve); setTimeout(() => resolve(null), 3000); }));
+        assert.deepEqual(target, { view: 'reports', reportId: 'rep_cold', deliveryId: 'dlv_cold' });
+      });
+      await third.app.evaluate(({ app: a }) => { setTimeout(() => a.quit(), 10); });
+      await withTimeout(third.exited, 30_000, 'third run exit').catch(() => third.app.close());
+    }
   }
 } catch (error) {
   results.push({ name: 'harness', ok: false, error: error.stack ?? String(error) });

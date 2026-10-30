@@ -804,6 +804,35 @@ describe('a terminal that has not shown a sign of life yet (startup screens, the
     expect(h.view(K1).stateLabel).toBe('Starting'); // polling again changes nothing: only a NEW hook does
   });
 
+  it('is not fooled by the earlier process\'s last hook, still waiting in the spool when the new run begins', async () => {
+    // A discovery call holds the queue, so the spool pass that the exit asks for cannot run before the resume begins.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let started = false;
+    const h = await harness({ run: async () => { started = true; await gate; return { raw: [] }; } });
+    await addProject(h);
+    h.managed.seed({ key: K1, projectId: 'p1' }, true);
+    await h.feed([ev(1, 'SessionStart', { source: 'startup' }), ev(2, 'UserPromptSubmit', { prompt_id: 'a' })]);
+    const discovery = h.sessions.refreshDiscovery();
+    await waitFor(() => started, { what: 'the discovery call to start' });
+
+    // the earlier process ends: its SessionEnd hook is on disk, nothing has ingested it yet
+    writeSpoolRecord(h.layout.spoolDirHost, ev(3, 'SessionEnd', { reason: 'prompt_input_exit' }));
+    h.managed.change(K1, { status: 'exited', pid: null, exitedAt: '2026-01-01T10:00:09.000Z', exitCode: 0 });
+    await h.sessions.start('p1', { mode: 'resume', resumeKey: K1 }, desktop);
+
+    release(); // now the old SessionEnd is ingested, after the new run began
+    await discovery;
+    await h.sessions.flush();
+    expect(h.rawStore.loadAll().filter((e) => e.kind === 'hook').map((e) => (e.payload as { hook_event_name: string }).hook_event_name)).toEqual(['SessionStart', 'UserPromptSubmit', 'SessionEnd']);
+    expect(h.view(K1)).toMatchObject({ availability: 'live', state: 'unknown', stateLabel: 'Starting', attention: null });
+    await expectRefused(h, K1, null);
+
+    await h.feed([ev(10, 'SessionStart', { source: 'resume' })]);
+    expect(h.view(K1)).toMatchObject({ state: 'idle', generation: 2 });
+    expect(await send(h, K1, 2)).toMatchObject({ ok: true });
+  });
+
   it('a second resume starts over: the earlier run\'s hook does not make the next terminal look ready', async () => {
     const h = await harness();
     await endedSession(h);

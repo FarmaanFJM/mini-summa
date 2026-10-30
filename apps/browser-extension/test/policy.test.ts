@@ -8,6 +8,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { TEST_HOST_PERMISSIONS, transformManifest } from '../build.mjs';
 import type { ExtensionManifest } from '../build.mjs';
+import { CHATGPT_TAB_PATTERNS } from '../src/bridge.ts';
 import { EM_DASH } from './em-dash.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -15,10 +16,23 @@ const read = (...p: string[]): string => readFileSync(path.join(root, ...p), 'ut
 const manifest = JSON.parse(read('manifest.json')) as ExtensionManifest;
 
 describe('manifest.json', () => {
-  it('is MV3 with exactly the three permissions and four host patterns that were agreed', () => {
+  it('is MV3 with exactly the two permissions and five host patterns that were agreed', () => {
     expect(manifest.manifest_version).toBe(3);
-    expect(manifest.permissions).toEqual(['tabs', 'storage', 'alarms']);
-    expect(manifest.host_permissions).toEqual(['https://chatgpt.com/*', 'https://chat.openai.com/*', 'http://127.0.0.1/*', 'http://localhost/*']);
+    expect(manifest.permissions).toEqual(['storage', 'alarms']);
+    expect(manifest.host_permissions).toEqual([
+      'https://chatgpt.com/*', 'https://www.chatgpt.com/*', 'https://chat.openai.com/*', 'http://127.0.0.1/*', 'http://localhost/*',
+    ]);
+  });
+
+  it('does not ask for the tabs permission, so the browser hides the address and title of tabs on other sites from it', () => {
+    expect(manifest.permissions).not.toContain('tabs');
+    expect(manifest.optional_permissions).toBeUndefined();
+    // Host access is what shows the address and title of a tab, so every site the bridge looks for must be a host pattern.
+    for (const pattern of CHATGPT_TAB_PATTERNS) expect(manifest.host_permissions, pattern).toContain(pattern);
+    // ...and nothing broader than those sites plus the loopback core.
+    for (const pattern of manifest.host_permissions ?? []) {
+      expect(pattern, pattern).toMatch(/^(https:\/\/(chatgpt\.com|www\.chatgpt\.com|chat\.openai\.com)|http:\/\/(127\.0\.0\.1|localhost))\/\*$/);
+    }
   });
 
   it('declares no content scripts, no scripting, no activeTab, no all-urls access and nothing else that reaches into pages', () => {
@@ -28,7 +42,7 @@ describe('manifest.json', () => {
     ];
     for (const key of forbiddenKeys) expect(manifest, key).not.toHaveProperty(key);
     const text = JSON.stringify(manifest);
-    for (const needle of ['<all_urls>', '*://*/*', 'http://*/*', 'https://*/*', '"scripting"', '"activeTab"', '"webRequest"', '"webNavigation"', '"debugger"', '"cookies"', '"history"', '"downloads"', '"nativeMessaging"', '"management"', '"declarativeNetRequest"']) {
+    for (const needle of ['<all_urls>', '*://*/*', 'http://*/*', 'https://*/*', '"tabs"', '"scripting"', '"activeTab"', '"webRequest"', '"webNavigation"', '"debugger"', '"cookies"', '"history"', '"downloads"', '"nativeMessaging"', '"management"', '"declarativeNetRequest"']) {
       expect(text, needle).not.toContain(needle);
     }
   });
@@ -125,13 +139,18 @@ describe('Chrome APIs used by the code', () => {
     ]);
   });
 
-  it('every API namespace that needs a permission has it in the manifest', () => {
+  it('every API namespace that needs a permission has it in the manifest, and the tabs and windows APIs need none', () => {
     const namespaces = new Set<string>();
     for (const file of sourceFiles()) for (const api of chromeApisUsed(file)) if (api.includes('.')) namespaces.add(api.split('.')[0]);
-    for (const ns of ['storage', 'alarms', 'tabs']) {
+    for (const ns of ['storage', 'alarms']) {
       expect(namespaces.has(ns), `${ns} is used`).toBe(true);
       expect(manifest.permissions, ns).toContain(ns);
     }
+    // chrome.tabs.query/get/update/create and chrome.windows.update work without the "tabs" permission; it only adds
+    // visibility of the address and title of every tab, which this extension must not have.
+    expect(namespaces.has('tabs')).toBe(true);
+    expect(namespaces.has('windows')).toBe(true);
+    expect(manifest.permissions).not.toContain('tabs');
   });
 
   it('contains nothing that injects code, reads page content or loads remote code', () => {

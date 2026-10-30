@@ -41,6 +41,11 @@ export interface RunBaseline {
   startedAt: string;
   /** Highest raw-log position at that moment. */
   seq: number;
+  /**
+   * Transport ids of the hook files that were already waiting in the spools at that moment. The run had not been spawned
+   * yet, so they come from the process before it; when they are ingested a moment later they are not a sign of life.
+   */
+  waiting: ReadonlySet<string>;
 }
 
 /**
@@ -49,18 +54,22 @@ export interface RunBaseline {
  * of the new process is the proof that Claude is up, so until one has been ingested the terminal is "starting", whatever the
  * Reducer still says about an earlier process of the same session.
  *
- *  - With the baseline (the service saw the run begin): a hook receipt of this session at a log position after it. No clock
+ *  - With the baseline (the service saw the run begin): a hook receipt of this session at a log position after it, other
+ *    than one that was already waiting in a spool then (the earlier process's last hooks, ingested a moment late). No clock
  *    is involved, so a WSL clock that lags the Windows one cannot keep a session in "starting" forever.
  *  - Without it (a running record found at startup): the newest hook receipt must be at or after the record's startedAt.
  *    Both times come from this machine; this is the fallback, and it fails safe (a terminal is refused, never trusted).
  */
 export function isStarting(
   managed: Pick<ManagedSessionRecord, 'status' | 'startedAt'> | null,
-  facts: Pick<SessionFacts, 'lastHookAt' | 'lastHookSeq'> | null,
+  facts: Pick<SessionFacts, 'lastHookAt' | 'lastHookSeq' | 'lastHookTid'> | null,
   baseline?: RunBaseline,
 ): boolean {
   if (!managed || managed.status !== 'running') return false;
-  if (baseline && baseline.startedAt === managed.startedAt) return !((facts?.lastHookSeq ?? 0) > baseline.seq);
+  if (baseline && baseline.startedAt === managed.startedAt) {
+    const newer = (facts?.lastHookSeq ?? 0) > baseline.seq;
+    return !(newer && !(facts?.lastHookTid != null && baseline.waiting.has(facts.lastHookTid)));
+  }
   return !(facts?.lastHookAt != null && facts.lastHookAt >= managed.startedAt);
 }
 

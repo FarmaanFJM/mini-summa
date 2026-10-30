@@ -49,6 +49,9 @@ export function matchesPattern(pattern: string, url: string): boolean {
   return re.test(rest);
 }
 
+/** Hosts the extension has host access to (the manifest's host_permissions). The extension has no "tabs" permission. */
+export const DEFAULT_VISIBLE_HOSTS = ['chatgpt.com', 'www.chatgpt.com', 'chat.openai.com', '127.0.0.1', 'localhost'];
+
 export class FakeBrowser {
   readonly tabs: FakeTab[] = [];
   readonly windows: FakeWindow[] = [];
@@ -58,6 +61,11 @@ export class FakeBrowser {
   failures: { update?: string; windowUpdate?: string; create?: string; get?: string } = {};
   /** Make windows.update succeed but report the window as not focused (the OS refused the focus). */
   windowRefusesFocus = false;
+  /**
+   * Like the real browser without the "tabs" permission: the address and title of a tab are only shown for these hosts.
+   * Every other tab is listed without `url`, `pendingUrl` and `title`, and a url filter never matches it.
+   */
+  visibleHosts: string[] = [...DEFAULT_VISIBLE_HOSTS];
   private nextTabId = 100;
   private nextWindowId = 1;
 
@@ -88,11 +96,28 @@ export class FakeBrowser {
 
   private log(api: string, ...args: unknown[]): void { this.calls.push({ api, args }); }
 
+  private hostOf(url: string): string | null {
+    const m = /^https?:\/\/(?:[^/?#@]*@)?([^/?#:]+)/.exec(url);
+    return m ? m[1] : null;
+  }
+
+  private canSee(url: string): boolean {
+    const host = this.hostOf(url);
+    return host !== null && this.visibleHosts.includes(host);
+  }
+
   private snapshot(t: FakeTab): chrome.tabs.Tab {
-    // Mirrors the real API: an unfinished navigation has no url yet, only pendingUrl.
-    const out: Record<string, unknown> = { id: t.id, windowId: t.windowId, index: t.index, active: t.active, status: t.status, title: t.title, lastAccessed: t.lastAccessed, highlighted: t.active, pinned: false, incognito: false, discarded: false, autoDiscardable: true, groupId: -1 };
-    out.url = t.url;
-    if (t.pendingUrl) out.pendingUrl = t.pendingUrl;
+    // Mirrors the real API: an unfinished navigation has no url yet, only pendingUrl. A tab on a site the extension has
+    // no host access to has neither, nor a title.
+    const out: Record<string, unknown> = { id: t.id, windowId: t.windowId, index: t.index, active: t.active, status: t.status, lastAccessed: t.lastAccessed, highlighted: t.active, pinned: false, incognito: false, discarded: false, autoDiscardable: true, groupId: -1 };
+    if (t.url === '') {
+      out.url = '';
+      out.title = '';
+      if (t.pendingUrl && this.canSee(t.pendingUrl)) out.pendingUrl = t.pendingUrl;
+    } else if (this.canSee(t.url)) {
+      out.url = t.url;
+      out.title = t.title;
+    }
     return out as unknown as chrome.tabs.Tab;
   }
 
@@ -117,7 +142,7 @@ export class FakeBrowser {
       query: async (queryInfo) => {
         this.log('tabs.query', queryInfo);
         if (!Array.isArray(queryInfo.url)) throw new Error('tabs.query must always be called with a url filter');
-        return this.tabs.filter((t) => t.url !== '' && queryInfo.url.some((p) => matchesPattern(p, t.url))).map((t) => this.snapshot(t));
+        return this.tabs.filter((t) => t.url !== '' && this.canSee(t.url) && queryInfo.url.some((p) => matchesPattern(p, t.url))).map((t) => this.snapshot(t));
       },
       get: async (tabId) => {
         this.log('tabs.get', tabId);

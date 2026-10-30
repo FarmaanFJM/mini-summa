@@ -22,6 +22,8 @@ import { Sheet, SheetOption, useToast } from '../ui/overlays.tsx';
 import { ScreenTitle } from '../ui/ScreenTitle.tsx';
 import { Text } from '../ui/Text.tsx';
 
+const MAX_SHARE_CHARS = 100_000;
+
 type Load = { state: 'loading' } | { state: 'error'; message: string; missing: boolean } | { state: 'ready'; report: Report };
 
 export function ReportDetailScreen() {
@@ -63,6 +65,11 @@ export function ReportDetailScreen() {
   const share = async () => {
     setMenu(false);
     if (!report) return;
+    // The share sheet passes the text to another app through Android's binder, which has a size limit.
+    if (report.body.length > MAX_SHARE_CHARS) {
+      setNote(`This report is ${report.body.length.toLocaleString('en-US')} characters, too long for the share sheet. Use Copy report instead.`);
+      return;
+    }
     try { await Share.share({ title: report.taskTitle, message: report.body }); } catch { setNote('Could not open the share sheet.'); }
   };
 

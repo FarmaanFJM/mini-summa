@@ -3,7 +3,7 @@
 // The request carries one idempotency key per attempt. A network failure keeps the key, so Retry cannot double-send; any
 // answer from the desktop (including "failed") ends the attempt, and sending again is a new, deliberate request.
 import { useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, ScrollView, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { shortSessionId } from '@minisumma/shared';
 import type { PendingAction } from '@minisumma/shared';
@@ -108,7 +108,7 @@ export function SendToClaudeScreen() {
   return (
     <Screen scroll={false}>
       <ScreenTitle title="Send to Claude" />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <ScrollView contentContainerStyle={{ gap: space.s5, paddingBottom: space.s6 }} keyboardShouldPersistTaps="handled">
           {step === 'compose' ? (
             <>

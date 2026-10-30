@@ -3,7 +3,6 @@ import type { ConnectionStatus } from '../src/connection/ConnectionManager';
 import type { Credentials } from '../src/connection/credentials';
 import { makeAction, makeDevice, makeSession, makeSummary, SESSION_KEY } from './helpers/data';
 import { createFakeCore, settle } from './helpers/fakeCore';
-import type { FakeCore } from './helpers/fakeCore';
 
 const creds: Credentials = { baseUrl: 'https://pc.tail1234.ts.net', token: 'tok-secret', deviceId: 'dev_1', serverName: "Farmaan's PC" };
 
@@ -179,6 +178,18 @@ describe('app foreground and background', () => {
     expect(core.calls('GET /state')).toHaveLength(2);
   });
 
+  it('start() on a connection that is already open does nothing, so coming back to the app does not drop it', async () => {
+    const { core, manager } = setup();
+    manager.start(); core.connect(); await settle();
+    const socket = core.lastSocket();
+    manager.start();
+    manager.start();
+    expect(core.sockets).toHaveLength(1);
+    expect(socket.readyState).toBe(1);
+    expect(manager.getSnapshot().status).toBe('connected');
+    expect(core.calls('GET /state')).toHaveLength(1);
+  });
+
   it('does not let a stale timer from before the background mark a resumed connection unreachable', async () => {
     const { core, manager } = setup();
     manager.start(); core.connect(); await settle();
@@ -220,6 +231,31 @@ describe('a phone that the desktop removed', () => {
     expect(onRevoked).toHaveBeenCalledTimes(1);
     await jest.advanceTimersByTimeAsync(120_000);
     expect(core.sockets).toHaveLength(1);
+  });
+
+  it('is revoked when the desktop no longer accepts the token at hello (error unauthorized, then close 4401)', async () => {
+    const { core, manager, onRevoked } = setup();
+    manager.start();
+    const socket = core.lastSocket();
+    socket.serverOpen();
+    // This is what the real core sends for an unknown or revoked token.
+    socket.serverSend({ t: 'error', code: 'unauthorized', message: 'The token was not accepted. Pair this device again or ask the owner for a new token.', fatal: true });
+    socket.serverClose(4401, 'unauthorized');
+    await settle();
+    expect(manager.getSnapshot().status).toBe('revoked');
+    expect(onRevoked).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(120_000);
+    expect(core.sockets).toHaveLength(1);
+  });
+
+  it('is revoked by close 4401 alone, in case the error message was lost', async () => {
+    const { core, manager, onRevoked } = setup();
+    manager.start();
+    core.lastSocket().serverOpen();
+    core.lastSocket().serverClose(4401, 'unauthorized');
+    await settle();
+    expect(manager.getSnapshot().status).toBe('revoked');
+    expect(onRevoked).toHaveBeenCalledTimes(1);
   });
 
   it('treats a 403 on an action as a missing permission, not a removal, when the device record is still readable', async () => {

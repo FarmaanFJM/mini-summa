@@ -42,7 +42,7 @@ const config: ExpoConfig = {
       microphonePermission: false,
       recordAudioAndroid: false,
     }],
-    ['expo-notifications', { icon: './assets/notification-icon.png', color: '#10b981', defaultChannel: 'updates' }],
+    ['expo-notifications', { icon: './assets/notification-icon.png', color: '#10b981', defaultChannel: 'needs-you' }],
     ['expo-build-properties', {
       // R8 shrinking is off: a build that cannot be run on a device here should not also depend on untested keep rules.
       android: { usesCleartextTraffic: false, enableMinifyInReleaseBuilds: false, buildArchs },

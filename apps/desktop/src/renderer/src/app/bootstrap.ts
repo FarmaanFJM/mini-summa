@@ -54,6 +54,8 @@ export async function bootstrap(): Promise<BootstrapResult> {
           ? createDemoNative({ titleFor: (url) => demo.demo.server.data.conversations.find((c) => c.url === url)?.title ?? null })
           : detectNative();
         demo.demo.server.onOpen = (url) => { void native.chatgpt.navigate(url); };
+        // `&trust=1`: new sessions start on Claude's "Do you trust the files in this folder?" screen, to see the Starting hint.
+        demo.demo.server.trustPrompt = new URLSearchParams(window.location.search).get('trust') === '1';
         (window as unknown as { __minisummaDemo?: unknown }).__minisummaDemo = demo.demo;
         return { ok: true, runtime: build(demo, native, 'demo') };
       }

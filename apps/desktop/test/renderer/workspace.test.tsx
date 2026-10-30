@@ -5,6 +5,11 @@ import { setNativeBounds } from '../../src/renderer/src/app/nativeBounds';
 import { IDS } from '../../src/renderer/src/dev/demo/seed';
 import { createFakeNative, renderApp } from './helpers';
 
+// The activity, reports and settings views belong to another worker: the shell is tested with stand-ins (stubViews.tsx).
+vi.mock('../../src/renderer/src/features/activity', async () => ({ default: (await import('./stubViews')).ActivityStandIn }));
+vi.mock('../../src/renderer/src/features/reports', async () => ({ default: (await import('./stubViews')).ReportsStandIn }));
+vi.mock('../../src/renderer/src/features/settings', async () => ({ default: (await import('./stubViews')).SettingsStandIn }));
+
 afterEach(() => { setNativeBounds(null); });
 
 interface Geometry { area?: { width: number; height: number }; slot?: { x: number; y: number; width: number; height: number } }
@@ -445,23 +450,5 @@ describe('navigation from outside (a notification, a deep link)', () => {
     first.runtime.dispose();
     await renderApp({ storage });
     expect(await screen.findByRole('heading', { level: 1, name: 'Atlas API' })).toBeTruthy();
-  });
-});
-
-describe('the settings view replaces the sidebar (no second sidebar)', () => {
-  it('swaps the project list for its own content with a back chevron, and back restores it', async () => {
-    geometry();
-    const user = userEvent.setup();
-    await renderApp();
-    const projectNav = () => screen.getByRole('navigation', { name: 'Projects', hidden: true });
-    expect(projectNav().closest('[hidden]')).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Settings' }));
-    expect(screen.getByRole('button', { name: 'Back' })).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 2, name: 'Settings' })).toBeTruthy();
-    expect(projectNav().closest('[hidden]')).not.toBeNull();
-    expect(document.querySelectorAll('aside')).toHaveLength(1); // one sidebar, never two side by side
-    await user.click(screen.getByRole('button', { name: 'Back' }));
-    expect(projectNav().closest('[hidden]')).toBeNull();
-    expect(screen.getByRole('heading', { level: 1, name: 'GitManager' })).toBeTruthy();
   });
 });

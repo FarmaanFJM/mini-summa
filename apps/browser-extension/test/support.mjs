@@ -1,5 +1,7 @@
-// Pieces shared by the real browser tests: waiting, finding Chromium, and the fake Mini-Summa core.
+// Pieces shared by the real browser tests: waiting, finding Chromium, the fake Mini-Summa core, the local stand-in for
+// ChatGPT, and launchBrowser, which starts a browser only after proving that it cannot reach the real internet.
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import http from 'node:http';
@@ -8,6 +10,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { WebSocketServer } from 'ws';
+import {
+  CANARY_EXPECTED, CANARY_URL, LOOPBACK_HOSTS, OTHER_SITE_HOST, STAND_IN_HOSTS, STAND_IN_NAMES, hostResolverRules, isolationFailure,
+} from './isolation.mjs';
+
+export { CANARY_EXPECTED, CANARY_URL, LOOPBACK_HOSTS, OTHER_SITE_HOST, STAND_IN_HOSTS, STAND_IN_NAMES, hostResolverRules, isolationFailure };
 
 export const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function waitFor(fn, { timeout = 15_000, interval = 100, what = 'condition' } = {}) {
@@ -138,9 +145,11 @@ export class FakeCore {
   }
 }
 
-export const STAND_IN_HOSTS = ['chatgpt.com', 'www.chatgpt.com', 'chat.openai.com'];
-// Conversation ids are valid uuids: n=3 gives 33333333-3333-4333-8333-333333333333.
-export const convId = (n) => `${String(n).repeat(8)}-${String(n).repeat(4)}-4${String(n).repeat(3)}-8${String(n).repeat(3)}-${String(n).repeat(12)}`;
+// Conversation ids are valid uuids made of one repeated hex digit: 3 gives 33333333-3333-4333-8333-333333333333.
+export const convId = (n) => {
+  const d = typeof n === 'number' ? n.toString(16) : n;
+  return `${d.repeat(8)}-${d.repeat(4)}-4${d.repeat(3)}-8${d.repeat(3)}-${d.repeat(12)}`;
+};
 export const convUrl = (n) => `https://chatgpt.com/c/${convId(n)}`;
 
 // ------------------------------------------------------------------------------------------------------------------
@@ -150,7 +159,7 @@ export function makeCertificate(dir) {
   const key = path.join(dir, 'key.pem');
   const cert = path.join(dir, 'cert.pem');
   execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-keyout', key, '-out', cert, '-days', '2',
-    '-subj', '/CN=chatgpt.com', '-addext', `subjectAltName=${STAND_IN_HOSTS.map((h) => `DNS:${h}`).join(',')}`], { stdio: 'pipe' });
+    '-subj', '/CN=chatgpt.com', '-addext', `subjectAltName=${STAND_IN_NAMES.map((h) => `DNS:${h}`).join(',')}`], { stdio: 'pipe' });
   return { key: fs.readFileSync(key), cert: fs.readFileSync(cert) };
 }
 
@@ -159,7 +168,12 @@ export const standInHtml = (title, text, extra = '') => `<!doctype html><html la
 export class StandIn {
   requests = [];
   sockets = new Set();
-  /** Conversation 5 redirects to sign-in, 6 redirects from script after load, 7 resets the connection, 8 never answers. */
+  /** Put in a response header of every answer, so a test can prove that this server, and nobody else, answered. */
+  nonce = crypto.randomBytes(8).toString('hex');
+  /**
+   * Conversation 5 redirects to the sign-in page of the same site, a redirects to another site, 6 redirects from script
+   * after load, 7 resets the connection, 8 never answers. Every other conversation is a plain page.
+   */
   async start(credentials) {
     this.server = https.createServer(credentials, (req, res) => this.handle(req, res));
     this.server.on('connection', (socket) => { this.sockets.add(socket); socket.on('close', () => this.sockets.delete(socket)); });
@@ -167,18 +181,26 @@ export class StandIn {
     this.port = this.server.address().port;
   }
   handle(req, res) {
-    const host = String(req.headers.host ?? '');
+    const host = String(req.headers.host ?? '').toLowerCase();
     const url = new URL(req.url, 'https://chatgpt.com');
     this.requests.push({ host, method: req.method, path: url.pathname });
-    const conv = /^\/c\/(\d)\1{7}-\1{4}-4\1{3}-8\1{3}-\1{12}$/.exec(url.pathname);
-    const n = conv ? Number(conv[1]) : null;
-    const send = (status, body, headers = {}) => { res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', ...headers }); res.end(body); };
+    const send = (status, body, headers = {}) => {
+      res.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-minisumma-stand-in': this.nonce, ...headers });
+      res.end(body);
+    };
     if (url.pathname === '/favicon.ico') return send(204, '');
+    if (url.pathname === '/__stand-in-check') return send(200, standInHtml('Stand-in', 'stand-in'));
+    if (host === OTHER_SITE_HOST) {
+      return send(200, standInHtml(url.pathname === '/log-in' ? 'Sign in at other site' : 'Private page of other site', 'Other site'));
+    }
+    const conv = /^\/c\/([0-9a-f])\1{7}-\1{4}-4\1{3}-8\1{3}-\1{12}$/.exec(url.pathname);
+    const n = conv ? conv[1] : null;
     if (url.pathname === '/auth/login') return send(200, standInHtml('Log in', 'Log in to continue'));
-    if (n === 5) return send(302, '', { location: '/auth/login' });
-    if (n === 6) return send(200, standInHtml('Conversation 6', 'Conversation 6', '<script>setTimeout(function () { location.replace("/auth/login"); }, 150);</script>'));
-    if (n === 7) { req.socket.destroy(); return undefined; }
-    if (n === 8) return undefined; // never answers
+    if (n === '5') return send(302, '', { location: '/auth/login' });
+    if (n === 'a') return send(302, '', { location: `https://${OTHER_SITE_HOST}/log-in` });
+    if (n === '6') return send(200, standInHtml('Conversation 6', 'Conversation 6', '<script>setTimeout(function () { location.replace("/auth/login"); }, 150);</script>'));
+    if (n === '7') { req.socket.destroy(); return undefined; }
+    if (n === '8') return undefined; // never answers
     if (n !== null) return send(200, standInHtml(`Conversation ${n}`, `Conversation ${n}`));
     return send(404, standInHtml('Not found', 'Not found'));
   }
@@ -187,4 +209,59 @@ export class StandIn {
     for (const socket of this.sockets) socket.destroy();
     await new Promise((resolve) => this.server.close(resolve));
   }
+}
+
+// ------------------------------------------------------------------------------------------------------------------
+// Keeping the real internet out. Every script that drives a browser starts it through launchBrowser (Playwright based
+// scripts) or runs the same canary itself (keepalive.mjs, which talks to the browser over the DevTools protocol).
+
+/**
+ * Prove the browser cannot leave this machine, in this order, and throw at the first doubt:
+ *  1. a public name that is not a ChatGPT name must fail to resolve (this is the check that fails closed: if the
+ *     resolver rules are missing or ignored, nothing below it runs, and no ChatGPT name has been used yet);
+ *  2. only then are the ChatGPT names tried, and each must be answered by this run's stand-in (nonce header).
+ */
+export async function assertNetworkIsolated(context, standIn) {
+  const canary = await context.newPage();
+  const outcome = await canary.goto(CANARY_URL, { timeout: 20_000 }).then(() => 'loaded', (e) => String(e.message));
+  await canary.close().catch(() => undefined);
+  if (!CANARY_EXPECTED.test(outcome)) throw isolationFailure(outcome);
+  const check = await context.newPage();
+  for (const host of STAND_IN_HOSTS) {
+    const response = await check.goto(`https://${host}/__stand-in-check`, { timeout: 20_000 });
+    if (response?.headers()['x-minisumma-stand-in'] !== standIn.nonce) throw new Error(`https://${host}/ was not answered by the local stand-in`);
+  }
+  await check.close().catch(() => undefined);
+}
+
+/** Start Chromium with the extension loaded and the isolation proven. The browser is closed again if the proof fails. */
+export async function launchBrowser({ chromePath, extensionDir, profileDir, standIn }) {
+  const rules = hostResolverRules(standIn.port);
+  // The rules string must say what the isolation relies on: the catch-all that makes every other name unresolvable comes
+  // after the specific mappings, and loopback is excluded from it.
+  const parts = rules.split(', ');
+  const catchAll = parts.indexOf('MAP * ~NOTFOUND');
+  assert.ok(catchAll > 0, 'the catch-all rule is present');
+  for (const h of STAND_IN_NAMES) {
+    const at = parts.indexOf(`MAP ${h} 127.0.0.1:${standIn.port}`);
+    assert.ok(at >= 0 && at < catchAll, `${h} is mapped before the catch-all`);
+  }
+  for (const h of LOOPBACK_HOSTS) assert.ok(parts.includes(`EXCLUDE ${h}`), `${h} is excluded from the catch-all`);
+  const context = await chromium.launchPersistentContext(profileDir, {
+    executablePath: chromePath,
+    headless: false,
+    ignoreHTTPSErrors: true,
+    args: [
+      `--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`,
+      `--host-resolver-rules=${rules}`, '--ignore-certificate-errors',
+      '--no-proxy-server', '--disable-quic', '--no-first-run', '--no-default-browser-check',
+    ],
+  });
+  try {
+    await assertNetworkIsolated(context, standIn);
+  } catch (error) {
+    await context.close().catch(() => undefined);
+    throw error;
+  }
+  return context;
 }

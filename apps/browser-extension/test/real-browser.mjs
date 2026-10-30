@@ -12,6 +12,11 @@
 // byte the production code: it sees ordinary https://chatgpt.com/c/<id> tab addresses. A canary navigation to an
 // unrelated public name must fail to resolve, or the test stops.
 //
+// launchBrowser (support.mjs) proves this before a browser is used: a navigation to a public name that is not ours must
+// fail with ERR_NAME_NOT_RESOLVED, and only then are the ChatGPT names tried, each of which must be answered by this
+// run's stand-in. If the resolver rules are missing or ignored the run stops at the first check, before any ChatGPT
+// address has been used.
+//
 // Request routing in the test framework (page.route) is deliberately NOT used: it does not cover tabs the browser
 // creates by itself (chrome.tabs.create), which would then load the real site.
 import assert from 'node:assert/strict';
@@ -19,9 +24,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
 import { buildExtension } from '../build.mjs';
-import { FakeCore, STAND_IN_HOSTS, StandIn, convId, convUrl, findChromium, makeCertificate, sleep, waitFor } from './support.mjs';
+import {
+  FakeCore, LOOPBACK_HOSTS, OTHER_SITE_HOST, STAND_IN_HOSTS, STAND_IN_NAMES, StandIn, convId, convUrl, findChromium, launchBrowser, makeCertificate, sleep, waitFor,
+} from './support.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const extDir = path.resolve(process.env.MINISUMMA_EXT_DIR ?? path.join(here, '..', 'dist'));
@@ -68,22 +74,10 @@ async function main() {
 
   await standIn.start(makeCertificate(tmp));
   await core.start();
-  const rules = [
-    ...STAND_IN_HOSTS.map((h) => `MAP ${h} 127.0.0.1:${standIn.port}`),
-    'MAP * ~NOTFOUND', 'EXCLUDE 127.0.0.1', 'EXCLUDE localhost',
-  ].join(', ');
 
+  /** Every browser of this run is started here, and is only handed out once its network isolation has been proven. */
   async function launch(extensionDir, tag) {
-    const context = await chromium.launchPersistentContext(fs.mkdtempSync(path.join(tmp, `profile-${tag}-`)), {
-      executablePath: chromiumPath,
-      headless: false,
-      ignoreHTTPSErrors: true,
-      args: [
-        `--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`,
-        `--host-resolver-rules=${rules}`, '--ignore-certificate-errors',
-        '--no-proxy-server', '--disable-quic', '--no-first-run', '--no-default-browser-check',
-      ],
-    });
+    const context = await launchBrowser({ chromePath: chromiumPath, extensionDir, profileDir: fs.mkdtempSync(path.join(tmp, `profile-${tag}-`)), standIn });
     contexts.push(context);
     return context;
   }
@@ -120,16 +114,18 @@ async function main() {
       assert.deepEqual(b, a, 'the manifest differs from production by more than the test label');
     });
 
-    await step('network isolation: other names do not resolve, the stand-in answers as chatgpt.com', async () => {
+    await step('network isolation: proven before use (unmapped name fails to resolve, all three ChatGPT names answered by the stand-in)', async () => {
+      // launchBrowser already ran the canary and the stand-in check; here the evidence it left is checked, plus one more unmapped name.
+      const checked = standIn.requests.filter((r) => r.path === '/__stand-in-check').map((r) => r.host);
+      assert.deepEqual([...new Set(checked)].sort(), [...STAND_IN_HOSTS].sort());
       const canary = await context.newPage();
-      const error = await canary.goto('https://example.com/').then(() => 'loaded', (e) => String(e.message));
-      assert.match(error, /ERR_NAME_NOT_RESOLVED/, 'the canary navigation must fail to resolve; stopping before anything else can leave this machine');
+      const error = await canary.goto('https://example.org/').then(() => 'loaded', (e) => String(e.message));
+      assert.match(error, /ERR_NAME_NOT_RESOLVED/);
       await canary.close();
       const probe = await context.newPage();
-      const response = await probe.goto(convUrl(9));
+      const response = await probe.goto(`https://${OTHER_SITE_HOST}/private-page`);
       assert.equal(response.status(), 200);
-      assert.equal(await probe.title(), 'Conversation 9');
-      assert.deepEqual(standIn.requests.filter((r) => r.path.startsWith('/c/')).map((r) => r.host), ['chatgpt.com']);
+      assert.equal(await probe.title(), 'Private page of other site');
       await probe.close();
       standIn.requests.length = 0;
     });
@@ -139,12 +135,14 @@ async function main() {
         const m = chrome.runtime.getManifest();
         return {
           permissions: m.permissions, hosts: m.host_permissions, contentScripts: m.content_scripts ?? null, optional: m.optional_permissions ?? null,
+          tabsApi: typeof chrome.tabs.query,
           scripting: typeof chrome.scripting, executeScript: typeof chrome.tabs.executeScript, debugger: typeof chrome.debugger, webNavigation: typeof chrome.webNavigation,
           webRequest: typeof chrome.webRequest, cookies: typeof chrome.cookies, history: typeof chrome.history,
         };
       });
-      assert.deepEqual(facts.permissions, ['tabs', 'storage', 'alarms']);
-      assert.deepEqual(facts.hosts, ['https://chatgpt.com/*', 'https://chat.openai.com/*', 'http://127.0.0.1/*', 'http://localhost/*']);
+      assert.deepEqual(facts.permissions, ['storage', 'alarms']);
+      assert.deepEqual(facts.hosts, ['https://chatgpt.com/*', 'https://www.chatgpt.com/*', 'https://chat.openai.com/*', 'http://127.0.0.1/*', 'http://localhost/*']);
+      assert.equal(facts.tabsApi, 'function', 'chrome.tabs.query exists and works without the tabs permission');
       assert.equal(facts.contentScripts, null);
       assert.equal(facts.optional, null);
       for (const api of ['scripting', 'executeScript', 'debugger', 'webNavigation', 'webRequest', 'cookies', 'history']) assert.equal(facts[api], 'undefined', `chrome.${api} must not exist for this extension`);
@@ -325,6 +323,23 @@ async function main() {
       assert.match(reply.data.note, /different address/);
     });
 
+    await step('focus_or_open: a load that ends on another site is reported as not matching, quickly, without that address', async () => {
+      const started = Date.now();
+      const reply = await core.focusOrOpen(convUrl('a'));
+      const elapsed = Date.now() - started;
+      assert.equal(reply.ok, true, JSON.stringify(reply));
+      assert.deepEqual(
+        [reply.data.mode, reply.data.url, reply.data.title, reply.data.urlMatches, reply.data.verified, reply.data.opened],
+        ['opened', '', '', false, false, true],
+      );
+      assert.match(reply.data.note, /another site/);
+      assert.ok(elapsed < 5000, `answered after ${elapsed} ms, not at the 15 s limit`);
+      // Independent evidence that the tab really is on the other site, which the extension is not allowed to see.
+      const onOtherSite = context.pages().find((p) => { try { return new URL(p.url()).hostname === OTHER_SITE_HOST; } catch { return false; } });
+      assert.ok(onOtherSite, 'the browser has a tab on the other site');
+      assert.equal(await onOtherSite.title(), 'Sign in at other site');
+    });
+
     await step('focus_or_open: a page that redirects from script right after load is also reported as urlMatches false', async () => {
       const reply = await core.focusOrOpen(convUrl(6));
       assert.equal(reply.ok, true, JSON.stringify(reply));
@@ -381,6 +396,28 @@ async function main() {
         assert.deepEqual({ windowId: info.windowId, url: info.url, active: info.active }, { windowId: match.windowId, url: match.url, active: match.active });
       }
       assert.ok(!reply.data.some((i) => i.url.startsWith('chrome-extension://')), 'the options page is not listed');
+    });
+
+    await step('without the tabs permission the extension cannot see the address or title of a tab on another site', async () => {
+      const other = await context.newPage();
+      await other.goto(`https://${OTHER_SITE_HOST}/private-page`);
+      assert.equal(await other.title(), 'Private page of other site', 'the browser really has this tab open');
+      const seen = await inWorker(async () => (await chrome.tabs.query({})).map((t) => ({ id: t.id, url: t.url ?? null, title: t.title ?? null })));
+      const text = JSON.stringify(seen);
+      assert.ok(!text.includes('other-site'), 'no address of the other site');
+      assert.ok(!text.includes('Private page') && !text.includes('Sign in at'), 'no title of the other site');
+      assert.ok(seen.length >= context.pages().length, 'the tabs are listed, only without address and title');
+      assert.ok(seen.filter((t) => t.url === null && t.title === null).length >= 2, 'the tabs on the other site come back redacted');
+      for (const t of seen) {
+        if (t.url === null) continue;
+        const u = new URL(t.url);
+        assert.ok(STAND_IN_HOSTS.includes(u.hostname) || LOOPBACK_HOSTS.includes(u.hostname) || u.protocol === 'chrome-extension:' || t.url === 'about:blank', `an address was visible that should not be: ${t.url}`);
+      }
+      assert.deepEqual(await inWorker(() => chrome.tabs.query({ url: ['https://accounts.other-site.example/*'] })), [], 'a filter aimed at that site finds nothing');
+      const listed = await core.request({ kind: 'list_chatgpt_tabs' });
+      assert.equal(listed.ok, true);
+      assert.ok(!JSON.stringify(listed.data).includes('other-site'), 'the bridge does not list it');
+      await other.close();
     });
 
     await step('focus_or_open: a page that never answers is given up on after 15 seconds, with a note', async () => {
@@ -489,7 +526,7 @@ async function main() {
 
     await step('nothing but the stand-in and the fake core was contacted', async () => {
       const hosts = new Set(standIn.requests.map((r) => r.host));
-      for (const h of hosts) assert.ok(STAND_IN_HOSTS.includes(h), `unexpected host ${h}`);
+      for (const h of hosts) assert.ok(STAND_IN_NAMES.includes(h), `unexpected host ${h}`);
       for (const c of core.connections) assert.equal(c.host, `127.0.0.1:${core.port}`);
     });
 

@@ -2,12 +2,16 @@
 import type { SessionKey, SessionView } from '@minisumma/shared';
 import { createStore } from 'zustand';
 import type { StoreApi } from 'zustand';
+import { isStartingUp } from '../features/workspace/sessionModel';
 import { closeTab, emptyTabs, openTab, replaceTab, withAutoTabs } from '../features/workspace/tabs';
 import type { TabModel } from '../features/workspace/tabs';
 
 export type PaneId = 'chatgpt' | 'claude';
 
 export type ProjectDialogState = { mode: 'create' } | { mode: 'edit'; projectId: string };
+
+/** When this window first saw a managed terminal without a state ("Starting"), and which run of the terminal that was. */
+export interface StartingMark { since: number; run: string | null }
 
 export interface UiState extends TabModel {
   /** The pane the person last interacted with. A neutral marker only; it never decides where input goes. */
@@ -16,6 +20,8 @@ export interface UiState extends TabModel {
   projectDialog: ProjectDialogState | null;
   /** A request to put keyboard focus into a terminal (after a tab click, a new session, a resume). Consumed by its slot. */
   terminalFocus: { key: SessionKey; nonce: number } | null;
+  /** Managed terminals that are still starting, with the moment each was first seen so. Drives the "answer in the terminal" hint. */
+  startingSince: Record<string, StartingMark>;
 }
 
 export interface UiActions {
@@ -32,16 +38,33 @@ export interface UiActions {
 
 export type UiStore = StoreApi<UiState & UiActions>;
 
-export function createUiStore(): UiStore {
+/** The previous marks, kept for sessions that are still starting in the same run; new ones start now. */
+export function nextStartingMarks(previous: Record<string, StartingMark>, sessions: readonly SessionView[], now: number): Record<string, StartingMark> {
+  const next: Record<string, StartingMark> = {};
+  let same = true;
+  for (const s of sessions) {
+    if (!isStartingUp(s)) continue;
+    const kept = previous[s.key];
+    // A resume writes a new startedAt: that is a new run, so the clock starts again.
+    const mark = kept && kept.run === s.startedAt ? kept : { since: now, run: s.startedAt };
+    if (mark !== kept) same = false;
+    next[s.key] = mark;
+  }
+  return same && Object.keys(next).length === Object.keys(previous).length ? previous : next;
+}
+
+export function createUiStore(now: () => number = Date.now): UiStore {
   return createStore<UiState & UiActions>((set, get) => ({
     ...emptyTabs(),
     focusedPane: null,
     projectDialog: null,
     terminalFocus: null,
+    startingSince: {},
     noteSessions(sessions) {
       const current = get();
       const next = withAutoTabs({ openTabs: current.openTabs, dismissed: current.dismissed }, sessions);
-      if (next.openTabs !== current.openTabs) set({ openTabs: next.openTabs });
+      const starting = nextStartingMarks(current.startingSince, sessions, now());
+      if (next.openTabs !== current.openTabs || starting !== current.startingSince) set({ openTabs: next.openTabs, startingSince: starting });
     },
     openTab(projectId, key) { set((s) => openTab(s, projectId, key)); },
     closeTab(projectId, key) { set((s) => closeTab(s, projectId, key)); },

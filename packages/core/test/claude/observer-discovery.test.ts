@@ -108,6 +108,22 @@ describe('refreshDiscovery', () => {
   });
 });
 
+describe('a terminal Mini-Summa started', () => {
+  it('is still "Starting" when discovery already lists it: only a hook proves Claude is past its startup dialogs', async () => {
+    const h0 = await harness([[agent()]]);
+    const { h } = h0;
+    h.managed.seed({ key: K1, projectId: null }, true);
+    await h.sessions.refreshDiscovery(); // `claude agents --json` shows it idle
+    expect(h.view(K1)).toMatchObject({ origin: 'managed', availability: 'live', state: 'unknown', stateLabel: 'Starting', attention: null });
+    expect(await h.sessions.typeInto(K1, { text: 'go', submit: true, expectGeneration: 1, allowedStates: ['idle', 'unknown'] })).toMatchObject({
+      ok: false, code: 'state_not_allowed', problem: expect.stringContaining('has not finished starting'),
+    });
+    await h.feed([hookEntry({ n: 1, payload: hookPayload('SessionStart', S1, { source: 'startup' }) })]);
+    expect(h.view(K1)).toMatchObject({ state: 'idle', stateLabel: 'Idle' });
+    expect(await h.sessions.typeInto(K1, { text: 'go', submit: true, expectGeneration: 1, allowedStates: ['idle'] })).toMatchObject({ ok: true });
+  });
+});
+
 describe('absence', () => {
   const lost = [agent()];
 

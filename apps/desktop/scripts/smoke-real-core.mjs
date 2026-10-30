@@ -50,7 +50,10 @@ delete env.NODE_OPTIONS;
 for (const key of Object.keys(env)) if (/proxy/i.test(key)) delete env[key];
 // Set in both modes. In a dev run they take effect; in a packaged run they must be ignored (and are checked below).
 env.MINISUMMA_DATA_DIR = decoyData;
-env.MINISUMMA_CLAUDE_BIN = '/bin/true';
+// A "Claude" that stays alive, so that there is a running terminal to ask about when the app quits.
+const fakeClaude = path.join(run, 'fake-claude');
+fs.writeFileSync(fakeClaude, '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "2.0.0 (Claude Code)"; exit 0; fi\nexec sleep 120\n', { mode: 0o755 });
+env.MINISUMMA_CLAUDE_BIN = fakeClaude;
 env.MINISUMMA_TEST_HOST_RULES = 'MAP chatgpt.com 127.0.0.1:9';
 env.MINISUMMA_TEST_TRUST_CERTS = '1';
 
@@ -174,17 +177,31 @@ try {
   await check('a managed pty can be started by the real core (node-pty loads from where the build puts it)', async () => {
     const created = await api('/projects', { method: 'POST', body: JSON.stringify({ name: 'smoke project', roots: [{ path: os.tmpdir() }] }) });
     assert.equal(created.status, 200, JSON.stringify(created.body));
-    // The command is the fake Claude (a no-op), so the session ends at once; what matters is that a pty was spawned.
+    // In a development run the command is the fake Claude above; a packaged app ignores it and looks for `claude` itself.
     const started = await api(`/projects/${created.body.id}/sessions`, { method: 'POST', body: JSON.stringify({ mode: 'new' }), headers: { 'idempotency-key': 'smoke-1' } });
     assert.ok([200, 400, 409, 422, 500].includes(started.status), `unexpected ${started.status}`);
     return `HTTP ${started.status} ${JSON.stringify(started.body).slice(0, 160)}`;
   });
 
-  await check('quitting stops the core and exits with code 0', async () => {
+  await check('quitting asks about the running terminal (exact wording), then stops the core and exits with code 0', async () => {
+    const live = (await api('/sessions')).body.filter((x) => x.origin === 'managed' && x.availability === 'live' && x.terminal && !x.terminal.exited).length;
+    const proof = path.join(run, 'quit-dialog.json');
+    await app.evaluate(({ dialog }, file) => {
+      // The app exits right after, so what it asked is written to a file from inside the app.
+      dialog.showMessageBox = async (...a) => { process.getBuiltinModule('node:fs').writeFileSync(file, JSON.stringify(a.at(-1))); return { response: 0, checkboxChecked: false }; };
+    }, proof);
     await app.evaluate(({ app: a }) => { setTimeout(() => a.quit(), 10); });
     const { code } = await Promise.race([exited, sleep(30_000).then(() => ({ code: 'timeout' }))]);
     assert.equal(code, 0);
-    assert.ok(fs.existsSync(path.join(packaged ? info.userData : decoyData, 'data', 'mini-summa.db')) || fs.existsSync(path.join(decoyData, 'mini-summa.db')) || true);
+    if (live > 0) {
+      const asked = JSON.parse(fs.readFileSync(proof, 'utf8'));
+      assert.equal(asked.message, 'Quit Mini-Summa?');
+      assert.equal(asked.detail, live === 1 ? 'Closing Mini-Summa ends 1 running Claude terminal. It can be resumed later.' : `Closing Mini-Summa ends ${live} running Claude terminals. They can be resumed later.`);
+      assert.equal(asked.defaultId, 1);
+      return `asked: "${asked.detail}", then exited cleanly`;
+    }
+    assert.ok(!fs.existsSync(proof), 'the app asked although no terminal was running');
+    return 'no live terminal at quit time; exited without asking';
   });
 } catch (error) {
   results.push({ name: 'harness', ok: false });
@@ -192,6 +209,7 @@ try {
   console.log('--- app output (tail) ---');
   console.log(out.join('').split('\n').slice(-30).join('\n'));
 } finally {
+  if (app.process().exitCode === null) { app.process().kill('SIGKILL'); await sleep(200); }
   await app.close().catch(() => undefined);
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed${failed.length ? `, ${failed.length} FAILED` : ''}.`);

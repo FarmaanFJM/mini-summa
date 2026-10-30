@@ -58,7 +58,7 @@ export type SendResult =
   | { kind: 'action'; action: PendingAction }
   /** The desktop answered with an error. Nothing was created. */
   | { kind: 'refused'; status: number; message: string }
-  /** No answer at all. The request may or may not have arrived. Retrying with the same key is safe. */
+  /** No answer, or an answer that does not settle it (408, 429, 5xx). The request may or may not have arrived. Retrying with the same key is safe. */
   | { kind: 'unconfirmed'; message: string };
 
 export async function sendPrompt(call: ConnectionApi['call'], attempt: SendAttempt): Promise<SendResult> {
@@ -70,7 +70,11 @@ export async function sendPrompt(call: ConnectionApi['call'], attempt: SendAttem
     );
     return { kind: 'action', action };
   } catch (err) {
-    if (err instanceof ApiError && err.status === 0) return { kind: 'unconfirmed', message: describeApiError(err) };
+    // No answer, or an answer the desktop does not remember (it stores 2xx and 4xx replies per key, not 408, 429 or 5xx):
+    // the request may or may not have been applied, and repeating it with the same key is exactly what is safe.
+    if (err instanceof ApiError && (err.status === 0 || err.status === 408 || err.status === 429 || err.status >= 500)) {
+      return { kind: 'unconfirmed', message: describeApiError(err) };
+    }
     if (err instanceof ApiError) return { kind: 'refused', status: err.status, message: describeApiError(err) };
     return { kind: 'unconfirmed', message: describeApiError(err) };
   }
@@ -84,8 +88,22 @@ export interface ActionOutcome {
   tone: 'neutral' | 'success' | 'error';
 }
 
+/** A permission request is answered, not sent: the wording follows what was done to it. */
+function describePermission(a: Pick<PendingAction, 'status' | 'failure'>): ActionOutcome {
+  switch (a.status) {
+    case 'pending': return { headline: 'Waiting for your answer', detail: null, final: false, tone: 'neutral' };
+    case 'approved': return { headline: 'Approved. Answering Claude now.', detail: null, final: false, tone: 'neutral' };
+    case 'executed': return { headline: 'Approved', detail: null, final: true, tone: 'success' };
+    case 'failed': return { headline: `Could not answer: ${a.failure?.trim() || 'the session did not accept the answer'}`, detail: null, final: true, tone: 'error' };
+    case 'rejected': return { headline: 'Rejected', detail: null, final: true, tone: 'neutral' };
+    case 'expired': return { headline: 'Expired before it was answered', detail: null, final: true, tone: 'neutral' };
+    case 'superseded': return { headline: 'No longer needed, the session moved on', detail: null, final: true, tone: 'neutral' };
+  }
+}
+
 /** What a recorded action means for the person who sent it. Wording is fixed by the product spec. */
-export function describeAction(a: Pick<PendingAction, 'status' | 'failure' | 'target'>): ActionOutcome {
+export function describeAction(a: Pick<PendingAction, 'status' | 'failure' | 'target'> & { kind?: PendingAction['kind'] }): ActionOutcome {
+  if (a.kind === 'permission') return describePermission(a);
   switch (a.status) {
     case 'pending':
       return { headline: 'Waiting for approval on your PC', detail: a.target.problem, final: false, tone: 'neutral' };

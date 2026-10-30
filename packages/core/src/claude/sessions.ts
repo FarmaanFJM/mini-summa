@@ -55,6 +55,7 @@
 //  - Hook files already waiting when the app starts are ingested before the replay and are reported as `replay: true`.
 //  - Resuming a session starts Claude in the session's own working directory (Claude finds the transcript through it);
 //    the chosen project folder only decides the project attribution.
+import { tidOfSpoolName } from '@minisumma/claude-integration';
 import { envLabel, parseSessionKey } from '@minisumma/shared';
 import type { EnvId, Project, SessionKey, SessionState, SessionView } from '@minisumma/shared';
 import { fromJson } from '@minisumma/storage';
@@ -161,7 +162,18 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
     }
     const known = runBaselines.get(record.key);
     if (known && known.startedAt === record.startedAt) return;
-    runBaselines.set(record.key, { startedAt: record.startedAt, seq: rawStore.maxSeq() });
+    runBaselines.set(record.key, { startedAt: record.startedAt, seq: rawStore.maxSeq(), waiting: waitingReceipts() });
+  }
+
+  /** The hook files lying in the spools right now. */
+  function waitingReceipts(): Set<string> {
+    const tids = new Set<string>();
+    for (const layout of ingestion.layouts()) {
+      try {
+        for (const name of rawStore.pendingSpool(layout.spoolDirHost)) tids.add(tidOfSpoolName(name));
+      } catch { /* an unreadable spool has nothing to exclude */ }
+    }
+    return tids;
   }
 
   const inFlight = new Map<SessionKey, { hooks: number; at: number; what: 'text' | 'answer' }>();

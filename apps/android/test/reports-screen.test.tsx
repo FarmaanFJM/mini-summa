@@ -82,6 +82,17 @@ describe('report detail', () => {
     expect(share).toHaveBeenCalledWith({ title: 'Add retry to the sync job', message: body });
   });
 
+  it('does not hand a report that is too long for the share sheet to Android, and says to copy it', async () => {
+    const share = jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction', activityType: undefined });
+    const huge = makeReport({ id: 'rep_1', body: 'x'.repeat(120_000) });
+    await open(createFakeCore({ reportBodies: { rep_1: huge } }));
+    await fireEvent.press(await screen.findByText('More'));
+    await fireEvent.press(await screen.findByText('Share'));
+    await flush();
+    expect(share).not.toHaveBeenCalled();
+    expect(screen.getByText(/120,000 characters, too long for the share sheet/)).toBeOnTheScreen();
+  });
+
   it('never writes the report to storage', async () => {
     jest.spyOn(Share, 'share').mockResolvedValue({ action: 'sharedAction', activityType: undefined });
     await open();

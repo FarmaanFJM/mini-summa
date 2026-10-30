@@ -67,7 +67,8 @@ export interface ConnectionApi {
   upsertReport(report: ReportSummary): void;
 }
 
-export const REVOKE_CLOSE_CODE = 4003;
+/** 4003: the desktop revoked this device while it was connected. 4401: the token is no longer accepted at hello. */
+export const REVOKE_CLOSE_CODES: readonly number[] = [4003, 4401];
 const SERVER_REVOKE_ERROR_CODES = new Set(['unauthorized', 'forbidden', 'revoked', 'device_revoked', 'invalid_token']);
 const RETRY_BASE_MS = 3_000;
 const RETRY_MAX_MS = 30_000;
@@ -117,6 +118,9 @@ export class ConnectionManager implements ConnectionApi {
   /** Open the stream. Safe to call repeatedly (for example on every return to the foreground). */
   start(): void {
     if (this.disposed || this.snap.status === 'revoked') return;
+    // Already connecting or open: leave it alone, so returning to the app does not drop a healthy connection.
+    const live = this.client?.events.status;
+    if (this.wanted && (live === 'open' || live === 'connecting' || live === 'reconnecting')) return;
     this.wanted = true;
     this.stopClient();
     const observed = observeWebSocket(this.deps.WebSocket ?? (globalThis as { WebSocket: WebSocketCtor }).WebSocket, (code, reason) => this.onSocketClosed(code, reason));
@@ -198,7 +202,7 @@ export class ConnectionManager implements ConnectionApi {
   }
 
   private onSocketClosed(code: number | null, _reason: string): void {
-    if (code === REVOKE_CLOSE_CODE) this.markRevoked();
+    if (code !== null && REVOKE_CLOSE_CODES.includes(code)) this.markRevoked();
   }
 
   // ---- reaching the desktop ---------------------------------------------------------------------------------------

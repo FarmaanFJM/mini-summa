@@ -115,8 +115,15 @@ describe('what the desktop says about the code', () => {
     [409, 'offer_used', 'This pairing offer was already used.', 'code_used', 'already used'],
     [404, 'not_found', 'Pairing offer was not found.', 'code_invalid', 'did not recognise'],
     [400, 'bad_request', 'The code does not match.', 'code_invalid', 'did not recognise'],
-    [429, 'rate_limited', 'Too many attempts.', 'too_many_attempts', 'Too many attempts'],
+    [429, 'rate_limited', 'Too many attempts.', 'too_many_attempts', 'Too many wrong codes'],
     [403, 'forbidden', 'No.', 'refused', 'refused'],
+    // The messages and codes the real core uses (packages/core/src/infra/devices.ts).
+    [404, 'offer_not_found', 'This pairing code is not known to this PC. Create a new one on the PC and scan it again.', 'code_invalid', 'did not recognise'],
+    [410, 'offer_used', 'This pairing code was already used. Create a new one on the PC to pair another device.', 'code_used', 'already used'],
+    [410, 'offer_expired', 'This pairing code has expired (codes last 5 minutes). Create a new one on the PC and scan it again.', 'code_expired', 'expired'],
+    [410, 'offer_burned', 'This pairing code was cancelled after too many wrong attempts. Create a new one on the PC and scan it again.', 'too_many_attempts', 'cancelled'],
+    [403, 'invalid_code', 'That pairing code is not correct. Scan the QR code on the PC again, or create a new one.', 'code_invalid', 'did not recognise'],
+    [429, 'too_many_attempts', 'Too many wrong codes. This pairing code is cancelled. Create a new one on the PC and scan it again.', 'too_many_attempts', 'cancelled'],
   ])('maps %i %s to %s', async (status, code, message, kind, wording) => {
     const err = await redeemWith(status as number, code as string, message as string);
     expect(err.kind).toBe(kind);

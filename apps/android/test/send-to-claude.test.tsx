@@ -209,6 +209,29 @@ describe('composing, confirming and sending', () => {
     expect(sendCalls(core)).toHaveLength(1);
   });
 
+  it.each([[503, 'unavailable'], [429, 'rate_limited'], [500, 'internal_error']])(
+    'a %i answer does not settle whether it was sent, so the key is kept for Retry (the desktop does not store such answers)',
+    async (status, code) => {
+      const core = createFakeCore();
+      let first = true;
+      core.on('POST /actions', () => {
+        if (first) { first = false; return { status, body: { error: { code, message: 'Not now.' } } }; }
+        return created(core, 'pending');
+      });
+      await openSend({}, core);
+      await compose();
+      await fireEvent.press(screen.getByText('Send to Claude'));
+      await flush();
+      expect(await screen.findByText('Could not confirm it was sent')).toBeOnTheScreen();
+      await fireEvent.press(screen.getByText('Retry'));
+      await flush();
+      const calls = sendCalls(core);
+      expect(calls).toHaveLength(2);
+      expect(calls[1].headers['idempotency-key']).toBe(calls[0].headers['idempotency-key']);
+      expect(await screen.findByText('Waiting for approval on your PC')).toBeOnTheScreen();
+    },
+  );
+
   it('ignores a second tap while the first send is in flight', async () => {
     const core = createFakeCore();
     let release: (r: Reply) => void = () => undefined;

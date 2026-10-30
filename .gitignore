@@ -45,3 +45,6 @@ apps/android/dist/
 apps/android/.gradle/
 apps/android/local.properties
 .android-sdk/
+
+# Vitest local output
+.vitest/

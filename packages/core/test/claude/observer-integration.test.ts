@@ -92,7 +92,12 @@ describe('a managed session, from start to report to stop, through real terminal
     const started = await s.sessions.start('p1', { mode: 'new', name: 'Fix login' }, desktop);
     const key = started.key;
     const { sessionId } = parseSessionKey(key)!;
-    expect(started).toMatchObject({ origin: 'managed', availability: 'live', name: 'Fix login', projectId: 'p1', projectResolution: 'managed', terminal: { exited: false } });
+    // right after the spawn nothing has been heard from Claude yet: it may still be on a startup or trust dialog
+    expect(started).toMatchObject({
+      origin: 'managed', availability: 'live', name: 'Fix login', projectId: 'p1', projectResolution: 'managed', terminal: { exited: false },
+      state: 'unknown', stateLabel: 'Starting', attention: null,
+    });
+    expect(s.sessions.targetCheck(key, 1).problem).toBe('Claude has not finished starting. If it is asking whether you trust this folder, answer in the terminal.');
 
     // the terminal exists at once; the hooks (from --settings, run by the fake CLI through the real capture script) tell the rest
     const idle = await s.waitState(key, 'idle');
@@ -154,6 +159,9 @@ describe('a managed session, from start to report to stop, through real terminal
 
     const resumed = await s.sessions.start('p1', { mode: 'resume', resumeKey: key }, desktop);
     expect(resumed.key).toBe(key);
+    // the earlier process's last state ("Turn ended", generation 1) must not be shown as this process's state
+    expect(resumed).toMatchObject({ availability: 'live', state: 'unknown', stateLabel: 'Starting', attention: null, generation: 1, termination: null });
+    expect(s.sessions.targetCheck(key, 1).problem).toMatch(/has not finished starting/);
     const again = await waitFor(() => { const v = s.sessions.get(key); return v && v.availability === 'live' && v.generation === 2 && v.state === 'idle' ? v : undefined; }, 'the second generation to start');
     expect(again).toMatchObject({ origin: 'managed', resumable: false, termination: null, generation: 2 });
     expect(s.collected.derived.some((d) => d.kind === 'generation' && d.sessionKey === key && d.generation === 2)).toBe(true);

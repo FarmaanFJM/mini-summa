@@ -8,9 +8,10 @@ import type {
   RouteInput, RouteName, RouteOutput, ServerMessage, SessionKey, SessionView, StateSnapshot, TailscaleStatus,
 } from '@minisumma/shared';
 import { isAwaitingHandoff } from '../../app/selectors';
+import { installFeatureHandlers } from './features-handlers';
 import { createSeed, IDS } from './seed';
 import type { DemoData } from './seed';
-import { EchoShell, replayFor } from './terminalSim';
+import { declinedScreen, EchoShell, readyScreen, replayFor, TrustShell } from './terminalSim';
 import { MemoryTransport } from './transport';
 
 type Handler<K extends RouteName> = (input: RouteInput<K>) => RouteOutput<K> | Promise<RouteOutput<K>>;
@@ -49,8 +50,13 @@ export class DemoServer {
   failSnapshot: string | null = null;
   /** Called when the app asks to open a conversation, so a simulated native view can follow. */
   onOpen: ((url: string) => void) | null = null;
+  /** New sessions begin on Claude's "Do you trust the files in this folder?" screen and stay "Starting" until it is answered. */
+  trustPrompt = false;
+  /** How long a started or resumed terminal takes to show its first sign of life (the first hook). */
+  firstHookDelayMs = 400;
   private latencyMs: number;
   private readonly terminals = new Map<SessionKey, { shell: EchoShell; seq: number }>();
+  private readonly trusting = new Map<SessionKey, TrustShell>();
 
   constructor(options: DemoServerOptions = {}) {
     this.data = options.seed ?? createSeed();
@@ -68,13 +74,15 @@ export class DemoServer {
           this.terminals.set(key, state);
           socket.attached.add(key);
           state.seq += 1;
-          reply({ t: 'term.attached', key, replay: replayFor(session, IDS_FOR_REPLAY), seq: state.seq, cols: message.cols, rows: message.rows });
+          reply({ t: 'term.attached', key, replay: this.trusting.get(key)?.screen() ?? replayFor(session, IDS_FOR_REPLAY), seq: state.seq, cols: message.cols, rows: message.rows });
           if (session.terminal?.exited) {
             reply({ t: 'term.exit', key, code: session.state === 'error' ? 1 : 0, signal: null, at: session.termination?.at ?? nowIso(), reason: session.termination?.reason ?? 'The session ended.' });
           }
         } else if (message.t === 'term.input') {
           const state = this.terminals.get(key);
           if (!state || !session || session.availability !== 'live') return;
+          const trust = this.trusting.get(key);
+          if (trust) { this.answerTrust(session, trust, message.data, state); return; }
           const echo = state.shell.feed(message.data);
           if (echo) { state.seq += 1; this.transport.sendToAttached(key, { t: 'term.data', key, seq: state.seq, data: echo } satisfies ServerMessage); }
         } else if (message.t === 'term.detach') {
@@ -82,6 +90,7 @@ export class DemoServer {
         }
       },
     });
+    installFeatureHandlers(this, this.handlers); // reports, activity, settings and onboarding routes (features-handlers.ts)
   }
 
   // ------------------------------------------------------------------------------------------ plumbing
@@ -126,6 +135,43 @@ export class DemoServer {
     const result = await handler(input ?? {});
     return result === undefined ? undefined : structuredClone(result);
   }) as unknown as import('../../app/api').ApiClient['call'];
+
+  // ------------------------------------------------------------------------------------------ terminals
+
+  /** The first hook of a new run: from here on the session has a state of its own. */
+  private firstHook(view: SessionView): void {
+    if (view.availability !== 'live' || view.state !== 'unknown') return;
+    view.state = 'waiting_for_you';
+    view.stateLabel = 'Waiting for you';
+    view.lastActivityAt = nowIso();
+    this.touchSession(view);
+  }
+
+  private endSession(s: SessionView, reason: string, resumable: boolean): SessionView {
+    s.availability = resumable ? 'resumable' : 'ended';
+    s.resumable = resumable;
+    s.state = 'ended'; s.stateLabel = 'Ended'; s.attention = null; s.pid = null;
+    s.termination = { kind: 'observed', reason, at: nowIso() };
+    s.terminal = s.terminal ? { ...s.terminal, exited: true } : null;
+    this.trusting.delete(s.key);
+    this.transport.sendToAttached(s.key, { t: 'term.exit', key: s.key, code: 0, signal: null, at: nowIso(), reason });
+    return this.touchSession(s);
+  }
+
+  /** The person answers the trust screen in the terminal. "Yes" starts Claude (and its first hook); "No, exit" ends the session. */
+  private answerTrust(session: SessionView, trust: TrustShell, data: string, state: { seq: number }): void {
+    const { out, decision } = trust.feed(data);
+    const send = (text: string) => { if (!text) return; state.seq += 1; this.transport.sendToAttached(session.key, { t: 'term.data', key: session.key, seq: state.seq, data: text } satisfies ServerMessage); };
+    send(out);
+    if (decision === 'yes') {
+      this.trusting.delete(session.key);
+      send(readyScreen(session.cwd ?? '~'));
+      setTimeout(() => this.firstHook(session), this.firstHookDelayMs);
+    } else if (decision === 'no') {
+      send(declinedScreen());
+      this.endSession(session, 'Claude exited at the trust prompt.', false);
+    }
+  }
 
   // ------------------------------------------------------------------------------------------ lookups
 
@@ -227,8 +273,17 @@ export class DemoServer {
       if (body.name !== undefined) for (const s of this.data.sessions) if (s.projectId === p.id) s.projectName = p.name;
       return this.touchProject(p);
     },
-    'projects.remove': (i) => {
+    'projects.remove': async (i) => {
       const p = this.project(i.params.id);
+      // As the real core: a project with running Claude terminals is refused until the caller says to end them.
+      const running = this.data.sessions.filter((s) => s.projectId === p.id && s.origin === 'managed' && s.availability === 'live');
+      if (running.length > 0) {
+        if (!i.query?.stopSessions) {
+          const n = running.length;
+          throw new ApiError(409, 'sessions_running', `This project has ${n} running Claude terminal${n === 1 ? '' : 's'}. Stop ${n === 1 ? 'it' : 'them'} first, or confirm that Mini-Summa should stop ${n === 1 ? 'it' : 'them'} when removing the project.`, { sessions: running.map((s) => s.key) });
+        }
+        for (const s of running) this.endSession(s, 'You stopped the session.', true);
+      }
       if (i.query?.mode === 'delete') {
         const d = this.data;
         d.projects = d.projects.filter((x) => x.id !== p.id);
@@ -345,25 +400,22 @@ export class DemoServer {
       const sessionId = crypto.randomUUID();
       const view: SessionView = {
         key: `${env}|${sessionId}` as SessionKey, env, sessionId, origin: 'managed', availability: 'live', termination: null, resumable: false,
-        projectId: p.id, projectName: p.name, projectResolution: 'managed', cwd: chosen.path, name: body.name ?? null, state: 'idle', stateLabel: 'Starting', stateEvidence: 'managed:pty',
+        projectId: p.id, projectName: p.name, projectResolution: 'managed', cwd: chosen.path, name: body.name ?? null, state: 'unknown', stateLabel: 'Starting', stateEvidence: 'managed:pty',
         generation: 1, pid: 5000 + Math.floor(Math.random() * 900), startedAt: nowIso(), lastActivityAt: nowIso(), attention: null, unresolvedOrdering: 0,
         terminal: { cols: 120, rows: 32, exited: false }, isProjectDefault: false,
         remoteControl: { state: 'not_enabled', hint: 'Type /remote-control in this session to control it from the Claude app or the web.' },
       };
       this.data.sessions.push(view);
       this.touchSession(view);
-      setTimeout(() => { view.state = 'waiting_for_you'; view.stateLabel = 'Waiting for you'; this.touchSession(view); }, 400);
+      if (this.trustPrompt && body.mode === 'new') this.trusting.set(view.key, new TrustShell(chosen.path));
+      else setTimeout(() => this.firstHook(view), this.firstHookDelayMs);
       if (!p.defaultSessionKey) { p.defaultSessionKey = view.key; view.isProjectDefault = true; this.touchProject(p); }
       return view;
     },
     'sessions.stop': (i) => {
       const s = this.session(i.params.key);
       if (s.origin !== 'managed') throw new ApiError(409, 'not_managed', 'Only sessions started by Mini-Summa can be stopped here.');
-      s.availability = 'resumable'; s.resumable = true; s.state = 'ended'; s.stateLabel = 'Ended'; s.attention = null; s.pid = null;
-      s.termination = { kind: 'observed', reason: 'You stopped the session.', at: nowIso() };
-      s.terminal = s.terminal ? { ...s.terminal, exited: true } : null;
-      this.transport.sendToAttached(s.key, { t: 'term.exit', key: s.key, code: 0, signal: null, at: nowIso(), reason: 'You stopped the session.' });
-      return this.touchSession(s);
+      return this.endSession(s, 'You stopped the session.', true);
     },
     'sessions.bind': (i) => {
       const { projectId } = parseBody('sessions.bind', i.body) as { projectId: string | null };

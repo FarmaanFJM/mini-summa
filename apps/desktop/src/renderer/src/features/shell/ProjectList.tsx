@@ -132,23 +132,46 @@ function ProjectRow({ project, stats, selected, onSelect, onEdit, onArchive, onD
   );
 }
 
+/** How many running terminals the core named when it refused to remove a project (409 sessions_running), or null for any other error. */
+export function runningTerminalsIn(err: unknown): number | null {
+  if (typeof err !== 'object' || err === null || (err as { code?: unknown }).code !== 'sessions_running') return null;
+  const list = (err as { details?: { sessions?: unknown } }).details?.sessions;
+  return Array.isArray(list) && list.length > 0 ? list.length : 1;
+}
+
+/** What removing a project does to its running Claude terminals, as a sentence for the confirmation. */
+export function endsTerminalsNote(terminals: number): string {
+  if (terminals === 0) return '';
+  return terminals === 1
+    ? ' Removing it also ends its running Claude terminal. You can resume the session later.'
+    : ` Removing it also ends its ${terminals} running Claude terminals. You can resume the sessions later.`;
+}
+
 function ProjectConfirm({ confirm, onClose }: { confirm: Confirm; onClose: () => void }) {
   const api = useApi();
   const reportCount = useApp((s) => (confirm ? s.reports.filter((r) => r.projectId === confirm.project.id).length : 0));
   const deliveryCount = useApp((s) => (confirm ? s.deliveries.filter((d) => d.projectId === confirm.project.id).length : 0));
-  const liveCount = useApp((s) => (confirm ? s.sessions.filter((x) => x.projectId === confirm.project.id && x.availability === 'live').length : 0));
+  // Terminals Mini-Summa started are the ones removing the project ends. Sessions started elsewhere are only watched, so they keep running.
+  const ownTerminals = useApp((s) => (confirm ? s.sessions.filter((x) => x.projectId === confirm.project.id && x.origin === 'managed' && x.availability === 'live').length : 0));
+  const outsideRunning = useApp((s) => (confirm ? s.sessions.filter((x) => x.projectId === confirm.project.id && x.origin !== 'managed' && x.availability === 'live').length : 0));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { setError(null); }, [confirm]);
+  // The core can know about terminals this window has not heard of yet. It refuses once, and the next confirmation says so.
+  const [coreCount, setCoreCount] = useState(0);
+  useEffect(() => { setError(null); setCoreCount(0); }, [confirm]);
+  const terminals = Math.max(ownTerminals, coreCount);
 
   const run = async () => {
     if (!confirm) return;
     setBusy(true);
     setError(null);
     try {
-      await api.call('projects.remove', { params: { id: confirm.project.id }, query: { mode: confirm.kind } });
+      const query = terminals > 0 ? { mode: confirm.kind, stopSessions: true } : { mode: confirm.kind };
+      await api.call('projects.remove', { params: { id: confirm.project.id }, query });
       onClose();
     } catch (err) {
+      const running = runningTerminalsIn(err);
+      if (running !== null) setCoreCount(running);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
@@ -157,7 +180,8 @@ function ProjectConfirm({ confirm, onClose }: { confirm: Confirm; onClose: () =>
 
   if (!confirm) return null;
   const { project } = confirm;
-  const sessionsNote = liveCount > 0 ? ` ${liveCount === 1 ? 'The running session is' : `The ${liveCount} running sessions are`} not stopped.` : '';
+  const outsideNote = outsideRunning > 0 ? ` ${plural(outsideRunning, 'session')} started outside Mini-Summa ${outsideRunning === 1 ? 'keeps' : 'keep'} running.` : '';
+  const sessionsNote = `${endsTerminalsNote(terminals)}${outsideNote}`;
   return confirm.kind === 'archive' ? (
     <ConfirmDialog
       open
