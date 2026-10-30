@@ -179,6 +179,75 @@ describe('archiving and deleting', () => {
   });
 });
 
+describe('removing a project that has running Claude terminals', () => {
+  it('says that its terminals end too, and asks the core to stop them', async () => {
+    const user = userEvent.setup();
+    const app = await renderApp();
+    const calls = vi.spyOn(app.demo, 'call');
+    await user.click(screen.getByRole('button', { name: 'Actions for Atlas API' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Archive project' }));
+    const dialog = screen.getByRole('dialog', { name: 'Archive Atlas API?' });
+    expect(dialog.textContent).toContain('Removing it also ends its running Claude terminal. You can resume the session later.');
+    await user.click(within(dialog).getByRole('button', { name: 'Archive project' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Atlas API/ })).toBeNull());
+    expect(calls).toHaveBeenCalledWith('projects.remove', { params: { id: IDS.atlas }, query: { mode: 'archive', stopSessions: true } });
+    // The terminal was ended, not lost: the session is resumable.
+    expect(app.runtime.store.getState().sessions.find((x) => x.key === IDS.s.atlasIdle)?.availability).toBe('resumable');
+  });
+
+  it('counts the terminals, and keeps sessions started elsewhere out of it', async () => {
+    const user = userEvent.setup();
+    const app = await renderApp();
+    const calls = vi.spyOn(app.demo, 'call');
+    await user.click(screen.getByRole('button', { name: 'Actions for GitManager' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Delete project' }));
+    const dialog = screen.getByRole('alertdialog', { name: 'Delete GitManager?' });
+    expect(dialog.textContent).toContain('Removing it also ends its 2 running Claude terminals. You can resume the sessions later.');
+    expect(dialog.textContent).toContain('1 session started outside Mini-Summa keeps running.');
+    await user.click(within(dialog).getByRole('button', { name: 'Delete project' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^GitManager/ })).toBeNull());
+    expect(calls).toHaveBeenCalledWith('projects.remove', { params: { id: IDS.gitManager }, query: { mode: 'delete', stopSessions: true } });
+  });
+
+  it('does not ask for sessions to be stopped when nothing is running there, and does not mention it', async () => {
+    const user = userEvent.setup();
+    const app = await renderApp();
+    const calls = vi.spyOn(app.demo, 'call');
+    await user.click(screen.getByRole('button', { name: 'Actions for Trading dashboard' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Delete project' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog.textContent).not.toContain('terminal');
+    expect(dialog.textContent).toContain('1 session started outside Mini-Summa keeps running.'); // the background session
+    await user.click(within(dialog).getByRole('button', { name: 'Delete project' }));
+    await waitFor(() => expect(calls).toHaveBeenCalledWith('projects.remove', { params: { id: IDS.dashboard }, query: { mode: 'delete' } }));
+  });
+
+  it('when the core knows of a terminal this window does not, it refuses once, says so, and stops it only on the next confirmation', async () => {
+    const user = userEvent.setup();
+    const app = await renderApp();
+    const calls = vi.spyOn(app.demo, 'call');
+    // A terminal the renderer has not been told about (it exists in the core only).
+    const template = structuredClone(app.runtime.store.getState().sessions.find((x) => x.key === IDS.s.atlasIdle)!);
+    const hidden = { ...template, key: 'win|11111111-2222-4333-8444-555555555555', sessionId: '11111111-2222-4333-8444-555555555555', env: 'win' as const, projectId: IDS.docs, projectName: 'Docs site' };
+    app.demo.demo.server.data.sessions.push(hidden as never);
+
+    await user.click(screen.getByRole('button', { name: 'Actions for Docs site' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Archive project' }));
+    const dialog = screen.getByRole('dialog', { name: 'Archive Docs site?' });
+    expect(dialog.textContent).not.toContain('terminal');
+    await user.click(within(dialog).getByRole('button', { name: 'Archive project' }));
+
+    expect(await within(dialog).findByText(/This project has 1 running Claude terminal/)).toBeTruthy();
+    expect(dialog.textContent).toContain('Removing it also ends its running Claude terminal.');
+    expect(calls).toHaveBeenLastCalledWith('projects.remove', { params: { id: IDS.docs }, query: { mode: 'archive' } });
+    expect(screen.getByRole('button', { name: /^Docs site/ })).toBeTruthy(); // nothing was removed
+
+    await user.click(within(dialog).getByRole('button', { name: 'Archive project' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Docs site/ })).toBeNull());
+    expect(calls).toHaveBeenLastCalledWith('projects.remove', { params: { id: IDS.docs }, query: { mode: 'archive', stopSessions: true } });
+  });
+});
+
 describe('the sidebar before and without data', () => {
   it('shows skeleton rows while loading, not an empty list', async () => {
     await renderApp({ scenario: 'loading' });

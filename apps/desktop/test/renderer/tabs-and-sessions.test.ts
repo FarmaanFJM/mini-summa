@@ -1,9 +1,12 @@
 import type { PendingAction, SessionKey, SessionView } from '@minisumma/shared';
 import { describe, expect, it } from 'vitest';
 import { createSeed, IDS } from '../../src/renderer/src/dev/demo/seed';
+import { nextStartingMarks } from '../../src/renderer/src/app/uiStore';
 import {
-  describeInputTarget, dotTone, formatRelative, noticeFor, originAndEnv, shortId, tabTitle, waitingFor,
+  canOfferTyping, describeInputTarget, dotTone, formatRelative, isStartingUp, noticeFor, originAndEnv, shortId, STARTING_HINT, STARTING_HINT_AFTER_MS,
+  tabTitle, waitingFor,
 } from '../../src/renderer/src/features/workspace/sessionModel';
+import { endsTerminalsNote, runningTerminalsIn } from '../../src/renderer/src/features/shell/ProjectList';
 import {
   closeTab, emptyTabs, openTab, replaceTab, selectionAfterClose, visibleTabs, withAutoTabs,
 } from '../../src/renderer/src/features/workspace/tabs';
@@ -191,5 +194,92 @@ describe('session tabs', () => {
     expect(selectionAfterClose(tabs, tabs[1].key)).toBe(tabs[0].key);
     expect(selectionAfterClose(tabs, tabs[0].key)).toBe(tabs[1].key);
     expect(selectionAfterClose([tabs[0]], tabs[0].key)).toBeNull();
+  });
+});
+
+describe('a terminal that is still starting', () => {
+  const starting = (over: Partial<SessionView> = {}): SessionView => ({
+    ...find(IDS.s.atlasIdle), state: 'unknown', stateLabel: 'Starting', attention: null, startedAt: '2026-10-30T10:00:00.000Z', ...over,
+  });
+
+  it('is a managed, running terminal with no state yet, and nothing else', () => {
+    expect(isStartingUp(starting())).toBe(true);
+    expect(isStartingUp(starting({ availability: 'resumable' }))).toBe(false);
+    expect(isStartingUp(starting({ availability: 'disconnected' }))).toBe(false);
+    expect(isStartingUp(starting({ origin: 'external' }))).toBe(false);
+    expect(isStartingUp(find(IDS.s.gmWorking))).toBe(false);
+  });
+
+  it('points to the terminal after six seconds, in the architect\'s words', () => {
+    expect(STARTING_HINT_AFTER_MS).toBe(6000);
+    expect(STARTING_HINT).toBe('Claude may be waiting for you to answer a question in the terminal, such as whether you trust this folder.');
+    expect(STARTING_HINT).not.toMatch(/\u2014|\u2013/);
+  });
+
+  it('gets no notice of its own from the model: the hint is about time, which the component owns', () => {
+    expect(noticeFor(starting(), [])).toBeNull();
+  });
+
+  it('is shown as having no state: a quiet dot, not busy and not idle', () => {
+    expect(dotTone(starting())).toBe('off');
+  });
+
+  it('gets no offer to type for the person, in any form', () => {
+    expect(canOfferTyping(starting())).toBe(false);
+    // The same session once it has a state may be offered typing.
+    expect(canOfferTyping(starting({ state: 'waiting_for_you' }))).toBe(true);
+    expect(canOfferTyping(find(IDS.s.gmWorking))).toBe(true);
+  });
+
+  it('is never offered typing when it is observed, not running, or gone', () => {
+    expect(canOfferTyping(find(IDS.s.gmExternal))).toBe(false);
+    expect(canOfferTyping(find(IDS.s.dashBackground))).toBe(false);
+    expect(canOfferTyping(find(IDS.s.atlasResumable))).toBe(false);
+    expect(canOfferTyping(find(IDS.s.docsDisconnected))).toBe(false);
+    expect(canOfferTyping(find(IDS.s.dashFailed))).toBe(false);
+    expect(canOfferTyping(starting({ state: 'presence_lost' }))).toBe(false);
+  });
+});
+
+describe('when a terminal was first seen starting', () => {
+  const starting = (key: string, startedAt: string | null): SessionView => ({ ...find(IDS.s.atlasIdle), key: key as SessionKey, state: 'unknown', startedAt });
+
+  it('marks a terminal the first time it is seen starting, and only that one', () => {
+    const marks = nextStartingMarks({}, [starting('a', 't1'), find(IDS.s.gmWorking)], 1000);
+    expect(marks).toEqual({ a: { since: 1000, run: 't1' } });
+  });
+
+  it('keeps the first moment while the same run is still starting, and returns the same object when nothing changed', () => {
+    const first = nextStartingMarks({}, [starting('a', 't1')], 1000);
+    const again = nextStartingMarks(first, [starting('a', 't1')], 9000);
+    expect(again).toBe(first);
+  });
+
+  it('starts again for a new run of the same session (a resume writes a new start time)', () => {
+    const first = nextStartingMarks({}, [starting('a', 't1')], 1000);
+    expect(nextStartingMarks(first, [starting('a', 't2')], 5000)).toEqual({ a: { since: 5000, run: 't2' } });
+  });
+
+  it('forgets a terminal as soon as it has a state, or is gone', () => {
+    const first = nextStartingMarks({}, [starting('a', 't1'), starting('b', 't1')], 1000);
+    const next = nextStartingMarks(first, [{ ...starting('a', 't1'), state: 'idle' }, starting('b', 't1')], 2000);
+    expect(Object.keys(next)).toEqual(['b']);
+    expect(nextStartingMarks(next, [], 3000)).toEqual({});
+  });
+});
+
+describe('removing a project with running terminals', () => {
+  it('reads the number of terminals from the core\'s refusal, and ignores every other error', () => {
+    expect(runningTerminalsIn({ code: 'sessions_running', details: { sessions: ['a', 'b'] } })).toBe(2);
+    expect(runningTerminalsIn({ code: 'sessions_running' })).toBe(1);
+    expect(runningTerminalsIn({ code: 'conflict', details: { sessions: ['a'] } })).toBeNull();
+    expect(runningTerminalsIn(new Error('boom'))).toBeNull();
+    expect(runningTerminalsIn(null)).toBeNull();
+  });
+
+  it('says plainly that the terminals end and can be resumed', () => {
+    expect(endsTerminalsNote(0)).toBe('');
+    expect(endsTerminalsNote(1)).toBe(' Removing it also ends its running Claude terminal. You can resume the session later.');
+    expect(endsTerminalsNote(3)).toBe(' Removing it also ends its 3 running Claude terminals. You can resume the sessions later.');
   });
 });
