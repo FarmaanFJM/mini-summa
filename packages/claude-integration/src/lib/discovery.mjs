@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import path from 'node:path';
 
 // Documented fields of `claude agents --json` (code.claude.com/docs/en/agent-view).
 export const DOCUMENTED = {
@@ -87,6 +88,48 @@ export function agentsCommand({ configDir, cwd, all, wslDistro, bin, platform = 
   return command;
 }
 
+// taskkill.exe by its full path (a bare name is looked up in the current directory first), only from a local drive's SystemRoot.
+function taskkillPath(env = process.env) {
+  const root = [env.SystemRoot, env.windir].find((v) => typeof v === 'string' && /^[A-Za-z]:[\\/][^"<>|*?\u0000-\u001f]*$/.test(v.trim()));
+  return path.win32.join(root ? root.trim() : 'C:\\Windows', 'System32', 'taskkill.exe');
+}
+
+// Ends a Windows process and everything it started (`taskkill /pid N /T /F`). Resolves when taskkill is done; never rejects.
+// The tree is found through the parent links, which are gone once the parent has died, so this runs BEFORE the parent is killed.
+function killTreeWindows(pid) {
+  return new Promise((resolve) => {
+    try { execFile(taskkillPath(), ['/pid', String(pid), '/T', '/F'], { windowsHide: true, timeout: 5000 }, () => resolve()); } catch { resolve(); }
+  });
+}
+
+// execFile with a deadline, and an input that is closed at once so a program that waits for input ends instead of waiting for ever.
+// On Windows the deadline is kept here, not in execFile: the npm `claude.cmd` is a batch file started as `cmd.exe /d /s /c ...`, and
+// killing cmd.exe at execFile's deadline leaves the node.exe behind it running with the pipes open, so the callback would never
+// come (and whatever awaits the result, the discovery pass, would wait for ever). The tree is ended first, then the process.
+// Resolves with { err, stdout, stderr, timedOut } and never rejects. `platform` and `killTree` are test seams.
+export function execWithDeadline(file, args, options, { timeoutMs, platform = process.platform, killTree = killTreeWindows } = {}) {
+  return new Promise((resolve) => {
+    let timer;
+    let timedOut = false;
+    let child;
+    try {
+      child = execFile(file, args, { ...options, ...(platform === 'win32' ? {} : { timeout: timeoutMs }) }, (err, stdout, stderr) => {
+        clearTimeout(timer);
+        resolve({ err, stdout, stderr, timedOut });
+      });
+    } catch (err) { resolve({ err, stdout: '', stderr: '', timedOut: false }); return; }
+    child.stdin?.on('error', () => {}); // the program may be gone before the input closes
+    child.stdin?.end();
+    if (platform === 'win32') {
+      timer = setTimeout(() => {
+        timedOut = true;
+        const finish = () => { try { child.kill(); } catch { /* already gone */ } };
+        if (Number.isInteger(child.pid) && child.pid > 0) Promise.resolve(killTree(child.pid)).then(finish, finish); else finish();
+      }, timeoutMs);
+    }
+  });
+}
+
 // Runs `claude agents --json`. With wslDistro it runs inside that distribution through wsl.exe, so the
 // answer describes WSL sessions (their own ~/.claude), never Windows ones.
 export function runAgentsJson({ configDir, cwd, all, wslDistro, timeoutMs = 20000, bin } = {}) {
@@ -95,13 +138,13 @@ export function runAgentsJson({ configDir, cwd, all, wslDistro, timeoutMs = 2000
   let command;
   try { command = agentsCommand({ configDir, cwd, all, wslDistro, bin }); } catch (err) { return Promise.reject(err); }
   const { file, args: argv, spawnFile, spawnArgs, windowsVerbatimArguments } = command;
-  return new Promise((resolve, reject) => {
-    execFile(spawnFile, spawnArgs, { env, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, windowsVerbatimArguments, windowsHide: true }, (err, stdout, stderr) => {
-      if (err) return reject(Object.assign(new Error(`${file} ${argv.join(' ')} failed: ${err.message}`), { stderr }));
-      try { resolve({ raw: JSON.parse(stdout), args: argv, file }); }
-      catch { reject(new Error(`unparsable output: ${stdout.slice(0, 200)}`)); }
+  return execWithDeadline(spawnFile, spawnArgs, { env, maxBuffer: 8 * 1024 * 1024, windowsVerbatimArguments, windowsHide: true }, { timeoutMs })
+    .then(({ err, stdout, stderr, timedOut }) => {
+      if (timedOut) throw Object.assign(new Error(`${file} ${argv.join(' ')} failed: timed out after ${Math.round(timeoutMs / 1000)} seconds`), { stderr });
+      if (err) throw Object.assign(new Error(`${file} ${argv.join(' ')} failed: ${err.message}`), { stderr });
+      try { return { raw: JSON.parse(stdout), args: argv, file }; }
+      catch { throw new Error(`unparsable output: ${stdout.slice(0, 200)}`); }
     });
-  });
 }
 
 // Same-host liveness hint. null = cannot be checked (a pid from another OS or from inside WSL).

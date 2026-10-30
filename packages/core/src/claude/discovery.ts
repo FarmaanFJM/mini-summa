@@ -11,7 +11,6 @@
 //
 // A WSL distribution is asked through wsl.exe started by its FULL path on a Windows host (windowsPrograms.ts): the library's own
 // runAgentsJson starts the bare name `wsl.exe`, which the process-start code would look for in the current directory first.
-import { execFile } from 'node:child_process';
 import { takeSnapshot } from '@minisumma/claude-integration';
 import type { RawStoreLike, RunAgentsJsonOptions } from '@minisumma/claude-integration';
 import { isWslEnv } from '@minisumma/shared';
@@ -19,6 +18,7 @@ import type { DiscoveryRefreshResult, EnvId } from '@minisumma/shared';
 import type { Clock, EnvironmentsService, Logger } from '../contracts.ts';
 import { nowIso } from '../contracts.ts';
 import { CoreError } from '../errors.ts';
+import { defaultCommandRunner } from './commandRunner.ts';
 import type { SerialQueue } from './serialQueue.ts';
 import { systemProgramPath } from './windowsPrograms.ts';
 
@@ -70,12 +70,13 @@ const LOCAL_TIMEOUT_MS = 20_000;
 /** The first call into a stopped WSL distribution has to start it. */
 const WSL_TIMEOUT_MS = 30_000;
 
-const execJson: ExecJson = (file, args, opts) => new Promise((resolve, reject) => {
-  execFile(file, args, { env: opts.env, timeout: opts.timeoutMs, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
-    if (err) { reject(Object.assign(new Error(`${file} ${args.join(' ')} failed: ${err.message}`), { stderr })); return; }
-    try { resolve(JSON.parse(stdout)); } catch { reject(new Error(`unparsable output: ${String(stdout).slice(0, 200)}`)); }
-  });
-});
+// Through the shared command runner, so a deadline on Windows also ends the children of a .cmd launcher (a hung `claude agents`
+// would otherwise hold the queue that spool ingestion shares), and the program's input is closed at once.
+const execJson: ExecJson = async (file, args, opts) => {
+  const r = await defaultCommandRunner(file, args, { timeoutMs: opts.timeoutMs, env: opts.env as Record<string, string> });
+  if (r.code !== 0) throw Object.assign(new Error(`${file} ${args.join(' ')} failed: ${r.error ?? `it exited with code ${r.code}`}`), { stderr: r.stderr });
+  try { return JSON.parse(r.stdout); } catch { throw new Error(`unparsable output: ${r.stdout.slice(0, 200)}`); }
+};
 
 const agentsArgs = (opts: RunAgentsJsonOptions): string[] => {
   const args = ['agents', '--json'];
