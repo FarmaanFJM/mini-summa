@@ -2,9 +2,12 @@ import type { Project, SessionKey, SessionView } from '@minisumma/shared';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNative } from '../../app/native';
 import { useApi, useApp, useRoute, useRuntime, useTerminals, useUi } from '../../app/runtime';
-import { Button, ConfirmDialog, EmptyState, IconButton, Menu, Tabs, tabPanelProps, toast, setToastAnchor } from '../../ui';
+import { Button, ConfirmDialog, EmptyState, Icon, IconButton, Menu, Tabs, tabPanelProps, toast, setToastAnchor } from '../../ui';
 import type { MenuEntry, TabItem } from '../../ui';
 import { useHandoffStrip } from '../reports/HandoffStrip';
+import { ClaudeEmpty } from './ClaudeEmpty';
+import { claudeStart, CLOUD_TAB_ID, hasCloudTab } from './claudeCloud';
+import { CloudPanel } from './CloudPanel';
 import { NewSessionDialog } from './NewSessionDialog';
 import { ObservedPanel, SessionNotice } from './SessionPanels';
 import { formatRelative, ORIGIN_LABEL, shortId, tabTitle } from './sessionModel';
@@ -16,12 +19,11 @@ import { envLabel, shortSessionId } from '@minisumma/shared';
 
 export interface ClaudePaneProps {
   project: Project;
+  /** On screen: the workspace is the current view and the other pane is not shown alone. */
   visible: boolean;
-  maximized: boolean;
-  onToggleMaximize: () => void;
 }
 
-export function ClaudePane({ project, visible, maximized, onToggleMaximize }: ClaudePaneProps) {
+export function ClaudePane({ project, visible }: ClaudePaneProps) {
   const sessions = useApp((s) => s.sessions);
   const openTabs = useUi((s) => s.openTabs);
   const dismissed = useUi((s) => s.dismissed);
@@ -34,10 +36,23 @@ export function ClaudePane({ project, visible, maximized, onToggleMaximize }: Cl
   const root = useRef<HTMLElement>(null);
   // While the handoff strip offers its main button, an empty pane keeps its own quiet: one main action at a time (P15).
   const stripShown = useHandoffStrip(project.id) !== null;
+  // The project the one Claude Code view was last given to (see CloudPanel).
+  const cloudOwner = useRef<string | null>(null);
 
   const tabs = useMemo(() => visibleTabs({ openTabs, dismissed }, project.id, sessions), [openTabs, dismissed, project.id, sessions]);
   const chosen = route.sessionByProject[project.id];
   const selected = pickSelectedTab(tabs, chosen, sessions);
+
+  // The Cloud tab: there when the project has a GitHub repository, or a page of Claude Code on the web is remembered for it. Which of
+  // the tabs shows is in memory only (the route keeps the session the person chose; it never holds the Cloud tab).
+  const remembered = route.cloudUrlByProject[project.id];
+  const cloudTab = hasCloudTab(project, remembered);
+  const cloudChosen = route.cloudShown[project.id] === true;
+  const cloudShown = cloudTab && cloudChosen;
+
+  // A Cloud tab that went away (the repository was removed) is not the tab that is shown: the local session is, and the core is told so.
+  const { hideCloud } = route;
+  useEffect(() => { if (cloudChosen && !cloudTab) hideCloud(project.id); }, [cloudChosen, cloudTab, hideCloud, project.id]);
 
   // A session chosen before (restored, or named by a notification) gets its tab if it belongs here.
   useEffect(() => {
@@ -48,12 +63,13 @@ export function ClaudePane({ project, visible, maximized, onToggleMaximize }: Cl
 
   // What is shown stays shown. Without a choice the first tab is displayed, and tabs re-sort when a session stops; remembering
   // the displayed one keeps the person on the session they were looking at (and its "ended" notice) instead of jumping away.
+  // While the Cloud tab is shown no session is displayed, and choosing one would take the pane away from it.
   const { selectSession } = route;
   useEffect(() => {
-    if (!selected || chosen === selected.key) return;
+    if (cloudShown || !selected || chosen === selected.key) return;
     if (chosen && sessions.some((x) => x.key === chosen && (x.projectId === project.id || x.projectId === null))) return; // its tab is about to open
     selectSession(project.id, selected.key);
-  }, [selected, chosen, sessions, project.id, selectSession]);
+  }, [cloudShown, selected, chosen, sessions, project.id, selectSession]);
 
   // Toasts sit over this pane, so the native ChatGPT view never covers them.
   useEffect(() => {
@@ -65,13 +81,18 @@ export function ClaudePane({ project, visible, maximized, onToggleMaximize }: Cl
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [stopping, setStopping] = useState<SessionView | null>(null);
 
-  const newSession = () => {
-    if (project.roots.length === 0) {
-      toast({ title: 'Add a repository folder first', body: `${project.name} has no folder to start Claude in.`, kind: 'warning' });
-      openProjectDialog({ mode: 'edit', projectId: project.id });
-    } else if (project.roots.length === 1) {
-      void actions.start({ mode: 'new', rootId: project.roots[0].id });
-    } else setNewSessionOpen(true);
+  const openSettings = () => openProjectDialog({ mode: 'edit', projectId: project.id });
+
+  // Local and cloud are separate choices. Asking for one never starts the other, and one that cannot start is not offered as a start.
+  const choices = claudeStart(project);
+  const newLocal = () => {
+    if (!choices.local.available) return;
+    if (project.roots.length === 1) void actions.start({ mode: 'new', rootId: project.roots[0].id });
+    else setNewSessionOpen(true);
+  };
+  const newCloud = () => {
+    if (!choices.cloud.available) return;
+    route.showCloud(project.id, { start: true });
   };
 
   const closeTab = (key: SessionKey) => {
@@ -79,7 +100,7 @@ export function ClaudePane({ project, visible, maximized, onToggleMaximize }: Cl
     actions.close(key, after);
   };
 
-  const items: TabItem[] = tabs.map((s) => ({
+  const sessionItems: TabItem[] = tabs.map((s) => ({
     id: s.key,
     title: tabTitle(s),
     leading: <StateDot session={s} />,
@@ -88,12 +109,20 @@ export function ClaudePane({ project, visible, maximized, onToggleMaximize }: Cl
     closeLabel: `Close tab ${shortId(s)}. The session keeps running.`,
     onClose: () => closeTab(s.key),
   }));
+  const items: TabItem[] = cloudTab
+    ? [...sessionItems, { id: CLOUD_TAB_ID, title: 'Cloud, Claude Code on the web', leading: <Icon name="cloud" />, label: 'Cloud' }]
+    : sessionItems;
 
   const resumable = sessions.filter((s) => s.projectId === project.id && s.resumable && s.availability !== 'live');
   const observed = sessions.filter((s) => s.origin !== 'managed' && (s.projectId === project.id || s.projectId === null));
 
   const addItems: MenuEntry[] = [
-    { label: 'New session', icon: 'plus', disabled: actions.starting, onSelect: newSession },
+    { label: 'New local session', icon: 'terminal', description: choices.local.reason ?? undefined, disabled: !choices.local.available || actions.starting, onSelect: newLocal },
+    { label: 'New cloud session', icon: 'cloud', description: choices.cloud.reason ?? undefined, disabled: !choices.cloud.available, onSelect: newCloud },
+    ...(choices.fix ? [
+      { type: 'separator' } as const,
+      { label: choices.fix, icon: 'settings', onSelect: openSettings } as MenuEntry,
+    ] : []),
     ...(resumable.length ? [
       { type: 'separator' } as const,
       { type: 'heading', label: 'Resume' } as const,
@@ -112,13 +141,19 @@ export function ClaudePane({ project, visible, maximized, onToggleMaximize }: Cl
     .sort((a, b) => (b.lastActivityAt ?? b.startedAt ?? '').localeCompare(a.lastActivityAt ?? a.startedAt ?? ''))
     .slice(0, 10);
 
-  const sessionItems: MenuEntry[] = [
+  const observedItems: MenuEntry[] = [
     ...observedGroup('In this project', observed.filter((s) => s.projectId === project.id), actions.show),
     ...observedGroup('Not assigned to a project', observed.filter((s) => s.projectId === null), actions.show),
     ...historyGroup('Replaced inside their terminal', replaced, actions.showHistory),
   ];
 
-  const active = visible && selected !== null && selected.origin === 'managed' && selected.availability === 'live';
+  const shownSession = cloudShown ? null : selected;
+  const active = visible && shownSession !== null && shownSession.origin === 'managed' && shownSession.availability === 'live';
+
+  const showTab = (id: string) => {
+    if (id === CLOUD_TAB_ID) route.showCloud(project.id);
+    else actions.show(id as SessionKey);
+  };
 
   return (
     <section
@@ -135,58 +170,47 @@ export function ClaudePane({ project, visible, maximized, onToggleMaximize }: Cl
           label="Claude sessions"
           idPrefix="claude"
           items={items}
-          value={selected?.key ?? null}
-          onChange={(key) => actions.show(key as SessionKey)}
-          trailing={(
-            <Menu
-              label="New or resumed session"
-              trigger={(props) => (
-                <IconButton ref={props.ref as (el: HTMLButtonElement | null) => void} label="New or resumed session" icon="plus" size="sm" tooltipPlacement="top" aria-haspopup="menu" aria-expanded={props['aria-expanded']} onClick={props.onClick} onKeyDown={props.onKeyDown} />
-              )}
-              items={addItems}
-            />
+          value={cloudShown ? CLOUD_TAB_ID : shownSession?.key ?? null}
+          onChange={showTab}
+        />
+        {/* Beside the tabs, not in their scrolling row: with many tabs, or a narrow pane, it must stay where it is. */}
+        <Menu
+          label="New session"
+          trigger={(props) => (
+            <IconButton className="ms-pane__add" ref={props.ref as (el: HTMLButtonElement | null) => void} label="New session" icon="plus" size="sm" tooltipPlacement="top" aria-haspopup="menu" aria-expanded={props['aria-expanded']} onClick={props.onClick} onKeyDown={props.onKeyDown} />
           )}
+          items={addItems}
         />
         <div className="ms-pane__tools">
-          {sessionItems.length > 0 ? (
+          {observedItems.length > 0 ? (
             <Menu
               label="Observed sessions"
               placement="bottom-end"
               trigger={(props) => (
                 <Button ref={props.ref as (el: HTMLButtonElement | null) => void} size="sm" variant="ghost" iconEnd="chevron-down" aria-haspopup="menu" aria-expanded={props['aria-expanded']} onClick={props.onClick} onKeyDown={props.onKeyDown}>Sessions</Button>
               )}
-              items={sessionItems}
+              items={observedItems}
             />
           ) : null}
-          <IconButton label={maximized ? 'Restore Claude pane' : 'Maximize Claude pane'} icon={maximized ? 'minimize' : 'maximize'} size="sm" tooltipPlacement="top" pressed={maximized} onClick={onToggleMaximize} />
         </div>
       </header>
 
-      {selected ? (
+      {cloudShown ? (
+        <CloudPanel key={project.id} project={project} active={visible} owner={cloudOwner} quiet={stripShown} />
+      ) : shownSession ? (
         <>
           <InputBanner
-            session={selected}
-            projectName={selected.projectName ?? (selected.projectId === project.id ? project.name : null)}
-            actions={<SessionMenu session={selected} onStop={() => setStopping(selected)} onClose={() => closeTab(selected.key)} />}
+            session={shownSession}
+            projectName={shownSession.projectName ?? (shownSession.projectId === project.id ? project.name : null)}
+            actions={<SessionMenu session={shownSession} onStop={() => setStopping(shownSession)} onClose={() => closeTab(shownSession.key)} />}
           />
-          <SessionNotice session={selected} resuming={actions.starting} onResume={() => { void actions.start({ mode: 'resume', resumeKey: selected.key }); }} />
-          <div className="ms-claude__body" {...tabPanelProps('claude', selected.key)}>
-            <SessionBody session={selected} active={active} resuming={actions.starting} onResume={() => { void actions.start({ mode: 'resume', resumeKey: selected.key }); }} />
+          <SessionNotice session={shownSession} resuming={actions.starting} onResume={() => { void actions.start({ mode: 'resume', resumeKey: shownSession.key }); }} />
+          <div className="ms-claude__body" {...tabPanelProps('claude', shownSession.key)}>
+            <SessionBody session={shownSession} active={active} resuming={actions.starting} onResume={() => { void actions.start({ mode: 'resume', resumeKey: shownSession.key }); }} />
           </div>
         </>
       ) : (
-        <div className="ms-claude__body">
-          <EmptyState
-            center
-            action={project.roots.length === 0
-              ? <Button onClick={() => openProjectDialog({ mode: 'edit', projectId: project.id })}>Add a folder</Button>
-              : <Button variant={stripShown ? 'secondary' : 'primary'} icon="plus" loading={actions.starting} onClick={newSession}>Start a session</Button>}
-          >
-            {project.roots.length === 0
-              ? `${project.name} has no repository folder yet. Add one to start Claude in it.`
-              : `No Claude session is open for ${project.name}. Start one in the project folder.`}
-          </EmptyState>
-        </div>
+        <ClaudeEmpty project={project} starting={actions.starting} quiet={stripShown} onLocal={newLocal} onCloud={newCloud} onFix={openSettings} />
       )}
 
       <NewSessionDialog

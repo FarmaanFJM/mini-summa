@@ -214,3 +214,45 @@ describe('certificate trust (development only)', () => {
     expect(verdict('elsewhere.example')).toBe(-3);
   });
 });
+
+describe('certificate trust follows the host rules, not the name of a site (claude.ai)', () => {
+  const both = readTestSeams({ [SEAM_ENV.hostRules]: 'MAP chatgpt.com 127.0.0.1:8443, MAP claude.ai 127.0.0.1:8443, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1', [SEAM_ENV.trustCerts]: '1' }, false);
+
+  it('trusts claude.ai when a rule sends it to this machine, and no other Claude or sign-in host', () => {
+    expect(isTrustedTestHost(both, 'claude.ai')).toBe(true);
+    for (const host of ['www.claude.ai', 'api.claude.ai', 'claude.com', 'anthropic.com', 'accounts.google.com', 'github.com', 'example.org']) {
+      expect(isTrustedTestHost(both, host), host).toBe(false);
+    }
+  });
+
+  it('does not trust claude.ai when no rule maps it, so the real site stays out of reach', () => {
+    const onlyChatGpt = readTestSeams({ [SEAM_ENV.hostRules]: 'MAP chatgpt.com 127.0.0.1:8443', [SEAM_ENV.trustCerts]: '1' }, false);
+    expect(isTrustedTestHost(onlyChatGpt, 'claude.ai')).toBe(false);
+    const elsewhere = readTestSeams({ [SEAM_ENV.hostRules]: 'MAP claude.ai 203.0.113.9', [SEAM_ENV.trustCerts]: '1' }, false);
+    expect(isTrustedTestHost(elsewhere, 'claude.ai')).toBe(false);
+    const noSwitch = readTestSeams({ [SEAM_ENV.hostRules]: 'MAP claude.ai 127.0.0.1:8443' }, false);
+    expect(isTrustedTestHost(noSwitch, 'claude.ai')).toBe(false);
+    expect(isTrustedTestHost(readTestSeams({ ...ALL_SET, [SEAM_ENV.hostRules]: 'MAP claude.ai 127.0.0.1:8443' }, true), 'claude.ai')).toBe(false);
+  });
+
+  it('installs the verdict on every session it is given, the Claude one included, and each trusts claude.ai and leaves the rest to Chromium', () => {
+    const app = { on: vi.fn() };
+    const chatgptSession = { setCertificateVerifyProc: vi.fn() };
+    const claudeSession = { setCertificateVerifyProc: vi.fn() };
+    expect(installCertificateTrust({ app, sessions: [chatgptSession, claudeSession], seams: both })).toBe(true);
+    for (const ses of [chatgptSession, claudeSession]) {
+      expect(ses.setCertificateVerifyProc).toHaveBeenCalledTimes(1);
+      const proc = ses.setCertificateVerifyProc.mock.calls[0][0] as (r: { hostname: string }, cb: (n: number) => void) => void;
+      const verdict = (hostname: string) => { const cb = vi.fn(); proc({ hostname }, cb); return cb.mock.calls[0][0]; };
+      expect(verdict('claude.ai')).toBe(0);
+      expect(verdict('claude.com')).toBe(-3);
+      expect(verdict('example.org')).toBe(-3);
+    }
+    const [event, handler] = app.on.mock.calls[0];
+    expect(event).toBe('certificate-error');
+    const accepted = { preventDefault: vi.fn() };
+    const accept = vi.fn();
+    handler(accepted, {}, 'https://claude.ai/code?repositories=acme/webapp', 'net::ERR_CERT_AUTHORITY_INVALID', {}, accept, true);
+    expect(accept).toHaveBeenCalledWith(true);
+  });
+});

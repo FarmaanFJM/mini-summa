@@ -5,6 +5,8 @@ import type { ProjectStats } from '../../app/selectors';
 import { useApi, useApp, useRoute, useUi } from '../../app/runtime';
 import { ConfirmDialog, Icon, IconButton, Menu, toast } from '../../ui';
 import { pluralize } from '../text';
+import { useProjectOrder } from './projectOrder';
+import type { RowOrdering } from './projectOrder';
 
 const plural = pluralize;
 
@@ -33,6 +35,7 @@ export function ProjectList() {
 
   const active = useMemo(() => activeProjects(projects), [projects]);
   const stats = useMemo(() => statsByProject(active, sessions, reports), [active, sessions, reports]);
+  const order = useProjectOrder(active);
   // One highlight at a time: the project is the current place only while the workspace is what is on screen.
   const selectedId = route.view === 'workspace' ? resolveProject(projects, route.projectId)?.id ?? null : null;
 
@@ -53,10 +56,11 @@ export function ProjectList() {
         <p className="ms-sidebar__empty">No projects yet.</p>
       ) : (
         <ul className="ms-projects">
-          {active.map((p) => (
+          {order.shown.map((p) => (
             <ProjectRow
               key={p.id}
               project={p}
+              ordering={order.forRow(p.id)}
               stats={stats.get(p.id)}
               selected={p.id === selectedId}
               onSelect={() => route.selectProject(p.id)}
@@ -67,6 +71,7 @@ export function ProjectList() {
           ))}
         </ul>
       )}
+      <p className="sm-sr-only" role="status" aria-live="polite">{order.announcement}</p>
       <ArchivedProjects />
       <ProjectConfirm confirm={confirm} onClose={() => setConfirm(null)} />
     </>
@@ -75,6 +80,7 @@ export function ProjectList() {
 
 interface RowProps {
   project: Project;
+  ordering: RowOrdering;
   stats: ProjectStats | undefined;
   selected: boolean;
   onSelect: () => void;
@@ -83,19 +89,36 @@ interface RowProps {
   onDelete: () => void;
 }
 
-function ProjectRow({ project, stats, selected, onSelect, onEdit, onArchive, onDelete }: RowProps) {
+function ProjectRow({ project, ordering, stats, selected, onSelect, onEdit, onArchive, onDelete }: RowProps) {
   const [menu, setMenu] = useState<{ open: boolean; point: { x: number; y: number } | null }>({ open: false, point: null });
   const s = stats ?? { liveSessions: 0, needsAttention: false, waitingReports: 0 };
   const facts = projectLabel(project.name, s);
   return (
-    <li className="ms-project" data-selected={selected || undefined} data-menu-open={menu.open || undefined}>
+    <li
+      className="ms-project"
+      data-selected={selected || undefined}
+      data-menu-open={menu.open || undefined}
+      data-dragging={ordering.dragging || undefined}
+      data-drop={ordering.drop ?? undefined}
+      draggable={ordering.movable || undefined}
+      onDragStart={ordering.onDragStart}
+      onDragOver={ordering.onDragOver}
+      onDrop={ordering.onDrop}
+      onDragEnd={ordering.onDragEnd}
+    >
       <button
         type="button"
         className="ms-project__main"
+        data-project-id={project.id}
         aria-current={selected ? 'true' : undefined}
         aria-label={facts}
+        aria-keyshortcuts={ordering.movable ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
         title={facts}
         onClick={onSelect}
+        onKeyDown={(e) => {
+          if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !ordering.movable) return;
+          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); ordering.move(e.key === 'ArrowUp' ? -1 : 1); }
+        }}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ open: true, point: { x: e.clientX, y: e.clientY } }); }}
       >
         <span className="ms-project__name">{project.name}</span>

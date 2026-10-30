@@ -217,14 +217,19 @@ export function useAddText<T>(options: AddTextOptions<T>): AddText<T> {
   const enqueue = useQueue();
   const latest = useRef({ ...options, text });
   latest.current = { ...options, text };
+  // Counts every change the person makes to the text, so that what was typed while the core was answering is told from what was sent
+  // even when it is the same words.
+  const edits = useRef(0);
 
-  const send = useCallback((value: T, typed: string | null = null, keep?: string): Promise<boolean> => enqueue(async () => {
+  /** Sends one value. Runs inside the queue: whatever called it already waited for what was on its way before. */
+  const run = useCallback(async (value: T, typed: string | null, keep?: string): Promise<boolean> => {
     setBusy(true);
     setRefusal(null);
+    const started = edits.current;
     try {
       await latest.current.apply(value);
       // Only what was sent is cleared: text typed while the core was answering stays.
-      setText((current) => (typed === null || current === typed ? '' : current));
+      if (typed === null || edits.current === started) setText('');
       setAttempted(false);
       latest.current.onSaved?.();
       return true;
@@ -235,15 +240,18 @@ export function useAddText<T>(options: AddTextOptions<T>): AddText<T> {
     } finally {
       setBusy(false);
     }
-  }), [enqueue]);
+  }, []);
 
-  const commit = useCallback(async (): Promise<boolean> => {
+  const send = useCallback((value: T, keep?: string): Promise<boolean> => enqueue(() => run(value, null, keep)), [enqueue, run]);
+
+  // Waits for anything already on its way (a folder chosen with Browse), then reads what is typed as it is now.
+  const commit = useCallback((): Promise<boolean> => enqueue(async () => {
     const typed = latest.current.text;
     if (typed.trim() === '') return true;
     const read = latest.current.check(typed);
     if (!read.ok) { setAttempted(true); return false; }
-    return send(read.value, typed);
-  }, [send]);
+    return run(read.value, typed);
+  }), [enqueue, run]);
 
   const flush = useCallback(async () => {
     const ok = await commit();
@@ -258,22 +266,41 @@ export function useAddText<T>(options: AddTextOptions<T>): AddText<T> {
     inputProps: {
       value: text,
       ref: inputRef,
-      onChange: (event) => { setText(event.target.value); setAttempted(false); setRefusal(null); },
+      onChange: (event) => { edits.current += 1; setText(event.target.value); setAttempted(false); setRefusal(null); },
       onKeyDown: (event) => {
         if (event.key === 'Enter') { event.preventDefault(); void commit(); return; }
         // As for a field that edits: Escape closes the dialog and so adds what is typed, unless that cannot be added, in which case
         // Escape clears it first and a second Escape closes.
         const { check, text: typed } = latest.current;
-        if (event.key === 'Escape' && typed.trim() !== '' && !check(typed).ok) { event.preventDefault(); event.stopPropagation(); setText(''); setAttempted(false); setRefusal(null); }
+        if (event.key === 'Escape' && typed.trim() !== '' && !check(typed).ok) { event.preventDefault(); event.stopPropagation(); edits.current += 1; setText(''); setAttempted(false); setRefusal(null); }
       },
     },
     text,
-    setText: (next) => { setText(next); setAttempted(false); setRefusal(null); },
+    setText: (next) => { edits.current += 1; setText(next); setAttempted(false); setRefusal(null); },
     error: refusal ?? invalid,
     busy,
     commit,
-    send: (value, keep) => send(value, null, keep),
+    send,
     refuse: (message) => setRefusal(message),
-    clear: () => { setText(''); setAttempted(false); setRefusal(null); },
+    clear: () => { edits.current += 1; setText(''); setAttempted(false); setRefusal(null); },
   };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Work started by a button: removing, choosing, unlinking. Closing the dialog waits for it, so a refusal that arrives
+// after the person pressed Done is still seen, beside the control, with the dialog still open.
+
+/** Wraps an action that answers true when the core accepted it. Its refusal is shown by the action itself. */
+export function useTrack(): (task: () => Promise<boolean>) => Promise<boolean> {
+  const pending = useRef(new Set<Promise<boolean>>());
+  const track = useCallback((task: () => Promise<boolean>): Promise<boolean> => {
+    const promise = task();
+    pending.current.add(promise);
+    const forget = () => { pending.current.delete(promise); };
+    promise.then(forget, forget);
+    return promise;
+  }, []);
+  const settle = useCallback(async () => (await Promise.all([...pending.current].map((p) => p.catch(() => false)))).every(Boolean), []);
+  useRegisterFlush(settle);
+  return track;
 }

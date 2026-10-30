@@ -75,8 +75,9 @@
 .ms-pair__text { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
 .ms-pair__lead { margin: 0; line-height: 1.5; }
 
-/* Notifications per project: one row per project, one switch per kind. A card on the panel; its rows are a hover fill. */
-.ms-set-table-wrap { overflow-x: auto; border-radius: var(--r-lg); background: var(--s2); }
+/* Notifications per project: one row per project, one switch per kind. A card on the panel; its rows are a hover fill. The wrapper is a
+   container, so the table answers to the room it has and not to the window. */
+.ms-set-table-wrap { overflow-x: auto; border-radius: var(--r-lg); background: var(--s2); container: ms-notifications / inline-size; }
 .ms-set-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
 .ms-set-table th, .ms-set-table td { padding: 8px 6px; text-align: center; white-space: nowrap; }
 .ms-set-table thead th { color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding-top: 12px; }
@@ -86,3 +87,18 @@
 .ms-set-table td .ms-switch { justify-content: center; }
 .ms-set-table .ms-switch__track { background: var(--s4); }
 .ms-set-table tbody tr:hover .ms-switch__track:not([aria-checked="true"]) { background: var(--s5); }
+
+/* Too narrow for ten columns (the smallest window, or a tall one): each project becomes a block, its name over one labelled switch per kind,
+   instead of a table that scrolls sideways inside its card and hides the last columns. The header row stays for assistive technology. The
+   table is about 680px wide at its natural size, so the switch happens just above that. */
+@container ms-notifications (max-width: 699px) {
+  .ms-set-table, .ms-set-table tbody, .ms-set-table tr, .ms-set-table th, .ms-set-table td { display: block; }
+  .ms-set-table thead { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .ms-set-table tbody tr { padding: 12px 14px 8px; }
+  .ms-set-table tbody tr + tr { box-shadow: 0 -1px 0 var(--line); } /* repeated rows may carry one hairline each (P12) */
+  .ms-set-table tbody tr:hover > * { background: none; }
+  .ms-set-table .ms-set-table__name { position: static; padding: 0 0 4px; background: none; font-size: var(--fs); font-weight: 600; }
+  .ms-set-table td { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 36px; padding: 0; text-align: left; white-space: normal; }
+  .ms-set-table td::before { content: attr(data-label); content: attr(data-label) / ""; color: var(--text); font-size: var(--fs); }
+  .ms-set-table td .ms-switch { justify-content: flex-end; }
+}

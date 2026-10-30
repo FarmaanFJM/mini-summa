@@ -3,7 +3,7 @@
 // has to change, change it here first and tell the owners of the modules that depend on it.
 import type {
   ActivityEvent, ActivitySeverity, ActivitySource, ActivityType, ActorRef, ChatGptOpenResult, Conversation, ConversationVerification,
-  Counts, DataUsage, DeclaredStatus, Delivery, DeliveryDetail, DeliveryPrepared, Device, DevicePlatform, DiscoveryRefreshResult, EnvId,
+  Counts, DataUsage, DeclaredStatus, Delivery, DeliveryDetail, DeliveryPrepared, DesktopNotificationTestResult, Device, DevicePlatform, DiscoveryRefreshResult, EnvId,
   EnvironmentInfo, HookPlan, HookStatus, LinkTarget, ListPage, NativeBridge, NavigationTarget, NotificationRecord, PairingOffer,
   PairingRedeemResult, PendingAction, Project, ProjectNotificationPrefs, ProjectResolution, Report, ReportCandidate, ReportSummary,
   ReviewState, Scope, ServerEvent, SessionKey, SessionState, SessionView, Settings, SettingsPatch, TailscaleStatus, TargetCheck, Topic,
@@ -443,6 +443,8 @@ export interface NotificationsService {
   list(limit?: number): NotificationRecord[];
   /** Sends a clearly marked test push to every paired device that can receive one. */
   sendTest(): Promise<{ sent: number; failed: number; skipped: string | null }>;
+  /** Shows a clearly marked test notification on this computer through the same host call real ones use. Not recorded: a test is not about anything. */
+  sendTestDesktop(): Promise<DesktopNotificationTestResult>;
   prune(olderThanIso: string): number;
 }
 

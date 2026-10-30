@@ -2,7 +2,7 @@
 //
 // These are HEURISTICS. Mini-Summa never reads the page (no script injection, no DOM access), so the only evidence is
 // the address, the page title, whether a load is running and why a load failed. Every note says so in plain words.
-import type { ChatGptViewState, ChatGptViewStatus } from '@minisumma/shared';
+import type { ChatGptViewState, ChatGptViewStatus, ClaudeWebViewState, ClaudeWebViewStatus } from '@minisumma/shared';
 
 export interface ViewObservation {
   url: string | null;
@@ -85,5 +85,51 @@ export function deriveViewState(obs: ViewObservation, nav: NavigationFlags): Cha
   if (looksLikeGoogleRefusal(obs.url)) return make('blocked', NOTES.googleRefused);
   if (looksLikeChallenge(obs.url, obs.title)) return make('challenge', NOTES.challenge);
   if (looksLikeLogin(obs.url)) return make('login_required', NOTES.login);
+  return make('ready', null);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// The Claude Code on the web view (claudeView.ts). The same kind of evidence and the same honesty: the address, the title, whether a
+// load is running and why a load failed. Nothing about the page content is looked at, so none of this can tell whether a cloud session
+// is working, finished or waiting for the person.
+
+export const EMPTY_CLAUDE_VIEW_STATE: ClaudeWebViewState = Object.freeze({
+  status: 'idle', url: null, title: null, canGoBack: false, canGoForward: false, note: null,
+}) as ClaudeWebViewState;
+
+// claude.ai and the sites that belong to it (the same family the navigation policy keeps inside the view).
+const CLAUDE_SITE_HOST = /(^|\.)(claude\.ai|claude\.com|anthropic\.com)$/i;
+
+/** The sign-in page of claude.ai, from the address alone: a page of that site whose path starts with /login. */
+export function looksLikeClaudeLogin(url: string | null): boolean {
+  const u = parse(url);
+  return !!u && u.protocol === 'https:' && CLAUDE_SITE_HOST.test(u.hostname) && u.pathname.toLowerCase().startsWith('/login');
+}
+
+// "Open in your browser" is the always available fallback of the Cloud tab (docs/CLOUD_SESSIONS.md); the notes name it by its label.
+const CLAUDE_BROWSER_HINT = '"Open in your browser" is always available.';
+
+const CLAUDE_NOTES = {
+  login: 'The address looks like the Claude sign-in page (Mini-Summa cannot read the page, so this is a guess from the address). Sign in here. Google sign-in is often refused in embedded browsers; if it is, sign in with an email address or use "Open in your browser".',
+  googleRefused: `Google refused to sign in inside an embedded browser. That is Google's decision and Mini-Summa does not work around it. Sign in with an email address instead, or use "Open in your browser".`,
+  blocked: (description: string) => `The page was blocked (${description || 'refused by a policy'}). Some sites refuse embedded browsers. ${CLAUDE_BROWSER_HINT}`,
+  error: (description: string) => `The page could not be loaded (${description || 'unknown error'}). Check your connection and use reload. ${CLAUDE_BROWSER_HINT}`,
+} as const;
+
+export function deriveClaudeViewState(obs: ViewObservation, nav: NavigationFlags): ClaudeWebViewState {
+  const base = { url: obs.url, title: obs.title, canGoBack: nav.canGoBack, canGoForward: nav.canGoForward };
+  const make = (status: ClaudeWebViewStatus, note: string | null): ClaudeWebViewState => ({ ...base, status, note });
+
+  // A retry in progress is "loading" even if the last attempt failed.
+  if (obs.loading) return make('loading', null);
+  if (obs.failure) {
+    const kind = classifyFailure(obs.failure.code, obs.failure.description);
+    if (kind === 'blocked') return make('blocked', CLAUDE_NOTES.blocked(obs.failure.description));
+    if (kind === 'error') return make('error', CLAUDE_NOTES.error(obs.failure.description));
+    // aborted: the navigation was cancelled or replaced, which says nothing about the page itself
+  }
+  if (!obs.url || obs.url === 'about:blank') return make('idle', null);
+  if (looksLikeGoogleRefusal(obs.url)) return make('blocked', CLAUDE_NOTES.googleRefused);
+  if (looksLikeClaudeLogin(obs.url)) return make('login_required', CLAUDE_NOTES.login);
   return make('ready', null);
 }

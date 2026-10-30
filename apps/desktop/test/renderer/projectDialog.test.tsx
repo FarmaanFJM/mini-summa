@@ -1,441 +1,505 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+// The New project dialog: how a project starts, the one thing each way of starting asks for, and the one call that creates it. The
+// dialog is opened through the ui store (openProjectDialog), which is the contract the shell and the empty states rely on.
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { IDS } from '../../src/renderer/src/dev/demo/seed';
-import { renderApp } from './helpers';
+import { createFakeNative, renderApp } from './helpers';
+import type { RenderedApp } from './helpers';
 
-// The activity, reports and settings views belong to another worker: the shell is tested with stand-ins (stubViews.tsx).
+// The activity, reports and settings views belong to other workers: the shell is tested with stand-ins (stubViews.tsx).
 vi.mock('../../src/renderer/src/features/activity', async () => ({ default: (await import('./stubViews')).ActivityStandIn }));
 vi.mock('../../src/renderer/src/features/reports', async () => ({ default: (await import('./stubViews')).ReportsStandIn }));
 vi.mock('../../src/renderer/src/features/settings', async () => ({ default: (await import('./stubViews')).SettingsStandIn }));
 
-async function openCreate() {
+const PROJECT = 'https://chatgpt.com/g/g-p-6720aa11bb22cc33dd44ee55ff66aa77-caissa-trainer/project';
+const CHAT_IN_PROJECT = 'https://chatgpt.com/g/g-p-6720aa11bb22cc33dd44ee55ff66aa77-caissa-trainer/c/6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b';
+const SINGLE_CHAT = 'https://chatgpt.com/c/6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b';
+
+const ADDRESS_LABEL = 'Address of an existing ChatGPT Project';
+
+async function openCreate(options: Parameters<typeof renderApp>[0] = {}) {
   const user = userEvent.setup();
-  const app = await renderApp();
-  await user.click(screen.getByRole('button', { name: 'New project' }));
+  const app = await renderApp(options);
+  act(() => app.runtime.ui.getState().openProjectDialog({ mode: 'create' }));
   const dialog = await screen.findByRole('dialog', { name: 'New project' });
   return { user, app, dialog };
 }
 
-async function openEdit(project: string) {
-  const user = userEvent.setup();
-  const app = await renderApp();
-  await user.click(screen.getByRole('button', { name: `Actions for ${project}` }));
-  await user.click(screen.getByRole('menuitem', { name: 'Edit project' }));
-  const dialog = await screen.findByRole('dialog', { name: `Edit ${project}` });
-  return { user, app, dialog };
-}
+const calls = (spy: { mock: { calls: unknown[][] } }, name: string): unknown[] => spy.mock.calls.filter((c) => c[0] === name).map((c) => c[1]);
+const callNames = (spy: { mock: { calls: unknown[][] } }): string[] => spy.mock.calls.map((c) => c[0] as string);
+const paste = (element: HTMLElement, value: string) => fireEvent.change(element, { target: { value } });
+const tab = (dialog: HTMLElement, name: string) => within(dialog).getByRole('tab', { name });
+const stored = (app: RenderedApp, name: string) => app.runtime.store.getState().projects.find((p) => p.name === name);
+const pickFolder = (app: RenderedApp) => app.fake.native.dialogs.selectDirectory as ReturnType<typeof vi.fn>;
 
-const calledNames = (spy: ReturnType<typeof vi.spyOn>) => (spy.mock.calls as unknown[][]).map((c) => c[0] as string);
+describe('starting a project', () => {
+  it('offers four ways to start, the ChatGPT Project first, and asks for that one thing and a name', async () => {
+    const { dialog } = await openCreate();
+    const tabs = within(dialog).getAllByRole('tab');
+    expect(tabs.map((t) => t.textContent)).toEqual(['ChatGPT Project', 'GitHub repository', 'Local folder', 'Empty project']);
+    expect(tabs.map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
+    expect(within(dialog).getByRole('tablist', { name: 'Start from' })).toBeTruthy();
 
-describe('folders: reading what is typed', () => {
-  it('reads a Windows path and says which environment it is', async () => {
-    const { user, dialog } = await openCreate();
-    await user.type(within(dialog).getByLabelText('Add a folder'), 'C:\\Dev\\App\\');
-    expect(within(dialog).getByText('Windows')).toBeTruthy();
-    expect(within(dialog).getByText('C:\\Dev\\App')).toBeTruthy(); // cleaned: no trailing separator
-    expect((within(dialog).getByRole('button', { name: 'Add folder' }) as HTMLButtonElement).disabled).toBe(false);
+    // One input for the source, then the name. Nothing about repositories or folders.
+    expect(within(dialog).getAllByRole('textbox').map((t) => t.getAttribute('aria-label') ?? (t as HTMLInputElement).labels?.[0]?.textContent)).toEqual([ADDRESS_LABEL, 'Name']);
+    expect(within(dialog).queryByRole('button', { name: 'Browse' })).toBeNull();
+    // Cancel, and one primary action.
+    const buttons = within(dialog).getAllByRole('button').filter((b) => b.getAttribute('role') !== 'tab');
+    expect(buttons.map((b) => b.textContent)).toEqual(['Cancel', 'Create project']);
+    expect(buttons[1].className).toContain('sm-btn--primary');
+    expect(document.querySelectorAll('.sm-dialog .sm-btn--primary')).toHaveLength(1);
   });
 
-  it('reads a WSL share path as a path inside that distribution and says so', async () => {
+  it('puts the cursor in the field of the chosen source', async () => {
+    const { dialog } = await openCreate();
+    expect(document.activeElement).toBe(within(dialog).getByLabelText(ADDRESS_LABEL));
+  });
+
+  it('shows one source at a time and keeps what was typed in each while the person looks at another', async () => {
     const { user, dialog } = await openCreate();
-    fireEvent.change(within(dialog).getByLabelText('Add a folder'), { target: { value: '\\\\wsl$\\Ubuntu\\home\\me\\app' } });
+    paste(within(dialog).getByLabelText(ADDRESS_LABEL), PROJECT);
+    await user.click(tab(dialog, 'GitHub repository'));
+    expect(within(dialog).queryByLabelText(ADDRESS_LABEL)).toBeNull();
+    expect(within(dialog).getByRole('tabpanel')).toBeTruthy();
+    paste(within(dialog).getByLabelText('Repository'), 'acme/billing');
+    await user.click(tab(dialog, 'Local folder'));
+    expect(within(dialog).queryByLabelText('Repository')).toBeNull();
+    expect(within(dialog).getByLabelText('Folder')).toBeTruthy();
+    await user.click(tab(dialog, 'Empty project'));
+    expect(within(dialog).queryByLabelText('Folder')).toBeNull();
+    expect(within(dialog).getAllByRole('textbox')).toHaveLength(1); // only the name
+    await user.click(tab(dialog, 'ChatGPT Project'));
+    expect((within(dialog).getByLabelText(ADDRESS_LABEL) as HTMLInputElement).value).toBe(PROJECT);
+    await user.click(tab(dialog, 'GitHub repository'));
+    expect((within(dialog).getByLabelText('Repository') as HTMLInputElement).value).toBe('acme/billing');
+  });
+
+  it('moves between the ways to start with the arrow keys', async () => {
+    const { user, dialog } = await openCreate();
+    tab(dialog, 'ChatGPT Project').focus();
+    await user.keyboard('{ArrowRight}');
+    expect(tab(dialog, 'GitHub repository').getAttribute('aria-selected')).toBe('true');
+    expect(within(dialog).getByLabelText('Repository')).toBeTruthy();
+  });
+});
+
+describe('from a ChatGPT Project', () => {
+  it('says what it will keep, in one sentence, and nothing that suggests more is imported', async () => {
+    const { dialog } = await openCreate();
+    expect(within(dialog).getByText('Only the address is saved. Nothing in the project is imported or synced.')).toBeTruthy();
+    expect(dialog.textContent ?? '').not.toMatch(/import(ed)? (your|the|its) (files|conversations|instructions)|synchronis/i);
+  });
+
+  it('reads the address as it is typed: the title it will be saved with, and the name offered', async () => {
+    const { dialog } = await openCreate();
+    paste(within(dialog).getByLabelText(ADDRESS_LABEL), PROJECT);
+    expect(within(dialog).getByText('Title: Caissa trainer')).toBeTruthy();
+    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Caissa trainer');
+  });
+
+  it('says when it took the project page from a conversation inside the project', async () => {
+    const { dialog } = await openCreate();
+    paste(within(dialog).getByLabelText(ADDRESS_LABEL), CHAT_IN_PROJECT);
+    expect(within(dialog).getByText('Title: Caissa trainer. This is a conversation inside the project, so the project page is linked.')).toBeTruthy();
+  });
+
+  it('refuses a single conversation, with the reason beside the field, and sends nothing', async () => {
+    const { user, app, dialog } = await openCreate();
+    const spy = vi.spyOn(app.demo, 'call');
+    paste(within(dialog).getByLabelText(ADDRESS_LABEL), SINGLE_CHAT);
+    expect(within(dialog).getByRole('alert').textContent).toBe('That is a single conversation outside any project. Open the project in ChatGPT and copy the address of its project page.');
+    expect(within(dialog).queryByText('Only the address is saved. Nothing in the project is imported or synced.')).toBeNull(); // the message takes its place
+    await user.type(within(dialog).getByLabelText('Name'), 'Caissa');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    expect(callNames(spy)).not.toContain('projects.create');
+  });
+
+  it('accepts an address of a form it does not recognise and says it will be opened as pasted', async () => {
+    const { user, app, dialog } = await openCreate();
+    paste(within(dialog).getByLabelText(ADDRESS_LABEL), 'https://chatgpt.com/library');
+    expect(within(dialog).getByText('Mini-Summa does not recognise this form of address. It will be opened as pasted.')).toBeTruthy();
+    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe(''); // no title to offer
+    await user.type(within(dialog).getByLabelText('Name'), 'Library');
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(calls(spy, 'projects.create')).toEqual([{ body: { name: 'Library', chatgptProject: { url: 'https://chatgpt.com/library' } } }]);
+    expect(stored(app, 'Library')?.chatgptProject).toEqual({ url: 'https://chatgpt.com/library', scopeId: null, title: 'ChatGPT Project' });
+  });
+
+  it('creates the project with one call, links the address, selects it and closes', async () => {
+    const { user, app, dialog } = await openCreate();
+    const spy = vi.spyOn(app.demo, 'call');
+    paste(within(dialog).getByLabelText(ADDRESS_LABEL), PROJECT);
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(calls(spy, 'projects.create')).toEqual([{ body: { name: 'Caissa trainer', chatgptProject: { url: PROJECT } } }]);
+    expect(callNames(spy).filter((n) => /^(projects|conversations)\./.test(n))).toEqual(['projects.create']);
+    const created = stored(app, 'Caissa trainer');
+    expect(created).toMatchObject({ githubRepo: null, roots: [], chatgptProject: { url: PROJECT, scopeId: 'g-p-6720aa11bb22cc33dd44ee55ff66aa77-caissa-trainer', title: 'Caissa trainer' } });
+    expect(app.runtime.route.getState().projectId).toBe(created?.id);
+    expect(await screen.findByRole('button', { name: /^Caissa trainer/ })).toBeTruthy();
+  });
+
+  it('turns a pasted conversation inside the project into the project page', async () => {
+    const { user, app, dialog } = await openCreate();
+    paste(within(dialog).getByLabelText(ADDRESS_LABEL), CHAT_IN_PROJECT);
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(stored(app, 'Caissa trainer')?.chatgptProject?.url).toBe(PROJECT);
+  });
+
+  it('asks for the address when there is none, and for a name, once Create is pressed', async () => {
+    const { user, app, dialog } = await openCreate();
+    const spy = vi.spyOn(app.demo, 'call');
+    expect(within(dialog).queryByRole('alert')).toBeNull(); // nothing is said before it is needed
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    expect(within(dialog).getAllByRole('alert').map((a) => a.textContent)).toEqual(['Paste the address of the ChatGPT Project.', 'Give the project a name.']);
+    expect(callNames(spy)).not.toContain('projects.create');
+    expect(document.activeElement).toBe(within(dialog).getByLabelText(ADDRESS_LABEL));
+  });
+});
+
+describe('from a GitHub repository', () => {
+  const openGithub = async () => {
+    const opened = await openCreate();
+    await opened.user.click(tab(opened.dialog, 'GitHub repository'));
+    return opened;
+  };
+
+  it('normalises a pasted address as it is typed and says what will be saved', async () => {
+    const { dialog } = await openGithub();
+    paste(within(dialog).getByLabelText('Repository'), 'https://github.com/acme/billing.git');
+    expect(within(dialog).getByText('Will be saved as acme/billing.')).toBeTruthy();
+    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('billing');
+    paste(within(dialog).getByLabelText('Repository'), 'acme/billing');
+    expect(within(dialog).queryByText(/Will be saved as/)).toBeNull(); // already as it will be saved
+  });
+
+  it('says what is wrong with a repository as it is typed', async () => {
+    const { dialog } = await openGithub();
+    paste(within(dialog).getByLabelText('Repository'), 'not a repo');
+    expect(within(dialog).getByRole('alert').textContent).toBe('Use the form owner/repo, for example acme/git-manager.');
+  });
+
+  it('creates a project with a repository and no folder, with one call', async () => {
+    const { user, app, dialog } = await openGithub();
+    const spy = vi.spyOn(app.demo, 'call');
+    paste(within(dialog).getByLabelText('Repository'), 'https://github.com/FarmaanFIM/CaissaTrainer.git');
+    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('CaissaTrainer');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(calls(spy, 'projects.create')).toEqual([{ body: { name: 'CaissaTrainer', githubRepo: 'FarmaanFIM/CaissaTrainer' } }]);
+    expect(stored(app, 'CaissaTrainer')).toMatchObject({ githubRepo: 'FarmaanFIM/CaissaTrainer', roots: [], chatgptProject: null });
+  });
+
+  it('asks for the repository when there is none', async () => {
+    const { user, app, dialog } = await openGithub();
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.type(within(dialog).getByLabelText('Name'), 'Billing');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    expect(within(dialog).getByRole('alert').textContent).toBe('Enter the repository as owner/repo.');
+    expect(callNames(spy)).not.toContain('projects.create');
+  });
+});
+
+describe('from a local folder', () => {
+  const openFolder = async (options: Parameters<typeof renderApp>[0] = {}) => {
+    const opened = await openCreate(options);
+    await opened.user.click(tab(opened.dialog, 'Local folder'));
+    return opened;
+  };
+
+  it('reads a Windows path as it is typed, and offers the folder name as the name', async () => {
+    const { user, dialog } = await openFolder();
+    await user.type(within(dialog).getByLabelText('Folder'), 'C:\\Dev\\Billing service\\');
+    expect(within(dialog).getByText('Windows')).toBeTruthy();
+    expect(within(dialog).getByText('C:\\Dev\\Billing service')).toBeTruthy(); // cleaned: no trailing separator
+    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Billing service');
+  });
+
+  it('reads a WSL share as a path inside that distribution and says so', async () => {
+    const { dialog } = await openFolder();
+    paste(within(dialog).getByLabelText('Folder'), '\\\\wsl$\\Ubuntu\\home\\me\\app');
     expect(within(dialog).getByText('WSL (Ubuntu)')).toBeTruthy();
     expect(within(dialog).getByText('/home/me/app')).toBeTruthy();
     expect(within(dialog).getByText('Read as a path inside WSL (Ubuntu).')).toBeTruthy();
   });
 
-  it('asks which WSL distribution a Linux path is in, offering the ones the core found', async () => {
-    const { user, dialog } = await openCreate();
-    await user.type(within(dialog).getByLabelText('Add a folder'), '/home/me/app');
+  it('asks which WSL distribution a Linux path is in, offering the ones the core found, and creates in that one', async () => {
+    const { user, app, dialog } = await openFolder();
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.type(within(dialog).getByLabelText('Folder'), '/home/me/billing');
     expect(within(dialog).getByText('This looks like a Linux path. Choose which WSL distribution it belongs to.')).toBeTruthy();
-    expect((within(dialog).getByRole('button', { name: 'Add folder' }) as HTMLButtonElement).disabled).toBe(true); // not until it is answered
-    const picker = await within(dialog).findByRole('button', { name: 'WSL distribution' });
-    await user.click(picker);
+
+    // Not until it is answered.
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    expect(within(dialog).getAllByRole('alert').map((a) => a.textContent)).toEqual([
+      'Choose which WSL distribution this folder is in, or clear the folder field.',
+      'Give the project a name.', // there is no folder name to offer yet either
+    ]);
+    expect(callNames(spy)).not.toContain('projects.create');
+
+    await user.click(await within(dialog).findByRole('button', { name: 'WSL distribution' }));
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['WSL (Ubuntu)', 'WSL (Debian)']);
-    await user.click(screen.getByRole('option', { name: 'WSL (Ubuntu)' }));
-    expect(within(dialog).getByText('WSL (Ubuntu)', { selector: '.ms-feedback__label' })).toBeTruthy();
-    expect((within(dialog).getByRole('button', { name: 'Add folder' }) as HTMLButtonElement).disabled).toBe(false);
+    await user.click(screen.getByRole('option', { name: 'WSL (Debian)' }));
+    expect(within(dialog).getByText('WSL (Debian)', { selector: '.ms-pj-reading__label' })).toBeTruthy();
+    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('billing');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(calls(spy, 'projects.create')).toEqual([{ body: { name: 'billing', roots: [{ path: '/home/me/billing', env: 'wsl:Debian' }] } }]);
   });
 
-  it('explains a path it cannot use', async () => {
-    const { user, dialog } = await openCreate();
-    await user.type(within(dialog).getByLabelText('Add a folder'), 'relative/path');
+  it('explains a path it cannot use, and does not create', async () => {
+    const { user, app, dialog } = await openFolder();
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.type(within(dialog).getByLabelText('Folder'), 'relative/path');
     expect(within(dialog).getByRole('alert').textContent).toBe('Enter an absolute path (for example C:\\Dev\\App or /home/me/app).');
-    expect((within(dialog).getByRole('button', { name: 'Add folder' }) as HTMLButtonElement).disabled).toBe(true);
+    await user.type(within(dialog).getByLabelText('Name'), 'Relative');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    expect(callNames(spy)).not.toContain('projects.create');
   });
 
-  it('keeps several folders, refuses the same one twice, and removes one on request', async () => {
-    const { user, dialog } = await openCreate();
-    const input = within(dialog).getByLabelText('Add a folder');
-    await user.type(input, 'C:\\Dev\\App{Enter}');
-    await user.type(input, 'D:\\Other{Enter}');
-    const list = within(dialog).getByRole('list', { name: 'Repository folders' });
-    expect(within(list).getAllByRole('listitem').map((li) => li.textContent)).toEqual(['C:\\Dev\\AppWindows', 'D:\\OtherWindows']);
-    await user.type(input, 'c:\\dev\\app{Enter}');
-    expect(within(dialog).getByRole('alert').textContent).toBe('This folder is already in the list.');
-    await user.click(within(dialog).getByRole('button', { name: 'Remove folder D:\\Other' }));
-    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+  it('creates the project with its folder, with one call', async () => {
+    const { user, app, dialog } = await openFolder();
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.type(within(dialog).getByLabelText('Folder'), 'C:\\Dev\\Billing');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(calls(spy, 'projects.create')).toEqual([{ body: { name: 'Billing', roots: [{ path: 'C:\\Dev\\Billing', env: 'win' }] } }]);
+    expect(stored(app, 'Billing')).toMatchObject({ githubRepo: null, chatgptProject: null, roots: [{ path: 'C:\\Dev\\Billing', env: 'win' }] });
   });
 
-  it('opens the folder picker of the desktop shell and adds what it returns to the list at once', async () => {
-    const { user, app, dialog } = await openCreate();
-    (app.fake.native.dialogs.selectDirectory as ReturnType<typeof vi.fn>).mockResolvedValueOnce('C:\\Picked\\Folder');
+  it('uses the folder chosen with Browse at once: it is the project folder, and there is no second button to press', async () => {
+    const { user, app, dialog } = await openFolder();
+    pickFolder(app).mockResolvedValueOnce('C:\\Picked\\Folder');
     await user.click(within(dialog).getByRole('button', { name: 'Browse' }));
-    expect(app.fake.native.dialogs.selectDirectory).toHaveBeenCalledWith({ title: 'Choose the repository folder' });
-    // No second "Add folder" press: a chosen folder is a decision. The field stays empty for the next one.
-    const list = await within(dialog).findByRole('list', { name: 'Repository folders' });
-    expect(within(list).getByText('C:\\Picked\\Folder')).toBeTruthy();
-    expect((within(dialog).getByLabelText('Add a folder') as HTMLInputElement).value).toBe('');
+    expect(pickFolder(app)).toHaveBeenCalledWith({ title: 'Choose the project folder' });
+    await waitFor(() => expect((within(dialog).getByLabelText('Folder') as HTMLInputElement).value).toBe('C:\\Picked\\Folder'));
+    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Folder');
+    expect(within(dialog).queryByRole('button', { name: /^Add/ })).toBeNull();
+
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(calls(spy, 'projects.create')).toEqual([{ body: { name: 'Folder', roots: [{ path: 'C:\\Picked\\Folder', env: 'win' }] } }]);
   });
 
   it('a cancelled picker changes nothing', async () => {
-    const { user, dialog } = await openCreate();
-    await user.click(within(dialog).getByRole('button', { name: 'Browse' })); // the fake answers null, as a cancelled dialog does
-    expect(within(dialog).queryByRole('list', { name: 'Repository folders' })).toBeNull();
-    expect((within(dialog).getByLabelText('Add a folder') as HTMLInputElement).value).toBe('');
+    const { user, dialog } = await openFolder();
+    await user.type(within(dialog).getByLabelText('Folder'), 'C:\\Dev\\Kept');
+    await user.click(within(dialog).getByRole('button', { name: 'Browse' })); // the fake answers null, as a cancelled picker does
+    expect((within(dialog).getByLabelText('Folder') as HTMLInputElement).value).toBe('C:\\Dev\\Kept');
   });
 
-  it('says so when the picker returns a folder that is already in the list', async () => {
-    const { user, app, dialog } = await openCreate();
-    const pick = app.fake.native.dialogs.selectDirectory as ReturnType<typeof vi.fn>;
-    pick.mockResolvedValueOnce('C:\\Picked\\Folder').mockResolvedValueOnce('c:\\picked\\folder');
+  it('keeps a picked Linux path in the field with the question it needs answered', async () => {
+    const { user, app, dialog } = await openFolder();
+    pickFolder(app).mockResolvedValueOnce('/home/me/app');
     await user.click(within(dialog).getByRole('button', { name: 'Browse' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Browse' }));
-    expect(await within(dialog).findByText('This folder is already in the list.')).toBeTruthy();
-    expect(within(within(dialog).getByRole('list', { name: 'Repository folders' })).getAllByRole('listitem')).toHaveLength(1);
-  });
-
-  it('keeps a picked path it cannot read in the field, with the question it needs answered', async () => {
-    const { user, app, dialog } = await openCreate();
-    (app.fake.native.dialogs.selectDirectory as ReturnType<typeof vi.fn>).mockResolvedValueOnce('/home/me/app');
-    await user.click(within(dialog).getByRole('button', { name: 'Browse' }));
-    expect((within(dialog).getByLabelText('Add a folder') as HTMLInputElement).value).toBe('/home/me/app');
+    await waitFor(() => expect((within(dialog).getByLabelText('Folder') as HTMLInputElement).value).toBe('/home/me/app'));
     expect(within(dialog).getByText('This looks like a Linux path. Choose which WSL distribution it belongs to.')).toBeTruthy();
-    expect(within(dialog).queryByRole('list', { name: 'Repository folders' })).toBeNull();
+  });
+
+  it('says so beside the field when the folder picker cannot be opened', async () => {
+    const { user, app, dialog } = await openFolder();
+    pickFolder(app).mockRejectedValueOnce(new Error('no dialog'));
+    await user.click(within(dialog).getByRole('button', { name: 'Browse' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toBe('The folder picker could not be opened. Type the path instead.');
   });
 
   it('offers no Browse button where there is no folder picker', async () => {
-    const user = userEvent.setup();
-    const { createFakeNative } = await import('./helpers');
-    await renderApp({ native: createFakeNative({ embedded: false }) });
-    await user.click(screen.getByRole('button', { name: 'New project' }));
-    expect(within(await screen.findByRole('dialog', { name: 'New project' })).queryByRole('button', { name: 'Browse' })).toBeNull();
-  });
-});
-
-describe('conversations: live feedback on the pasted address', () => {
-  const paste = (dialog: HTMLElement, value: string) => fireEvent.change(within(dialog).getByLabelText('Add a conversation'), { target: { value } });
-
-  it('says nothing until something is pasted', async () => {
-    const { dialog } = await openCreate();
-    expect(within(dialog).queryByText(/chatgpt\.com/)).toBeNull();
-    expect((within(dialog).getByRole('button', { name: 'Add conversation' }) as HTMLButtonElement).disabled).toBe(true);
+    const { dialog } = await openFolder({ native: createFakeNative({ embedded: false }) });
+    expect(within(dialog).getByLabelText('Folder')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: 'Browse' })).toBeNull();
   });
 
-  it('shows the kind and the normalised address of a conversation', async () => {
-    const { dialog } = await openCreate();
-    paste(dialog, 'https://chatgpt.com/c/6F1A2B3C-4D5E-4F60-8A9B-0C1D2E3F4A5B?model=x#frag');
-    expect(within(dialog).getByText('Conversation')).toBeTruthy();
-    expect(within(dialog).getByText('https://chatgpt.com/c/6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b')).toBeTruthy();
-    expect((within(dialog).getByRole('button', { name: 'Add conversation' }) as HTMLButtonElement).disabled).toBe(false);
-  });
+  it('shows the core\'s refusal of a folder beside the folder field, in its own words, and keeps what was typed', async () => {
+    const { user, app, dialog } = await openFolder();
+    app.demo.demo.server.folderCheck = (_env, path) => (path.endsWith('Nowhere') ? { code: 'root_not_found', message: `This folder does not exist: ${path}. Check the spelling, or choose it with Browse.` } : null);
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.type(within(dialog).getByLabelText('Folder'), 'C:\\Dev\\Nowhere');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toBe('This folder does not exist: C:\\Dev\\Nowhere. Check the spelling, or choose it with Browse.');
+    // Beside the field it is about, with everything still typed, and nothing was created.
+    expect(screen.getByRole('dialog', { name: 'New project' })).toBeTruthy();
+    expect((within(dialog).getByLabelText('Folder') as HTMLInputElement).value).toBe('C:\\Dev\\Nowhere');
+    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Nowhere');
+    expect(app.runtime.store.getState().projects.some((p) => p.name === 'Nowhere')).toBe(false);
 
-  it('recognises a project chat and a custom GPT chat', async () => {
-    const { dialog } = await openCreate();
-    paste(dialog, 'https://chatgpt.com/g/g-p-abc123/c/6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b');
-    expect(within(dialog).getByText('Conversation in a ChatGPT project')).toBeTruthy();
-    paste(dialog, 'https://chatgpt.com/g/g-xyz789/c/6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b');
-    expect(within(dialog).getByText('Conversation with a custom GPT')).toBeTruthy();
-  });
-
-  it('warns in plain words about a project page and about the old host name', async () => {
-    const { dialog } = await openCreate();
-    paste(dialog, 'https://chatgpt.com/g/g-p-abc123/project');
-    expect(within(dialog).getByText('This is a project page, not one conversation. Handoffs will open the project page.')).toBeTruthy();
-    paste(dialog, 'https://chat.openai.com/c/6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b');
-    expect(within(dialog).getByText('chat.openai.com redirects to chatgpt.com, so the address was updated.')).toBeTruthy();
-    paste(dialog, 'https://chatgpt.com/');
-    expect(within(dialog).getByText(/does not look like a specific conversation/)).toBeTruthy();
-  });
-
-  it('refuses addresses that are not ChatGPT, with the reason', async () => {
-    const { dialog } = await openCreate();
-    paste(dialog, 'https://example.com/c/6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b');
-    expect(within(dialog).getByRole('alert').textContent).toBe('Only chatgpt.com conversation addresses are accepted.');
-    paste(dialog, 'http://chatgpt.com/c/6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b');
-    expect(within(dialog).getByRole('alert').textContent).toBe('Only https addresses are accepted.');
-    paste(dialog, 'javascript:alert(1)');
-    expect(within(dialog).getByRole('alert').textContent).toBe('Only https addresses are accepted.');
-    expect((within(dialog).getByRole('button', { name: 'Add conversation' }) as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  const UUID1 = '11111111-1111-4111-8111-111111111111';
-  const UUID2 = '22222222-2222-4222-8222-222222222222';
-
-  it('makes the first conversation preferred on its own, and keeps it when more are added', async () => {
-    const { user, dialog } = await openCreate();
-    const input = within(dialog).getByLabelText('Add a conversation');
-    await user.type(input, `chatgpt.com/c/${UUID1}{Enter}`);
-    const radios = () => within(dialog).getAllByRole('radio') as HTMLInputElement[];
-    expect(radios()).toHaveLength(1);
-    expect(radios()[0].checked).toBe(true);
-    await user.type(input, `chatgpt.com/c/${UUID2}{Enter}`);
-    expect(radios().map((r) => r.checked)).toEqual([true, false]);
-  });
-
-  it('has exactly one preferred conversation: choosing another moves the choice', async () => {
-    const { user, dialog } = await openCreate();
-    const input = within(dialog).getByLabelText('Add a conversation');
-    await user.type(input, `chatgpt.com/c/${UUID1}{Enter}`);
-    await user.type(input, `chatgpt.com/c/${UUID2}{Enter}`);
-    const radios = () => within(dialog).getAllByRole('radio') as HTMLInputElement[];
-    await user.click(radios()[1]);
-    expect(radios().map((r) => r.checked)).toEqual([false, true]);
-    expect(within(dialog).getByText(/^Preferred\./, { selector: '.ms-row-item__sub' })).toBeTruthy();
-    expect(within(dialog).getAllByText(/^Preferred\./, { selector: '.ms-row-item__sub' })).toHaveLength(1);
-  });
-
-  it('hands the preference to the next conversation when the preferred one is removed', async () => {
-    const { user, dialog } = await openCreate();
-    const input = within(dialog).getByLabelText('Add a conversation');
-    await user.type(input, `chatgpt.com/c/${UUID1}{Enter}`);
-    await user.type(input, `chatgpt.com/c/${UUID2}{Enter}`);
-    await user.click(within(dialog).getByRole('button', { name: /^Remove ChatGPT conversation 11111111/ }));
-    const radios = within(dialog).getAllByRole('radio') as HTMLInputElement[];
-    expect(radios).toHaveLength(1);
-    expect(radios[0].checked).toBe(true);
-  });
-
-  it('refuses the same conversation twice', async () => {
-    const { user, dialog } = await openCreate();
-    const input = within(dialog).getByLabelText('Add a conversation');
-    await user.type(input, `chatgpt.com/c/${UUID1}{Enter}`);
-    await user.type(input, `https://chatgpt.com/c/${UUID1.toUpperCase()}{Enter}`);
-    expect(within(dialog).getByRole('alert').textContent).toBe('This conversation is already in the list.');
-    expect(within(dialog).getAllByRole('radio')).toHaveLength(1);
-  });
-
-  it('lets the title be edited', async () => {
-    const { user, dialog } = await openCreate();
-    await user.type(within(dialog).getByLabelText('Add a conversation'), `chatgpt.com/c/${UUID1}{Enter}`);
-    const title = within(dialog).getByRole('textbox', { name: /^Title of ChatGPT conversation/ });
-    await user.clear(title);
-    await user.type(title, 'Design review');
-    expect((within(dialog).getByRole('textbox', { name: 'Title of Design review' }) as HTMLInputElement).value).toBe('Design review');
-  });
-});
-
-describe('editing a saved project', () => {
-  it('shows what the core knows: folders, conversations, which is preferred and how each was verified', async () => {
-    const { dialog } = await openEdit('GitManager');
-    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('GitManager');
-    expect((within(dialog).getByLabelText('GitHub repository') as HTMLInputElement).value).toBe('acme/git-manager');
-    expect(within(dialog).getByText('C:\\Dev\\GitManager')).toBeTruthy();
-    const radios = within(dialog).getAllByRole('radio') as HTMLInputElement[];
-    expect(radios.map((r) => r.checked)).toEqual([true, false]);
-    expect(within(dialog).getByText('Preferred. Verified: Release planning for GitManager')).toBeTruthy();
-    expect(within(dialog).getByText('Verified: Code review notes')).toBeTruthy();
-  });
-
-  it('says each verification state in plain words', async () => {
-    const { dialog: atlas } = await openEdit('Atlas API');
-    expect(within(atlas).getByText('Preferred. Not verified yet')).toBeTruthy();
-  });
-
-  it('verifies a conversation and shows the new state in place', async () => {
-    const { user, app, dialog } = await openEdit('Atlas API');
-    const calls = vi.spyOn(app.demo, 'call');
-    await user.click(within(dialog).getByRole('button', { name: 'Verify Atlas API design' }));
-    await waitFor(() => expect(within(dialog).getByText('Preferred. Verified: Atlas API design')).toBeTruthy());
-    expect(calls).toHaveBeenCalledWith('conversations.verify', { params: { id: IDS.c.atlasMain } });
-  });
-
-  it('shows a sign-in requirement as one', async () => {
-    const { dialog } = await openEdit('Trading dashboard');
-    await waitFor(() => expect(within(dialog).getByText('Sign in to ChatGPT, then verify again')).toBeTruthy());
-  });
-
-  it('opens a conversation through the core', async () => {
-    const { user, app, dialog } = await openEdit('GitManager');
-    const calls = vi.spyOn(app.demo, 'call');
-    await user.click(within(dialog).getByRole('button', { name: 'Open Release planning' }));
-    await waitFor(() => expect(calls).toHaveBeenCalledWith('conversations.open', { params: { id: IDS.c.gmRelease } }));
-    expect(app.fake.native.chatgpt.navigate).toHaveBeenCalledWith(expect.stringContaining('/c/6f1a2b3c'));
-  });
-
-  it('cannot open or verify what is not saved yet', async () => {
-    const { user, dialog } = await openEdit('GitManager');
-    await user.type(within(dialog).getByLabelText('Add a conversation'), 'chatgpt.com/c/11111111-1111-4111-8111-111111111111{Enter}');
-    const open = within(dialog).getByRole('button', { name: /^Open ChatGPT conversation 11111111/ }) as HTMLButtonElement;
-    expect(open.disabled).toBe(true);
-    expect(within(dialog).getByText('Saved when you save the project')).toBeTruthy();
-  });
-
-  it('saves nothing and says so when nothing changed', async () => {
-    const { user, app, dialog } = await openEdit('GitManager');
-    const calls = vi.spyOn(app.demo, 'call');
-    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+    // Fixing the path and pressing Create again creates the project once.
+    await user.clear(within(dialog).getByLabelText('Folder'));
+    await user.type(within(dialog).getByLabelText('Folder'), 'C:\\Dev\\Somewhere');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(calledNames(calls).filter((n) => /^(projects|conversations)\./.test(n))).toEqual([]);
-    expect(screen.getByText('No changes to save')).toBeTruthy();
+    expect(calls(spy, 'projects.create')).toHaveLength(2);
+    expect(app.runtime.store.getState().projects.filter((p) => p.name === 'Nowhere')).toHaveLength(0);
+    expect(app.runtime.store.getState().projects.filter((p) => p.name === 'Somewhere')).toHaveLength(1);
   });
 
-  it('sends only what changed', async () => {
-    const { user, app, dialog } = await openEdit('GitManager');
-    const calls = vi.spyOn(app.demo, 'call');
-    const name = within(dialog).getByLabelText('Name');
+  it('refuses a folder that belongs to another project, in the core\'s words', async () => {
+    const { user, dialog } = await openFolder();
+    await user.type(within(dialog).getByLabelText('Folder'), 'C:\\Dev\\GitManager');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toBe(
+      'This folder already belongs to the project "GitManager". A folder can belong to one project only, so remove it there first or choose a different folder.',
+    );
+    expect((within(dialog).getByLabelText('Folder') as HTMLInputElement).value).toBe('C:\\Dev\\GitManager');
+  });
+});
+
+describe('from nothing', () => {
+  it('asks for a name and creates an empty project', async () => {
+    const { user, app, dialog } = await openCreate();
+    await user.click(tab(dialog, 'Empty project'));
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    expect(within(dialog).getByRole('alert').textContent).toBe('Give the project a name.');
+    expect(callNames(spy)).not.toContain('projects.create');
+    await user.type(within(dialog).getByLabelText('Name'), 'Scratch');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(calls(spy, 'projects.create')).toEqual([{ body: { name: 'Scratch' } }]);
+    expect(stored(app, 'Scratch')).toMatchObject({ githubRepo: null, chatgptProject: null, roots: [] });
+    expect(app.runtime.route.getState().projectId).toBe(stored(app, 'Scratch')?.id);
+  });
+});
+
+describe('the name', () => {
+  it('is offered from the source until the person types their own, and then it is theirs', async () => {
+    const { user, dialog } = await openCreate();
+    const name = within(dialog).getByLabelText('Name') as HTMLInputElement;
+    paste(within(dialog).getByLabelText(ADDRESS_LABEL), PROJECT);
+    expect(name.value).toBe('Caissa trainer');
+    await user.click(tab(dialog, 'GitHub repository'));
+    expect(name.value).toBe(''); // this source has none to offer yet
+    paste(within(dialog).getByLabelText('Repository'), 'acme/billing');
+    expect(name.value).toBe('billing');
+
     await user.clear(name);
-    await user.type(name, 'Git Manager');
-    await user.click(within(dialog).getByRole('radio', { name: 'Preferred: Code review notes' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(calledNames(calls).filter((n) => /^(projects|conversations)\./.test(n))).toEqual(['projects.update', 'conversations.setPreferred']);
-    expect(app.runtime.store.getState().projects.find((p) => p.id === IDS.gitManager)).toMatchObject({ name: 'Git Manager', preferredConversationId: IDS.c.gmReview });
-    expect(await screen.findByRole('button', { name: /^Git Manager/ })).toBeTruthy();
+    await user.type(name, 'Mine');
+    paste(within(dialog).getByLabelText('Repository'), 'acme/other');
+    expect(name.value).toBe('Mine');
+    await user.click(tab(dialog, 'ChatGPT Project'));
+    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Mine');
   });
 
-  it('removes a folder and a conversation, and the core ends with the preference on the one that remains', async () => {
-    const { user, app, dialog } = await openEdit('GitManager');
-    await user.click(within(dialog).getByRole('button', { name: 'Remove Release planning' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+  it('is required, and the message comes once Create has been pressed, not before', async () => {
+    const { user, app, dialog } = await openCreate();
+    await user.click(tab(dialog, 'Empty project'));
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.type(within(dialog).getByLabelText('Name'), '  ');
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    expect(within(dialog).getByRole('alert').textContent).toBe('Give the project a name.');
+    expect(document.activeElement).toBe(within(dialog).getByLabelText('Name'));
+    expect(callNames(spy)).not.toContain('projects.create');
+  });
+
+  it('holds at most 120 characters', async () => {
+    const { dialog } = await openCreate();
+    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).maxLength).toBe(120);
+  });
+
+  it('is trimmed before it is sent', async () => {
+    const { user, app, dialog } = await openCreate();
+    await user.click(tab(dialog, 'Empty project'));
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.type(within(dialog).getByLabelText('Name'), '  Padded  ');
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    const project = app.runtime.store.getState().projects.find((p) => p.id === IDS.gitManager);
-    expect(project?.preferredConversationId).toBe(IDS.c.gmReview);
-    expect(app.runtime.store.getState().conversations.filter((c) => c.projectId === IDS.gitManager)).toHaveLength(1);
+    expect(calls(spy, 'projects.create')).toEqual([{ body: { name: 'Padded' } }]);
   });
 });
 
-describe('creating a project', () => {
-  it('shows what is wrong with the name and the repository, and sends nothing', async () => {
+describe('creating with the keyboard', () => {
+  it('creates with Enter from the last field, as the button does', async () => {
     const { user, app, dialog } = await openCreate();
-    const calls = vi.spyOn(app.demo, 'call');
-    await user.type(within(dialog).getByLabelText('GitHub repository'), 'not a repo');
-    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
-    expect(within(dialog).getByText('Give the project a name.')).toBeTruthy();
-    expect(within(dialog).getByText('Use the form owner/repo, for example acme/git-manager.')).toBeTruthy();
-    expect(calledNames(calls).some((n) => n === 'projects.create')).toBe(false);
-  });
-
-  it('tidies a pasted GitHub address and says what will be saved', async () => {
-    const { user, dialog } = await openCreate();
-    await user.type(within(dialog).getByLabelText('GitHub repository'), 'https://github.com/acme/billing.git');
-    expect(within(dialog).getByText('Will be saved as acme/billing.')).toBeTruthy();
-  });
-
-  it('creates the project with its folders, then its conversations, selects it and closes', async () => {
-    const { user, app, dialog } = await openCreate();
-    const calls = vi.spyOn(app.demo, 'call');
-    await user.type(within(dialog).getByLabelText('Name'), 'Billing service');
-    await user.type(within(dialog).getByLabelText('GitHub repository'), 'acme/billing');
-    await user.type(within(dialog).getByLabelText('Add a folder'), 'C:\\Dev\\Billing{Enter}');
-    await user.type(within(dialog).getByLabelText('Add a conversation'), 'chatgpt.com/c/11111111-1111-4111-8111-111111111111{Enter}');
-    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    await user.click(tab(dialog, 'Empty project'));
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.type(within(dialog).getByLabelText('Name'), 'Typed{Enter}');
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(calledNames(calls).filter((n) => /^(projects|conversations)\./.test(n))).toEqual(['projects.create', 'conversations.add']);
-    const created = app.runtime.store.getState().projects.find((p) => p.name === 'Billing service');
-    expect(created).toMatchObject({ githubRepo: 'acme/billing', roots: [{ path: 'C:\\Dev\\Billing', env: 'win' }] });
-    expect(created?.preferredConversationId).not.toBeNull();
-    expect((await screen.findByRole('button', { name: /^Billing service/ })).getAttribute('aria-current')).toBe('true');
+    expect(calls(spy, 'projects.create')).toEqual([{ body: { name: 'Typed' } }]);
   });
+});
 
-  it('keeps what was created when a later step fails, shows why, and a retry does not create it twice', async () => {
+describe('creating once', () => {
+  it('sends one request however many times Create is pressed while it is answered', async () => {
     const { user, app, dialog } = await openCreate();
+    await user.click(tab(dialog, 'Empty project'));
+    await user.type(within(dialog).getByLabelText('Name'), 'Once');
     const original = app.demo.call;
-    let failAdd = true;
-    const spy = vi.spyOn(app.demo, 'call').mockImplementation(((name: string, ...rest: unknown[]) => (
-      name === 'conversations.add' && failAdd ? Promise.reject(new Error('ChatGPT address was refused')) : (original as (...a: unknown[]) => unknown)(name, ...rest)
-    )) as never);
-    await user.type(within(dialog).getByLabelText('Name'), 'Billing service');
-    await user.type(within(dialog).getByLabelText('Add a conversation'), 'chatgpt.com/c/11111111-1111-4111-8111-111111111111{Enter}');
-    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
-    expect((await within(dialog).findByRole('alert')).textContent).toBe('Could not add a conversation: ChatGPT address was refused');
-    expect(screen.getByRole('dialog', { name: 'Edit Billing service' })).toBeTruthy(); // now editing the project it made
-    expect(await screen.findByRole('button', { name: /^Billing service/ })).toBeTruthy();
-
-    failAdd = false;
-    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const spy = vi.spyOn(app.demo, 'call').mockImplementation((async (name: string, ...rest: unknown[]) => {
+      if (name === 'projects.create') await gate;
+      return (original as (...a: unknown[]) => unknown)(name, ...rest);
+    }) as never);
+    const create = within(dialog).getByRole('button', { name: 'Create project' });
+    await user.click(create);
+    await user.click(create);
+    fireEvent.submit(dialog.querySelector('form') as HTMLFormElement);
+    release();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(calledNames(spy).filter((n) => n === 'projects.create')).toHaveLength(1);
-    expect(app.runtime.store.getState().projects.filter((p) => p.name === 'Billing service')).toHaveLength(1);
-    expect(app.runtime.store.getState().conversations.filter((c) => c.url.includes('11111111'))).toHaveLength(1);
+    expect(calls(spy, 'projects.create')).toHaveLength(1);
+    expect(app.runtime.store.getState().projects.filter((p) => p.name === 'Once')).toHaveLength(1);
   });
 
-  it('closes on Cancel and Escape without saving, and a stray click outside does not discard typed work', async () => {
+  it('says why when the core cannot be reached, keeps everything, and creates on the next press', async () => {
     const { user, app, dialog } = await openCreate();
-    const calls = vi.spyOn(app.demo, 'call');
+    await user.click(tab(dialog, 'Empty project'));
+    await user.type(within(dialog).getByLabelText('Name'), 'Retry');
+    const original = app.demo.call;
+    let fail = true;
+    const spy = vi.spyOn(app.demo, 'call').mockImplementation((async (name: string, ...rest: unknown[]) => {
+      if (name === 'projects.create' && fail) throw Object.assign(new Error('Could not reach the Mini-Summa core: fetch failed'), { code: 'network' });
+      return (original as (...a: unknown[]) => unknown)(name, ...rest);
+    }) as never);
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    expect((await within(dialog).findByRole('alert')).textContent).toBe('Could not reach the Mini-Summa core: fetch failed');
+    expect((within(dialog).getByLabelText('Name') as HTMLInputElement).value).toBe('Retry');
+    expect(app.runtime.store.getState().projects.some((p) => p.name === 'Retry')).toBe(false);
+    fail = false;
+    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(calls(spy, 'projects.create')).toHaveLength(2);
+    expect(app.runtime.store.getState().projects.filter((p) => p.name === 'Retry')).toHaveLength(1);
+  });
+});
+
+describe('leaving without creating', () => {
+  it('closes on Cancel and on Escape without creating anything', async () => {
+    const { user, app, dialog } = await openCreate();
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.type(within(dialog).getByLabelText('Name'), 'Half done');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    act(() => app.runtime.ui.getState().openProjectDialog({ mode: 'create' }));
+    await screen.findByRole('dialog', { name: 'New project' });
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(callNames(spy)).not.toContain('projects.create');
+  });
+
+  it('a stray click outside does not discard typed work, but closes an untouched dialog', async () => {
+    const { user, dialog } = await openCreate();
     await user.type(within(dialog).getByLabelText('Name'), 'Half done');
     fireEvent.mouseDown(document.querySelector('.sm-backdrop') as HTMLElement);
     expect(screen.getByRole('dialog', { name: 'New project' })).toBeTruthy();
-    await user.keyboard('{Escape}');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    const second = await openCreate();
+    fireEvent.mouseDown(document.querySelector('.sm-backdrop') as HTMLElement);
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(calledNames(calls).some((n) => n === 'projects.create')).toBe(false);
-  });
-});
-
-
-describe('regression: a folder chosen for a project that has none must be saved', () => {
-  async function createGithubOnlyProject() {
-    const user = userEvent.setup();
-    const app = await renderApp();
-    await user.click(screen.getByRole('button', { name: 'New project' }));
-    const dialog = await screen.findByRole('dialog', { name: 'New project' });
-    await user.type(within(dialog).getByLabelText('Name'), 'CaissaTrainer');
-    await user.type(within(dialog).getByLabelText('GitHub repository'), 'FarmaanFIM/CaissaTrainer');
-    await user.click(within(dialog).getByRole('button', { name: 'Create project' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    return { user, app };
-  }
-
-  it('Browse, then Save: the folder is stored, shown in the header and no "No changes to save" appears', async () => {
-    const { user, app } = await createGithubOnlyProject();
-    expect(screen.getByText(/No folder yet/)).toBeTruthy(); // the state the person started from
-    await user.click(screen.getByRole('button', { name: 'Edit CaissaTrainer' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit CaissaTrainer' });
-    (app.fake.native.dialogs.selectDirectory as ReturnType<typeof vi.fn>).mockResolvedValueOnce('C:\\Dev\\CaissaTrainer');
-    const calls = vi.spyOn(app.demo, 'call');
-    await user.click(within(dialog).getByRole('button', { name: 'Browse' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Save changes' })); // no "Add folder" in between
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(calledNames(calls)).toContain('projects.addRoot');
-    expect(screen.queryByText('No changes to save')).toBeNull();
-    expect(screen.queryByText(/No folder yet/)).toBeNull();
-    expect(screen.getByText(/C:\\Dev\\CaissaTrainer/)).toBeTruthy();
-    const stored = await app.demo.call('projects.list');
-    expect(stored.find((p) => p.name === 'CaissaTrainer')?.roots.map((r) => r.path)).toEqual(['C:\\Dev\\CaissaTrainer']);
+    second.app.unmount();
   });
 
-  it('a path typed and not added is added by Save instead of being dropped', async () => {
-    const { user, app } = await createGithubOnlyProject();
-    await user.click(screen.getByRole('button', { name: 'Edit CaissaTrainer' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit CaissaTrainer' });
-    await user.type(within(dialog).getByLabelText('Add a folder'), 'D:\\Work\\Caissa');
-    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(screen.queryByText('No changes to save')).toBeNull();
-    const stored = await app.demo.call('projects.list');
-    expect(stored.find((p) => p.name === 'CaissaTrainer')?.roots.map((r) => r.path)).toEqual(['D:\\Work\\Caissa']);
-  });
-
-  it('a path that cannot be read stops Save and says what to do; nothing is discarded', async () => {
-    const { user, app } = await createGithubOnlyProject();
-    await user.click(screen.getByRole('button', { name: 'Edit CaissaTrainer' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit CaissaTrainer' });
-    await user.type(within(dialog).getByLabelText('Add a folder'), '/home/me/caissa');
-    const calls = vi.spyOn(app.demo, 'call');
-    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
-    expect(await within(dialog).findByText('Choose which WSL distribution this folder is in, or clear the folder field.')).toBeTruthy(); // once, beside the field
-    expect(screen.getByRole('dialog', { name: 'Edit CaissaTrainer' })).toBeTruthy(); // still open, still holding the path
-    expect((within(dialog).getByLabelText('Add a folder') as HTMLInputElement).value).toBe('/home/me/caissa');
-    expect(calledNames(calls).filter((n) => /^projects\./.test(n))).toEqual([]);
-  });
-
-  it('with nothing in the field and nothing changed, Save still says there was nothing to save', async () => {
-    const { user } = await createGithubOnlyProject();
-    await user.click(screen.getByRole('button', { name: 'Edit CaissaTrainer' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Edit CaissaTrainer' });
-    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(screen.getByText('No changes to save')).toBeTruthy();
+  it('opens fresh every time: nothing typed last time is still there', async () => {
+    const { user, app, dialog } = await openCreate();
+    await user.type(within(dialog).getByLabelText('Name'), 'Old');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    act(() => app.runtime.ui.getState().openProjectDialog({ mode: 'create' }));
+    const again = await screen.findByRole('dialog', { name: 'New project' });
+    expect(tab(again, 'ChatGPT Project').getAttribute('aria-selected')).toBe('true');
+    expect((within(again).getByLabelText('Name') as HTMLInputElement).value).toBe('');
   });
 });

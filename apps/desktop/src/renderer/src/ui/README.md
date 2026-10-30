@@ -7,8 +7,11 @@ import { Button, IconButton, Dialog, ConfirmDialog, Menu, Select, Tabs, toast, F
 ```
 
 The kit follows the vendored Summa-UI principles (`third_party/summa-ui-guidance`). Where Mini-Summa differs on purpose, the reason is in
-`docs/UI_PRINCIPLE_EXCEPTIONS.md`. The palette is defined once, in `../styles/mini-summa-tokens.css`: use tokens (`var(--s1)`, `var(--text-2)`),
-never hex values.
+`docs/UI_PRINCIPLE_EXCEPTIONS.md`. The tokens are the vendored Summa-UI bundle's, loaded unchanged (`third_party/summa-ui-guidance/css/tokens.css`);
+`../styles/mini-summa-tokens.css` only adds what the bundle lacks (`--s5`, `--control-h-sm`, the terminal). Use tokens (`var(--s1)`, `var(--text-2)`),
+never hex values. Surfaces step from the page (`--s0`) to the panel (`--s1`), a card on it (`--s2`), a row or field inside the card (`--s3`), and a
+dialog (`--s3`) with its contents one step further (`--s4`). Text a person must read is `--text` or `--text-2` (4.8:1 or better on all of them);
+`--text-3` is for placeholders, disabled controls and decoration, never for words.
 
 ## Components
 
@@ -16,7 +19,7 @@ never hex values.
 | --- | --- | --- |
 | `Button` | `variant`: `primary` (one per view, emerald), `secondary`, `ghost`, `destructive` (solid red, name the verb), `destructive-quiet` | `loading` keeps the label and ignores presses |
 | `IconButton` | A control that is only an icon | `label` is required: it is the accessible name and the tooltip |
-| `Dialog`, `ConfirmDialog` | One decision at a time. `ConfirmDialog` takes `confirmLabel` (a verb), `destructive`, `requireText`, `busy`, `error` | Focus is trapped and restored, Esc closes unless `busy`, `alertdialog` starts on Cancel, stacked dialogs only react at the top |
+| `Dialog`, `ConfirmDialog` | One decision at a time. `ConfirmDialog` takes `confirmLabel` (a verb), `destructive`, `requireText`, `busy`, `error`. `Dialog` also takes `placement="top"` and `hideTitle` for a palette (the quick switcher), which is named by its title without drawing it | Focus is trapped and restored, Esc closes unless `busy`, `alertdialog` starts on Cancel, stacked dialogs only react at the top |
 | `Menu` | Commands. Items: `label`, `icon`, `danger`, `checked` (+ `radio`), `shortcut`, separators, headings. `trigger` renders the opener, or pass `anchorPoint` for a context menu | Arrow keys, type-ahead, Esc returns focus to the opener |
 | `Select` | A value from a list (search appears above 7 options) | Same keyboard model as `Menu`, works inside `Field` |
 | `Field`, `TextInput`, `TextArea`, `Switch`, `Checkbox`, `Radio` | Forms. `Field` wires label, hint and error to its control | An error replaces the hint and is announced |
@@ -52,9 +55,19 @@ import { useApi, useApp, useNative, useRoute, useUi } from '../../app/runtime';
 - `useNative()`: clipboard, `shell.openExternal`, folder picker, ChatGPT view. Works in a browser too (`kind: 'browser'`).
 - `app/selectors.ts`: `activeProjects`, `resolveProject`, `statsByProject`, `isAwaitingHandoff`, `needsAttention`.
 
+### The shell
+
+The page is `--s0`; the sidebar sits on it with no border; the content is one inset, rounded `--s1` panel (as the Summa-UI `AppShell`). The sidebar is the brand, a
+full-width New project button, a search entry that opens the quick switcher (also Ctrl+Shift+P, `features/shell/QuickSwitcher.tsx`; never Ctrl+K or another plain
+Ctrl+letter chord, the terminal needs those), one flat list of projects and Activity, Reports, Settings with muted counts. A project row is its name and, when a
+session needs the person, an amber dot; its facts are the row's accessible name and tooltip. Selected is `--select`. The row's menu is Project settings, Archive and
+(last, with an icon) Delete. Alt+Up and Alt+Down on a focused row, or a drag, reorder the list. Collapsed, the sidebar is nothing but a quiet tab on the window's edge
+(`SidebarEdge`); there is no icon rail.
+
 ### A view that needs its own navigation
 
-A view never opens a second sidebar (P14). It replaces the sidebar content and shows a back chevron:
+A view never opens a second sidebar (P14), and never a column of its own either. It replaces the sidebar content and shows a back chevron. While it holds the
+sidebar, the sidebar is on screen even if the person collapsed it; when the view lets go the person's choice returns (`sidebarShown`):
 
 ```tsx
 import { SidebarContent } from '../shell/SidebarSlot';

@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { setNativeBounds } from '../../src/renderer/src/app/nativeBounds';
+import { clearNativeBounds } from '../../src/renderer/src/app/nativeBounds';
 import { IDS } from '../../src/renderer/src/dev/demo/seed';
 import { createFakeNative, renderApp } from './helpers';
 
@@ -10,7 +10,7 @@ vi.mock('../../src/renderer/src/features/activity', async () => ({ default: (awa
 vi.mock('../../src/renderer/src/features/reports', async () => ({ default: (await import('./stubViews')).ReportsStandIn }));
 vi.mock('../../src/renderer/src/features/settings', async () => ({ default: (await import('./stubViews')).SettingsStandIn }));
 
-afterEach(() => { setNativeBounds(null); });
+afterEach(() => { clearNativeBounds(); });
 
 interface Geometry { area?: { width: number; height: number }; slot?: { x: number; y: number; width: number; height: number } }
 
@@ -142,50 +142,6 @@ describe('divider and persisted ratio', () => {
   });
 });
 
-describe('maximising a pane', () => {
-  it('shows one pane at full size, offers to show both, and restores', async () => {
-    geometry();
-    const user = userEvent.setup();
-    const app = await renderApp();
-    const spy = vi.spyOn(app.demo, 'call');
-    expect(screen.queryByRole('button', { name: 'Show both panes' })).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Maximize Claude pane' }));
-    const chatgpt = screen.getByRole('region', { name: 'ChatGPT', hidden: true });
-    expect(chatgpt.closest('.ms-split__pane')?.hasAttribute('hidden')).toBe(true);
-    expect(screen.queryByRole('separator', { name: 'Resize the ChatGPT and Claude panes' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Restore Claude pane' }).getAttribute('aria-pressed')).toBe('true');
-    await user.click(screen.getByRole('button', { name: 'Show both panes' }));
-    expect(chatgpt.closest('.ms-split__pane')?.hasAttribute('hidden')).toBe(false);
-    expect(divider()).toBeTruthy();
-    await waitFor(() => expect(settingsUpdates(spy).at(-1)).toEqual({ layout: { maximized: null } }), { timeout: 2000 });
-  });
-
-  it('keeps the other pane (and its terminal) alive while one is maximised', async () => {
-    geometry();
-    const user = userEvent.setup();
-    const app = await renderApp();
-    await waitFor(() => expect(app.adapters.size).toBe(1));
-    const adapter = [...app.adapters.values()][0];
-    await user.click(screen.getByRole('button', { name: 'Maximize ChatGPT pane' }));
-    expect(adapter.disposed).toBe(false);
-    await user.click(screen.getByRole('button', { name: 'Restore ChatGPT pane' }));
-    expect(app.created).toHaveLength(1);
-    expect(adapter.openCount).toBe(1);
-  });
-
-  it('answers Ctrl+Shift+arrow, and the same key again restores', async () => {
-    geometry();
-    const user = userEvent.setup();
-    await renderApp();
-    await user.keyboard('{Control>}{Shift>}{ArrowRight}{/Shift}{/Control}');
-    expect(screen.getByRole('button', { name: 'Restore Claude pane' })).toBeTruthy();
-    await user.keyboard('{Control>}{Shift>}{ArrowRight}{/Shift}{/Control}');
-    expect(screen.getByRole('button', { name: 'Maximize Claude pane' })).toBeTruthy();
-    await user.keyboard('{Control>}{Shift>}{ArrowLeft}{/Shift}{/Control}');
-    expect(screen.getByRole('button', { name: 'Restore ChatGPT pane' })).toBeTruthy();
-  });
-});
-
 describe('where the native ChatGPT view goes', () => {
   const lastBounds = (fake: ReturnType<typeof createFakeNative>) => fake.lastBounds();
 
@@ -224,14 +180,14 @@ describe('where the native ChatGPT view goes', () => {
     expect(setBounds.mock.calls.length).toBe(before);
   });
 
-  it('hides it (null) when the other pane is maximised, and brings it back on restore', async () => {
+  it('hides it (null) when Claude is shown alone, and brings it back with Split', async () => {
     geometry();
     const user = userEvent.setup();
     const app = await renderApp();
     await waitFor(() => expect(lastBounds(app.fake)).not.toBeNull());
-    await user.click(screen.getByRole('button', { name: 'Maximize Claude pane' }));
+    await user.click(screen.getByRole('radio', { name: 'Claude' }));
     await waitFor(() => expect(lastBounds(app.fake)).toBeNull());
-    await user.click(screen.getByRole('button', { name: 'Show both panes' }));
+    await user.click(screen.getByRole('radio', { name: 'Split' }));
     await waitFor(() => expect(lastBounds(app.fake)).toEqual({ x: 260, y: 82, width: 590, height: 818 }));
   });
 
@@ -246,14 +202,14 @@ describe('where the native ChatGPT view goes', () => {
     await waitFor(() => expect(lastBounds(app.fake)).not.toBeNull());
   });
 
-  it('hides it for a project that has no conversation, where there is nothing to show', async () => {
+  it('hides it for a project that has no conversation and no linked ChatGPT Project, where there is nothing to show', async () => {
     geometry();
     const user = userEvent.setup();
     const app = await renderApp();
     await waitFor(() => expect(lastBounds(app.fake)).not.toBeNull());
     await user.click(screen.getByRole('button', { name: /^Docs site/ }));
     await waitFor(() => expect(lastBounds(app.fake)).toBeNull());
-    expect(screen.getByText(/No ChatGPT conversation is mapped to Docs site/)).toBeTruthy();
+    expect(screen.getByText('This project has no ChatGPT Project or conversation yet.')).toBeTruthy();
   });
 
   it('hides it for good when the pane unmounts', async () => {
@@ -366,13 +322,13 @@ describe('the ChatGPT pane', () => {
     expect(fake.native.shell.openExternal).toHaveBeenCalledWith(expect.stringContaining('chatgpt.com/c/6f1a2b3c'));
   });
 
-  it('offers to add a conversation when the project has none, with exactly one action', async () => {
+  it('offers to add a conversation, or to link a ChatGPT Project, when the project has neither', async () => {
     geometry();
     const user = userEvent.setup();
     await renderApp();
     await user.click(screen.getByRole('button', { name: /^Docs site/ }));
     await user.click(screen.getByRole('button', { name: 'Add a conversation' }));
-    expect(screen.getByRole('dialog', { name: 'Edit Docs site' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Docs site settings' })).toBeTruthy();
   });
 });
 

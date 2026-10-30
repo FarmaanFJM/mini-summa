@@ -1,0 +1,68 @@
+/* Application frame, shared status pieces (banner, notice, state dot), rows used in panes and dialogs, and the frame of the views. */
+.ms-app { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--s0); }
+.ms-unconfigured { display: grid; place-items: center; height: 100%; padding: var(--sp-5); }
+
+/* ---------------------------------------------------------------- Connection banner */
+/* A calm band on the page, inset like the panel below it. It is on screen only while what is shown may be out of date. */
+.ms-banner {
+  flex: none; display: flex; align-items: center; gap: var(--sp-3); min-height: 36px; margin: var(--sp-2) var(--sp-2) 0; padding: 6px var(--sp-3);
+  border-radius: var(--r); background: var(--s2); color: var(--text); font-size: var(--fs-sm);
+}
+.ms-banner__icon { color: var(--warn); }
+.ms-banner__sub { color: var(--text-2); }
+.ms-banner .sm-btn { margin-left: auto; }
+.ms-banner .sm-spinner { margin-left: auto; color: var(--text-2); }
+
+/* Live-looking things dim while the connection is not live, so stale data never reads as current. */
+.ms-app:not([data-connection="live"]) .ms-live { opacity: 0.45; }
+.ms-app:not([data-connection="live"]) .ms-dot { animation: none; }
+
+/* ---------------------------------------------------------------- State dot */
+/* The dot never stands alone: it sits beside words, or carries an accessible name. Amber is "needs you", red is "failed". */
+.ms-dot { display: inline-block; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--text-2); }
+.ms-dot[data-tone="busy"] { background: var(--text); animation: ms-pulse 1.8s ease-in-out infinite; }
+.ms-dot[data-tone="idle"] { background: var(--text-2); }
+.ms-dot[data-tone="attention"], .ms-dot--attention { background: var(--warn); }
+.ms-dot[data-tone="error"] { background: var(--danger); }
+.ms-dot[data-tone="off"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--text-2); }
+@keyframes ms-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+.ms-meta { display: inline-flex; align-items: center; gap: 3px; color: var(--text-2); font-size: var(--fs-xs); line-height: 1; }
+
+/* ---------------------------------------------------------------- Notice: a calm line, not an alert */
+.ms-notice {
+  flex: none; display: flex; align-items: flex-start; gap: var(--sp-2); padding: 8px var(--sp-3); border-radius: var(--r);
+  background: var(--s2); color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45;
+}
+.ms-notice > .sm-icon, .ms-notice > .sm-spinner { margin-top: 2px; }
+.ms-notice[data-tone="attention"] > .sm-icon { color: var(--warn); }
+.ms-notice[data-tone="error"] > .sm-icon { color: var(--danger); }
+.ms-notice__text { flex: 1; min-width: 0; color: var(--text); }
+.ms-notice__actions { flex: none; display: flex; align-items: center; gap: 4px; margin: -3px 0 -3px auto; }
+.sm-dialog .ms-notice { background: var(--s4); }
+
+/* ---------------------------------------------------------------- Rows used in panes and dialogs */
+/* A filled row, one surface step above what it sits on (P01: rows are fills, not outlined boxes). */
+.ms-rows { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ms-row-item { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 6px 8px 6px 12px; border-radius: var(--r); background: var(--s2); min-width: 0; }
+.ms-row-item > .sm-icon { color: var(--text-2); }
+.ms-row-item__main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.ms-row-item__sub { color: var(--text-2); font-size: var(--fs-xs); line-height: 1.4; }
+.ms-row-item__actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.ms-row-item--conversation { align-items: flex-start; padding-top: 10px; padding-bottom: 10px; }
+.ms-row-item--conversation > .ms-choice { margin-top: 7px; }
+.ms-row-item--conversation .ms-row-item__actions { margin-top: 2px; }
+.sm-dialog .ms-row-item { background: var(--s4); }
+.sm-dialog .ms-row-item .sm-input { background: var(--s5); }
+.sm-dialog .ms-row-item .sm-btn--ghost:hover:not(:disabled) { background: var(--s5); }
+.sm-dialog .ms-row-item .sm-icon-btn:hover:not(:disabled) { background: var(--s5); }
+.ms-break { overflow-wrap: anywhere; }
+.ms-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* ---------------------------------------------------------------- The frame of a view (activity, reports, settings) */
+/* A view fills the inset panel. Its header is a title, its own controls and nothing else: no fill and no border under it, so the
+   panel stays one surface (P01, P12). The body scrolls under it. */
+.ms-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.ms-view__head { flex: none; display: flex; align-items: center; gap: var(--sp-3); min-height: 52px; padding: 0 var(--sp-4) 0 20px; }
+.ms-view__title { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; }
+.ms-view__body { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-2) 20px var(--sp-5); }

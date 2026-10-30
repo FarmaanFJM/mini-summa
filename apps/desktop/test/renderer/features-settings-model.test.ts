@@ -1,9 +1,9 @@
 // The small rules behind the settings and onboarding screens, without React.
 import type { ChatGptViewState, Conversation, EnvironmentInfo, HookStatus, Project, SessionView, TailscaleStatus } from '@minisumma/shared';
-import { defaultSettings } from '@minisumma/shared';
+import { defaultNotificationPrefs, defaultSettings } from '@minisumma/shared';
 import { describe, expect, it } from 'vitest';
 import {
-  countdown, diffCounts, formatBytes, hookSummary, installGuidance, lastSeenWords, parseDays, parseDiff, parsePartSize, partCountFor,
+  countdown, diffCounts, formatBytes, hookSummary, installGuidance, lastSeenWords, NOTIFICATION_SWITCHES, parseDays, parseDiff, parsePartSize, partCountFor,
   previewMessage, pruneWords, quietSummary, quietUntil, resolveSection, runtimeWords, scopesInWords, SECTIONS, tailscaleFacts, TIME_RE,
 } from '../../src/renderer/src/features/settings/model';
 import { deriveSteps, doneCount, isComplete, nextStep } from '../../src/renderer/src/features/onboarding/model';
@@ -50,6 +50,33 @@ describe('quiet mode', () => {
   it('accepts only 24 hour times', () => {
     for (const ok of ['00:00', '08:30', '22:00', '23:59']) expect(TIME_RE.test(ok)).toBe(true);
     for (const bad of ['', '8:30', '24:00', '12:60', '12:5', 'noon']) expect(TIME_RE.test(bad)).toBe(false);
+  });
+});
+
+describe('the notification switches', () => {
+  it('has one switch for every kind of notification the core knows, so that none can be on for everyone with no way to turn it off', () => {
+    const kinds = Object.keys(defaultNotificationPrefs()).filter((k) => k !== 'enabled').sort();
+    expect(NOTIFICATION_SWITCHES.map((s) => s.key).sort()).toEqual(kinds);
+    // Each has a label, a short column name for the table, and one sentence of its own; the keys are not repeated.
+    expect(new Set(NOTIFICATION_SWITCHES.map((s) => s.key)).size).toBe(NOTIFICATION_SWITCHES.length);
+    for (const s of NOTIFICATION_SWITCHES) {
+      expect(s.label.length).toBeGreaterThan(3);
+      expect(s.column.length).toBeLessThanOrEqual(10); // the columns share one row of a table
+      expect(s.description).toMatch(/\.$/);
+    }
+  });
+
+  it('puts "Claude finished" right after the report, and says that a turn ending is not the task being complete', () => {
+    const keys = NOTIFICATION_SWITCHES.map((s) => s.key);
+    expect(keys.indexOf('turnEnded')).toBe(keys.indexOf('report') + 1);
+    expect(NOTIFICATION_SWITCHES.find((s) => s.key === 'turnEnded')).toMatchObject({
+      label: 'Claude finished', column: 'Finished', hint: true,
+      description: 'A session stopped and is waiting for you, without a report. A turn ending does not mean the task is complete.',
+    });
+  });
+
+  it('keeps every sentence free of the dashes the house rules refuse', () => {
+    expect(NOTIFICATION_SWITCHES.map((s) => `${s.label} ${s.column} ${s.description}`).join(' ')).not.toMatch(/[\u2013\u2014]/);
   });
 });
 

@@ -3,7 +3,10 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import type { Project } from '@minisumma/shared';
 import { createMemoryStorage } from '../../src/renderer/src/app/storage';
+import { deriveSteps, isComplete, isFolderless } from '../../src/renderer/src/features/onboarding/model';
+import type { StepFacts } from '../../src/renderer/src/features/onboarding/model';
 import { createEmptySeed } from '../../src/renderer/src/dev/demo/seed';
 import { createFakeNative } from './helpers';
 import { callsTo, renderFeature, textOf } from './features-helpers';
@@ -85,10 +88,10 @@ describe('the checklist over an empty application', () => {
     expect(textOf(step(/Create your first project/))).toBe('Done: Create your first project');
     expect(textOf(step(/Add its ChatGPT conversation/))).toContain('Paste the address of the ChatGPT conversation');
 
-    // Its own action opens that project's dialog.
+    // Its own action opens that project's settings.
     await user.click(within(step(/Add its ChatGPT conversation/)).getByRole('button', { name: 'Add a conversation to Mini-Summa' }));
-    expect(await screen.findByRole('dialog', { name: 'Edit Mini-Summa' })).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(await screen.findByRole('dialog', { name: 'Mini-Summa settings' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Done' }));
 
     await app.demo.call('conversations.add', { params: { id: project.id }, body: { url: URL_ONE } });
     await waitFor(() => expect(isDone(/Add its ChatGPT conversation/)).toBe(true));
@@ -105,7 +108,8 @@ describe('the checklist over an empty application', () => {
     const storage = createMemoryStorage();
     const app = await emptyApp({ storage });
     await screen.findByRole('region', { name: 'Set up Mini-Summa' });
-    await app.demo.call('projects.create', { body: { name: 'Mini-Summa', roots: [] } });
+    // A project with a folder: one with none is complete once ChatGPT is settled, and then the checklist has nothing to minimize.
+    await app.demo.call('projects.create', { body: { name: 'Mini-Summa', roots: [{ path: 'C:\\code\\mini-summa', env: 'win' }] } });
     await expand(user);
     await user.click(within(panel()).getByRole('button', { name: 'Minimize' }));
     expect(screen.queryByRole('region', { name: 'Set up Mini-Summa' })).toBeNull();
@@ -127,6 +131,65 @@ describe('the checklist over an empty application', () => {
     expect(app.runtime.store.getState().sessions.some((s) => s.origin === 'managed')).toBe(false);
     expect(isDone(/Start a Claude session/)).toBe(false);
     expect(within(step(/Start a Claude session/)).getByRole('button', { name: 'Open Mini-Summa' })).toBeTruthy();
+  });
+});
+
+describe('a project that is only a GitHub repository', () => {
+  const FIRST_RUN_TEXT = 'A project can have a ChatGPT Project, a GitHub repository and local folders. Each one is optional.';
+
+  it('is told in the first-run text that a project needs no folder, and the text does not assume one', async () => {
+    await emptyApp();
+    await screen.findByRole('region', { name: 'Set up Mini-Summa' });
+    expect(textOf(step(/Create your first project/))).toContain(FIRST_RUN_TEXT);
+    expect(textOf(panel())).not.toMatch(/ties together a folder|connects a folder/);
+  });
+
+  it('is complete without a folder: no step about a folder, a conversation or a local session is required of it', async () => {
+    const storage = createMemoryStorage();
+    const app = await emptyApp({ storage });
+    await screen.findByRole('region', { name: 'Set up Mini-Summa' });
+    expect(saved(storage)).toEqual({ seenEmpty: true, dismissed: false });
+    // Before there is a project, the whole setup is asked for.
+    expect(textOf(step(/Add its ChatGPT conversation/))).not.toContain('(optional)');
+    expect(textOf(step(/Start a Claude session/))).not.toContain('(optional)');
+
+    await app.demo.call('projects.create', { body: { name: 'CaissaTrainer', githubRepo: 'FarmaanFIM/CaissaTrainer' } });
+    // Everything that matters is in place (Claude Code, the project, ChatGPT), so the checklist has nothing left to ask and goes.
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Set up Mini-Summa' })).toBeNull());
+    await waitFor(() => expect(saved(storage)).toEqual({ seenEmpty: true, dismissed: true }));
+    expect(document.querySelector('.ms-onb-layer')).toBeNull();
+  });
+
+  it('shows its folder and conversation steps as optional, with what each is for, and offers to add a folder', async () => {
+    const user = userEvent.setup();
+    const app = await emptyApp({ native: createFakeNative({ embedded: false }) }); // the window cannot show ChatGPT, so the checklist stays
+    await screen.findByRole('region', { name: 'Set up Mini-Summa' });
+    const project = await app.demo.call('projects.create', { body: { name: 'CaissaTrainer', githubRepo: 'FarmaanFIM/CaissaTrainer' } });
+    await expand(user);
+    expect(textOf(step(/Add its ChatGPT conversation/))).toContain('(optional)');
+    expect(textOf(step(/Add its ChatGPT conversation/))).toContain('Reports come from local sessions, which need a folder.');
+    expect(textOf(step(/Start a Claude session/))).toContain('(optional)');
+    expect(textOf(step(/Start a Claude session/))).toContain('A local session needs a folder. Add one in the project\'s settings.');
+    expect(textOf(step(/Claude Code is installed/))).toContain('(optional)');
+
+    // The one thing it offers for the session is the way to give the project a folder, in its settings.
+    await user.click(within(step(/Start a Claude session/)).getByRole('button', { name: 'Add a folder to CaissaTrainer' }));
+    const dialog = await screen.findByRole('dialog', { name: 'CaissaTrainer settings' });
+    expect(within(dialog).getByLabelText('Folder path')).toBeTruthy();
+    expect(project.roots).toEqual([]);
+  });
+
+  it('asks for them again as soon as one project has a folder', async () => {
+    const user = userEvent.setup();
+    const app = await emptyApp({ native: createFakeNative({ embedded: false }) });
+    await screen.findByRole('region', { name: 'Set up Mini-Summa' });
+    await app.demo.call('projects.create', { body: { name: 'CaissaTrainer', githubRepo: 'FarmaanFIM/CaissaTrainer' } });
+    await app.demo.call('projects.create', { body: { name: 'Local', roots: [{ path: 'C:\\code\\local', env: 'win' }] } });
+    await expand(user);
+    await waitFor(() => expect(textOf(step(/Start a Claude session/))).not.toContain('(optional)'));
+    expect(textOf(step(/Add its ChatGPT conversation/))).not.toContain('(optional)');
+    // Its actions point at the project that has a folder.
+    expect(within(step(/Start a Claude session/)).getByRole('button', { name: 'Open Local' })).toBeTruthy();
   });
 });
 
@@ -252,5 +315,46 @@ describe('an installation that already has projects', () => {
     expect(screen.getByText('Every step that matters is done.')).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Set up Mini-Summa' })).toBeNull();
     expect(app.runtime.store.getState().sessions.some((s) => s.origin === 'managed')).toBe(true);
+  });
+});
+
+describe('the steps, as facts', () => {
+  const project = (name: string, folders: number): Project => ({
+    id: name, name, description: null, githubRepo: null, chatgptProject: null, defaultEnv: 'win', preferredConversationId: null, defaultSessionKey: null,
+    notificationPrefs: {} as never, sortOrder: 0, archivedAt: null, createdAt: '', updatedAt: '',
+    roots: Array.from({ length: folders }, (_, i) => ({ id: `${name}${i}`, projectId: name, env: 'win' as const, path: `C:\\${name}${i}`, label: null, position: i })),
+  });
+  const facts = (projects: Project[]): StepFacts => ({
+    envs: [], envError: null, projects, conversations: [], sessions: [], hooks: [], settings: null, hasEmbeddedView: true, view: null,
+  });
+  const optional = (projects: Project[]) => Object.fromEntries(deriveSteps(facts(projects)).map((s) => [s.id, s.optional]));
+
+  it('require a folder\'s steps only while a project has one, or none exists yet', () => {
+    expect(isFolderless([])).toBe(false);
+    expect(isFolderless([project('a', 0)])).toBe(true);
+    expect(isFolderless([project('a', 0), project('b', 1)])).toBe(false);
+    expect(optional([])).toEqual({ claude: false, project: false, conversation: false, chatgpt: false, hooks: true, session: false });
+    expect(optional([project('a', 1)])).toEqual({ claude: false, project: false, conversation: false, chatgpt: false, hooks: true, session: false });
+    expect(optional([project('a', 0)])).toEqual({ claude: true, project: false, conversation: true, chatgpt: false, hooks: true, session: true });
+    expect(optional([project('a', 0), project('b', 2)])).toEqual({ claude: false, project: false, conversation: false, chatgpt: false, hooks: true, session: false });
+  });
+
+  it('complete the setup of a folderless project as soon as ChatGPT is settled: nothing else is asked of it', () => {
+    const settled = { chatgpt: { mode: 'external', externalBrowser: 'default' } } as never;
+    const steps = deriveSteps({ ...facts([project('a', 0)]), settings: settled });
+    expect(steps.filter((s) => !s.done && !s.optional).map((s) => s.id)).toEqual([]);
+    expect(isComplete(steps)).toBe(true);
+    // The same project with a folder still has a conversation, Claude Code and a session to ask for.
+    const asked = deriveSteps({ ...facts([project('a', 1)]), settings: settled });
+    expect(asked.filter((s) => !s.done && !s.optional).map((s) => s.id)).toEqual(['claude', 'conversation', 'session']);
+    expect(isComplete(asked)).toBe(false);
+  });
+
+  it('say, when Claude Code is missing and no project has a folder, that only local sessions need it', () => {
+    const [claude] = deriveSteps({ ...facts([project('a', 0)]), envs: [{ id: 'win', label: 'Windows', available: true, claude: { path: null, version: null, error: null } } as never] });
+    expect(claude).toMatchObject({ id: 'claude', done: false, optional: true });
+    expect(claude.detail).toBe('Mini-Summa did not find Claude Code in any environment. Only local sessions need it. Install it, then press Refresh.');
+    const [asked] = deriveSteps({ ...facts([project('a', 1)]), envs: [{ id: 'win', label: 'Windows', available: true, claude: { path: null, version: null, error: null } } as never] });
+    expect(asked).toMatchObject({ optional: false, detail: 'Mini-Summa did not find Claude Code in any environment. Install it, then press Refresh.' });
   });
 });

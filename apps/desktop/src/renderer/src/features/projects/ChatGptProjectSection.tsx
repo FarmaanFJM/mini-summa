@@ -6,7 +6,7 @@ import { useApi } from '../../app/runtime';
 import { Button, Field, TextInput } from '../../ui';
 import { AddressHint, SettingsSection } from './parts';
 import { automaticTitleOf, readChatGptAddress } from './readings';
-import { failureText, useAddText, useCommitText, useSavedFlag } from './useCommit';
+import { failureText, useAddText, useCommitText, useSavedFlag, useTrack } from './useCommit';
 
 const TITLE_MAX = 120;
 
@@ -50,18 +50,21 @@ function Linked({ project, link, onSaved, onOpen }: LinkedProps) {
     onSaved,
   });
 
-  const unlink = async () => {
+  const track = useTrack();
+  const unlink = () => track(async () => {
     setUnlinking(true);
     setProblem(null);
     try {
       await api.call('projects.update', { params: { id: project.id }, body: { chatgptProject: null } });
       onSaved();
+      return true;
     } catch (err) {
       setProblem(failureText(err));
+      return false;
     } finally {
       setUnlinking(false);
     }
-  };
+  });
 
   return (
     <>

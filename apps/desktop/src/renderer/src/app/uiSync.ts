@@ -1,5 +1,5 @@
-// Keeps what the window remembers (the selected project and view, each project's session tab and conversation, the setup
-// checklist's flags) in the core, which is the durable home: the window's own localStorage belongs to the page origin, and the
+// Keeps what the window remembers (the selected project and view, each project's session tab, conversation and page of Claude Code
+// on the web, the setup checklist's flags) in the core, which is the durable home: the window's own localStorage belongs to the page origin, and the
 // origin changes when the core has to take another port.
 //
 //   start      After the first snapshot of the core arrives, the core's copy is applied to the window (it wins over localStorage,
@@ -23,7 +23,7 @@ import type { RouteStore } from './route';
 import { readJson, writeJson } from './storage';
 import type { KeyValueStorage } from './storage';
 import type { AppState, AppStore } from './store';
-import { buildPatch, changedRouteFacts, changedSetupFacts, forgetFact, reconcile, routeMemory, sessionFact, conversationFact } from './uiState';
+import { buildPatch, changedRouteFacts, changedSetupFacts, cloudFact, forgetFact, reconcile, routeMemory, sessionFact, conversationFact, storedRouteMemory } from './uiState';
 import type { FactKey, Memory } from './uiState';
 
 export interface UiSyncOptions {
@@ -146,12 +146,14 @@ export function createUiSync(options: UiSyncOptions): UiSync {
     const id = event.id;
     dirty.delete(sessionFact(id));
     dirty.delete(conversationFact(id));
+    dirty.delete(cloudFact(id));
     remember();
     applying = true;
     try {
-      const { selectSession, selectConversation } = route.getState();
+      const { selectSession, selectConversation, selectCloudUrl } = route.getState();
       selectSession(id, null);
       selectConversation(id, null);
+      selectCloudUrl(id, null);
     } finally { applying = false; }
     mark([forgetFact(id)]);
   });
@@ -160,7 +162,8 @@ export function createUiSync(options: UiSyncOptions): UiSync {
 
   function hydrate(state: AppState): void {
     hydrated = true;
-    const local = memory();
+    // What the window has stored, not what it tells the core: a session of a project is still the project's choice while its Cloud tab shows.
+    const local: Memory = { ...memory(), route: storedRouteMemory(route.getState()) };
     const result = reconcile(local, state.settings?.ui, { projects: state.projects, touched: new Set(dirty.keys()) });
     applying = true;
     try {

@@ -5,7 +5,7 @@
 //
 //   node apps/desktop/scripts/screenshots-features.mjs [--only name,name] [--out <dir>]
 //
-// Output: docs/screenshots/features-<name>-1440x900.png
+// Output: docs/screenshots/features-<name>-<width>x<height>.png (1440x900 for every shot; four windows for the key screens)
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +19,8 @@ const flag = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 
 const outDir = flag('--out') ?? join(repo, 'docs/screenshots');
 const only = flag('--only')?.split(',');
 const SIZE = [1440, 900];
+// The screens of the four areas that matter most are looked at in four windows: a desktop, a laptop, the smallest window, and a tall one.
+const ALL = [SIZE, [1280, 720], [960, 600], [900, 1200]];
 
 // ------------------------------------------------------------------------------------------------ helpers
 
@@ -87,7 +89,7 @@ const scrollTo = async (locator) => { await locator.scrollIntoViewIfNeeded(); aw
 
 const shots = [
   {
-    name: 'reports-queue',
+    name: 'reports-queue', sizes: ALL,
     async run(page) {
       await goReports(page);
       await page.getByRole('button', { name: /^Waiting for handoff/ }).click();
@@ -95,7 +97,7 @@ const shots = [
     },
   },
   {
-    name: 'report-awaiting-send',
+    name: 'report-awaiting-send', sizes: ALL,
     async run(page) { await goReports(page, 'Add branch protection checks'); },
   },
   {
@@ -151,7 +153,7 @@ const shots = [
     },
   },
   {
-    name: 'activity-feed',
+    name: 'activity-feed', sizes: ALL,
     async run(page) {
       await nav(page, 'Activity').click();
       await page.getByRole('feed', { name: 'Activity feed' }).waitFor();
@@ -159,7 +161,7 @@ const shots = [
     },
   },
   {
-    name: 'activity-needs-you',
+    name: 'activity-needs-you', sizes: ALL,
     async run(page) {
       await nav(page, 'Activity').click();
       await page.getByRole('tab', { name: /^Needs you/ }).click();
@@ -179,7 +181,7 @@ const shots = [
 
   // ---- settings
   {
-    name: 'settings-chatgpt',
+    name: 'settings-chatgpt', sizes: ALL,
     async run(page) { await goSettings(page, 'ChatGPT'); },
   },
   {
@@ -219,7 +221,7 @@ const shots = [
     },
   },
   {
-    name: 'settings-notifications',
+    name: 'settings-notifications', sizes: ALL,
     async run(page) {
       await goSettings(page, 'Notifications');
       await page.getByRole('switch', { name: 'Quiet every day' }).click();
@@ -356,23 +358,24 @@ const problems = [];
 try {
   for (const shot of shots) {
     if (only && !only.includes(shot.name)) continue;
-    const [width, height] = shot.size ?? SIZE;
-    const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
-    const page = await context.newPage();
-    page.baseUrl = baseUrl;
-    page.on('pageerror', (e) => problems.push(`${shot.name}: page error: ${e.message}`));
-    page.on('console', (m) => { if (m.type() === 'error') problems.push(`${shot.name}: console error: ${m.text()}`); });
-    try {
-      await open(page, shot.open);
-      if (shot.run) await shot.run(page, { withDemo });
-      const file = join(outDir, `features-${shot.name}-${width}x${height}.png`);
-      await page.screenshot({ path: file });
-      console.log(`wrote ${file}`);
-    } catch (error) {
-      problems.push(`${shot.name}: ${error.message.split('\n')[0]}`);
-      await page.screenshot({ path: join(outDir, `features-${shot.name}-FAILED.png`) }).catch(() => {});
+    for (const [width, height] of shot.sizes ?? [SIZE]) {
+      const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
+      const page = await context.newPage();
+      page.baseUrl = baseUrl;
+      page.on('pageerror', (e) => problems.push(`${shot.name} ${width}x${height}: page error: ${e.message}`));
+      page.on('console', (m) => { if (m.type() === 'error') problems.push(`${shot.name} ${width}x${height}: console error: ${m.text()}`); });
+      try {
+        await open(page, shot.open);
+        if (shot.run) await shot.run(page, { withDemo });
+        const file = join(outDir, `features-${shot.name}-${width}x${height}.png`);
+        await page.screenshot({ path: file });
+        console.log(`wrote ${file}`);
+      } catch (error) {
+        problems.push(`${shot.name} ${width}x${height}: ${error.message.split('\n')[0]}`);
+        await page.screenshot({ path: join(outDir, `features-${shot.name}-${width}x${height}-FAILED.png`) }).catch(() => {});
+      }
+      await context.close();
     }
-    await context.close();
   }
 } finally {
   await browser.close();

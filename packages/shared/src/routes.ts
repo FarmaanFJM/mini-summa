@@ -140,6 +140,8 @@ export interface PruneResult { dryRun: boolean; removed: { rawEvents: number; ac
 export interface ListPage<T> { items: T[]; nextBefore: string | null }
 export interface PushConfigured { ok: true; configured: true; firebaseProject: string }
 export interface PushTestResult { sent: number; failed: number; skipped: string | null }
+/** What the system said to a test desktop notification. `shown` is true only when it accepted it; `quiet` tells that quiet mode is on, which holds real notifications back but not this test. */
+export interface DesktopNotificationTestResult { shown: boolean; reason: string | null; quiet: boolean }
 export interface SaveFileResult { delivery: Delivery; path: string | null }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -250,6 +252,8 @@ export const routes = {
   'push.configure': route<PushConfigured>()({ method: 'POST', path: '/push/configure', scope: 'desktop', body: z.object({ serviceAccountJson: z.string().min(50).max(20_000) }) }),
   'push.clear': route<Ok>()({ method: 'DELETE', path: '/push/configure', scope: 'desktop' }),
   'push.test': route<PushTestResult>()({ method: 'POST', path: '/push/test', scope: 'desktop' }),
+  // a test notification on this computer (the same path real ones take, so what the system does with it shows what it will do with them)
+  'notifications.test': route<DesktopNotificationTestResult>()({ method: 'POST', path: '/notifications/test', scope: 'desktop' }),
 
   // remote access
   'tailscale.status': route<TailscaleStatus>()({ method: 'GET', path: '/tailscale', scope: 'desktop', query: z.object({ refresh: qBool.optional() }) }),

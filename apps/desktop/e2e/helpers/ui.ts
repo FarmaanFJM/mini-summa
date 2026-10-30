@@ -69,27 +69,82 @@ export async function openNewProject(page: Page): Promise<Locator> {
   return dialog;
 }
 
+/**
+ * The settings of a project ("<name> settings"). From the pencil in the workspace header when it is there, else from the project's
+ * menu in the sidebar, which works for any project in the list.
+ */
 export async function openEditProject(page: Page, name: string): Promise<Locator> {
-  await page.getByRole('button', { name: `Edit ${name}` }).click();
-  const dialog = projectDialog(page, `Edit ${name}`);
+  const pencil = page.getByRole('button', { name: new RegExp(`^(Edit ${escapeRe(name)}|(Project )?settings( for| of)? ${escapeRe(name)}|${escapeRe(name)} settings)$`, 'i') });
+  if (await pencil.count() > 0) await pencil.first().click();
+  else {
+    await showWorkspace(page);
+    await page.getByRole('button', { name: `Actions for ${name}` }).click();
+    await page.getByRole('menuitem', { name: /^(Edit project|Project settings|Settings)$/ }).click();
+  }
+  const dialog = projectDialog(page, `${name} settings`);
   await dialog.waitFor();
   return dialog;
 }
 
-export async function addConversationInDialog(dialog: Locator, url: string): Promise<void> {
-  await dialog.getByLabel('Add a conversation').fill(url);
-  await dialog.getByRole('button', { name: 'Add conversation' }).click();
+/** The dialog that creates a project has the "Start from" choice; the settings of a project do not. */
+const isNewProject = async (dialog: Locator): Promise<boolean> => (await dialog.getByRole('tablist', { name: 'Start from' }).count()) > 0;
+
+/** Chooses how the new project starts: "ChatGPT Project", "GitHub repository", "Local folder" or "Empty project". */
+export async function chooseSource(dialog: Locator, source: 'ChatGPT Project' | 'GitHub repository' | 'Local folder' | 'Empty project'): Promise<void> {
+  const tab = dialog.getByRole('tab', { name: source, exact: true });
+  await tab.click();
+  await until(`"${source}" to be chosen`, async () => (await tab.getAttribute('aria-selected')) === 'true');
 }
 
-/** Types the address of a folder and adds it (the path is typed, not picked). */
+/** The folders the settings of a project list, as text. */
+export const listedFolders = (dialog: Locator): Locator => dialog.getByRole('list', { name: 'Local folders' });
+
+/**
+ * Gives the project a folder by typing its path. In the New project dialog that is the "Local folder" way to start (the path is
+ * the project's folder, there is nothing to add); in a project's settings it is "Add folder", and the folder is listed when this returns.
+ */
 export async function addFolderByTyping(dialog: Locator, folder: string): Promise<void> {
-  await dialog.getByLabel('Add a folder').fill(folder);
-  await dialog.getByRole('button', { name: 'Add folder' }).click();
+  if (await isNewProject(dialog)) {
+    await chooseSource(dialog, 'Local folder');
+    await dialog.getByLabel('Folder', { exact: true }).fill(folder);
+    return;
+  }
+  await dialog.getByLabel('Folder path').fill(folder);
+  await dialog.getByRole('button', { name: 'Add folder', exact: true }).click();
+  await listedFolders(dialog).getByText(folder, { exact: true }).waitFor();
 }
 
-/** Presses Browse (the native picker is answered by the test). The folder it returns is added to the list at once. */
+/**
+ * Presses Browse (the native picker is answered by the test). In the New project dialog the folder it returns is the project's folder;
+ * in a project's settings it is added to the project at once. Either way there is no second button to press.
+ */
 export async function addFolderWithPicker(dialog: Locator): Promise<void> {
-  await dialog.getByRole('button', { name: 'Browse' }).click();
+  if (await isNewProject(dialog)) await chooseSource(dialog, 'Local folder');
+  await dialog.getByRole('button', { name: 'Browse', exact: true }).click();
+}
+
+/** The conversations a project's settings list, one row each. */
+export const listedConversations = (dialog: Locator): Locator => dialog.getByRole('radiogroup', { name: 'Preferred conversation' });
+
+/**
+ * Adds a ChatGPT conversation in a project's settings and waits until the core has it: its address is then listed in its row.
+ * `url` is the address as the core keeps it (no query, no fragment).
+ */
+export async function addConversationInDialog(dialog: Locator, url: string): Promise<void> {
+  await dialog.getByLabel('Conversation address').fill(url);
+  await dialog.getByRole('button', { name: 'Add conversation' }).click();
+  await listedConversations(dialog).getByText(url, { exact: true }).waitFor();
+}
+
+/** Presses Done in a project's settings and waits until it has closed. Everything was applied as it was done, so nothing is saved here. */
+export async function closeSettings(dialog: Locator): Promise<void> {
+  await dialog.getByRole('button', { name: 'Done', exact: true }).click();
+  await dialog.waitFor({ state: 'detached' });
+}
+
+/** The words next to a project's name in the workspace header: its repository and folders. */
+export async function projectHeaderText(page: Page, name: string): Promise<string> {
+  return (await page.getByRole('heading', { level: 1, name, exact: true }).locator('..').textContent()) ?? '';
 }
 
 export interface UiProject {
@@ -101,33 +156,48 @@ export interface UiProject {
   github?: string;
 }
 
-/** Creates a project through the dialog, the way a person would, and waits until the dialog has closed and the project is selected. */
+/**
+ * Creates a project the way a person would and waits until the dialog has closed and the project is selected: it starts from its
+ * folder. What a project has besides (a GitHub repository, ChatGPT conversations and which one is preferred) is then set in its settings.
+ */
 export async function createProjectInUi(page: Page, project: UiProject): Promise<void> {
   const dialog = await openNewProject(page);
   await dialog.getByLabel('Name', { exact: true }).fill(project.name);
-  if (project.github) await dialog.getByLabel('GitHub repository').fill(project.github);
   await addFolderByTyping(dialog, project.folder);
-  for (const url of project.conversations ?? []) await addConversationInDialog(dialog, url);
-  if (project.preferred !== undefined && project.preferred > 0) {
-    await dialog.getByRole('radio').nth(project.preferred).check();
-  }
   await dialog.getByRole('button', { name: 'Create project' }).click();
   await dialog.waitFor({ state: 'detached' });
   await page.getByRole('heading', { level: 1, name: project.name }).waitFor();
+  if (!project.github && !(project.conversations ?? []).length) return;
+
+  const settings = await openEditProject(page, project.name);
+  if (project.github) {
+    await settings.getByLabel('GitHub repository').fill(project.github);
+    await settings.getByLabel('GitHub repository').press('Enter');
+    await settings.getByText('Saved').first().waitFor();
+  }
+  for (const url of project.conversations ?? []) await addConversationInDialog(settings, url);
+  if (project.preferred !== undefined && project.preferred > 0) {
+    await settings.getByRole('radio').nth(project.preferred).check();
+  }
+  await closeSettings(settings);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Sessions and tabs
 
-export const claudeTabs = (page: Page): Locator => page.getByRole('region', { name: 'Claude', exact: true }).getByRole('tablist', { name: 'Claude sessions' }).getByRole('tab');
+/** The session tabs of the Claude pane ("Session a1b2c3d4, managed, ..."). The Cloud tab of a project with a GitHub repository is not one of them. */
+export const claudeTabs = (page: Page): Locator => page.getByRole('region', { name: 'Claude', exact: true }).getByRole('tablist', { name: 'Claude sessions' }).getByRole('tab', { name: /^Session / });
 
-/** Starts a session with the empty-state button, or with the "+" menu when the project already has one. */
+/** The Cloud tab of the Claude pane (Claude Code on the web). It exists for a project with a GitHub repository. */
+export const cloudTab = (page: Page): Locator => page.getByRole('region', { name: 'Claude', exact: true }).getByRole('tab', { name: /^Cloud/ });
+
+/** Starts a LOCAL session with the empty-pane button, or with the "+" menu when the project already has a tab. */
 export async function startSessionInUi(page: Page): Promise<void> {
   const claude = page.getByRole('region', { name: 'Claude', exact: true });
-  const start = claude.getByRole('button', { name: 'Start a session' });
+  const start = claude.getByRole('button', { name: 'New local session' });
   if (await start.isVisible()) { await start.click(); return; }
-  await claude.getByRole('button', { name: 'New or resumed session' }).click();
-  await page.getByRole('menuitem', { name: 'New session' }).click();
+  await claude.getByRole('button', { name: 'New session', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'New local session' }).click();
 }
 
 // ---------------------------------------------------------------------------------------------------------------

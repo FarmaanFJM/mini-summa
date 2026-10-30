@@ -11,6 +11,8 @@ export interface MenuItem {
   id?: string;
   label: string;
   icon?: IconName;
+  /** A quiet second line under the label, for example why the item is disabled. Read as the item's description, not as part of its name. */
+  description?: string;
   shortcut?: string;
   disabled?: boolean;
   /** Danger-coloured text plus icon, placed last after a separator (P19). */
@@ -160,19 +162,26 @@ export function Menu({ label, items, trigger, placement = 'bottom-start', open: 
           if (isSeparator(entry)) return <hr key={`sep-${i}`} className="sm-menu__sep" />;
           if (isHeading(entry)) return <div key={`head-${i}`} className="sm-menu__heading" role="presentation">{entry.label}</div>;
           const check = entry.checked !== undefined;
+          const descriptionId = entry.description ? `${menuId}-description-${i}` : undefined;
           return (
             <button
               key={entry.id ?? `${entry.label}-${i}`}
               type="button"
               role={check ? (entry.radio ? 'menuitemradio' : 'menuitemcheckbox') : 'menuitem'}
               aria-checked={check ? entry.checked : undefined}
+              aria-describedby={descriptionId}
               tabIndex={-1}
               disabled={entry.disabled}
-              className={cx('sm-menu__item', entry.danger && 'sm-menu__item--danger')}
+              className={cx('sm-menu__item', entry.description && 'ms-option', entry.danger && 'sm-menu__item--danger')}
               onClick={() => select(entry)}
             >
               {entry.icon ? <Icon name={entry.icon} /> : null}
-              <span className="sm-menu__label">{entry.label}</span>
+              {entry.description ? (
+                <span className="ms-option__text">
+                  <span className="sm-menu__label">{entry.label}</span>
+                  <span id={descriptionId} className="ms-option__desc" aria-hidden="true">{entry.description}</span>
+                </span>
+              ) : <span className="sm-menu__label">{entry.label}</span>}
               {entry.shortcut ? <span className="sm-menu__shortcut">{entry.shortcut}</span> : null}
               {entry.checked ? <Icon name="check" className="sm-menu__check" /> : null}
             </button>

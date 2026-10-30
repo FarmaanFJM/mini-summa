@@ -136,6 +136,43 @@ These are product rules the code enforces, and tests pin each of them.
 * The optional browser extension uses the tabs and windows APIs only. It has no content scripts and no access to page
   contents.
 
+## The Claude Code on the web view
+
+The Cloud tab of the Claude pane shows the page of Claude Code on the web (`https://claude.ai/code`) in a second embedded view.
+It is browser navigation, not session control: [CLOUD_SESSIONS.md](CLOUD_SESSIONS.md) says what Anthropic documents and what
+Mini-Summa does and does not do with it.
+
+* **A browser profile of its own.** The view has a persistent partition (`persist:claude`) that is not the ChatGPT one
+  (`persist:chatgpt`) and not the window that shows Mini-Summa. Cookies, local storage and caches are never shared between the
+  three, and signing out of one does not touch the others. The sign-in stays in this profile between runs. On Windows it sits in
+  `%APPDATA%\Mini-Summa\Partitions\claude`, unencrypted at rest for the same reason as the ChatGPT one (audit item W-12).
+* **The same hardening as the ChatGPT view, by the same code.** Sandboxed, context isolation on, no Node, no preload, no
+  `<webview>`. The only permission it may use is writing sanitized text to the clipboard (a page's own Copy button); camera,
+  microphone, screen capture, clipboard-read, notifications, geolocation and device access are refused, with no prompt.
+* **Four classes of navigation**, applied the same way to links, redirects and `window.open`. `claude` (claude.ai, claude.com,
+  anthropic.com and their subdomains) loads in the view. `auth` (Google, Microsoft and Apple sign-in, Cloudflare's check,
+  GitHub's authorisation pages) loads in the view too, so that signing in and connecting GitHub can finish. `external` (any
+  other https site) is not loaded: it opens in your default browser, through the same https-only check as links from ChatGPT.
+  `blocked` (plain http, `file:`, `javascript:`, `data:`, an app protocol, an address that could be read two ways) is refused,
+  with a line in the log and nothing else. A page that asks for a new window gets this view or your browser, never a window of
+  its own.
+* **Only `https://claude.ai/code` addresses can be loaded by the app itself.** The renderer may ask the view for an address
+  under `claude.ai/code` (the query is kept, because the documented way to preselect a repository is
+  `?repositories=owner/repo`) and for nothing else; any other address is rejected with an error and not loaded.
+* **What it never does.** It does not read the page, type, click or submit in it, add scripts or styles, read or write cookies
+  or tokens, or change the browser's identity string. It looks at the address, the title, whether a load is running and why
+  one failed, and from those it says only "loading", "ready", "sign-in page" (a guess from the address), "blocked" or "error".
+  It cannot tell whether a cloud session is working, finished or waiting for you, and Mini-Summa sends no notification about
+  one. When Google or another provider refuses to sign in inside an embedded window, the view reports it and does nothing to
+  get around it; "Open in your browser" is always available. The log never holds a page address, because a prefilled prompt
+  travels in it.
+* **One overlay switch for both views.** While a menu, dialog or toast of the window is open, both embedded views are hidden
+  (a native view always draws above web content), and afterwards only the ones that were showing come back.
+* **Open question, not answered by the documentation.** Whether Anthropic's terms accept an embedded view of `claude.ai/code`
+  inside another application has not been confirmed with Anthropic. The question, and the fallback that needs no one's
+  permission, are in [CLOUD_SESSIONS.md](CLOUD_SESSIONS.md), "Sign-in, terms, and the embedded view". Confirm it before
+  Mini-Summa is distributed beyond its owner.
+
 ## What this does not defend against
 
 * **Malware or another process running as you.** It can read the database and the spool and can talk to the loopback API

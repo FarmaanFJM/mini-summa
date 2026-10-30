@@ -319,6 +319,7 @@ try {
       app: { getPaths: 'function', onNavigate: 'function', setBadgeCount: 'function' },
       appVersion: 'string',
       chatgpt: { back: 'function', focus: 'function', forward: 'function', getState: 'function', navigate: 'function', onState: 'function', reload: 'function', setBounds: 'function', setOverlayActive: 'function' },
+      claudeWeb: { back: 'function', focus: 'function', forward: 'function', getState: 'function', navigate: 'function', onState: 'function', reload: 'function', setBounds: 'function' },
       clipboard: { writeText: 'function' },
       connection: 'function',
       dialogs: { selectDirectory: 'function' },

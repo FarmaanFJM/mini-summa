@@ -85,6 +85,48 @@ export const chatgptView = (app: ElectronApplication): Promise<ChatGptViewInfo |
   };
 });
 
+/** What the embedded Claude Code on the web view looks like from the main process; the same facts as for the ChatGPT view. */
+export type ClaudeWebViewInfo = ChatGptViewInfo;
+
+/** The embedded Claude Code on the web view (the WebContentsView in the persist:claude session), or null while it does not exist. */
+export const claudeWebView = (app: ElectronApplication): Promise<ClaudeWebViewInfo | null> => app.evaluate(({ BrowserWindow, session, webContents }) => {
+  const partition = session.fromPartition('persist:claude');
+  const contents = webContents.getAllWebContents().find((w) => !w.isDestroyed() && w.session === partition);
+  if (!contents) return null;
+  const win = BrowserWindow.getAllWindows()[0];
+  const view = win.contentView.children.find((c) => (c as unknown as { webContents?: unknown }).webContents === contents);
+  return {
+    id: contents.id, url: contents.getURL(), title: contents.getTitle(), loading: contents.isLoading(),
+    bounds: view ? view.getBounds() : null, visible: view ? view.getVisible() : null, focused: contents.isFocused(),
+    userAgent: contents.getUserAgent(),
+  };
+});
+
+/**
+ * Runs `code` inside the page of an embedded view and returns its result. The product never does this; a test uses it to play the PAGE
+ * (a script of the site that sets location, opens a window, asks for a permission) or to read what the page recorded. `partition` is
+ * 'persist:claude' or 'persist:chatgpt'. Returns undefined when that view has no page.
+ */
+export const inEmbeddedPage = <T = unknown>(app: ElectronApplication, partition: 'persist:claude' | 'persist:chatgpt', code: string): Promise<T | undefined> => app.evaluate(async ({ session, webContents }, args) => {
+  const wanted = session.fromPartition(args.partition);
+  const contents = webContents.getAllWebContents().find((w) => !w.isDestroyed() && w.session === wanted);
+  if (!contents) return undefined;
+  return await contents.executeJavaScript(args.code, true);
+}, { partition, code });
+
+/**
+ * The PERSON types into the text area of a stand-in page in an embedded view: the text area is focused, then the text goes in through
+ * Chromium's own input path, the way a keyboard's text reaches a page. The product never types into either page; a test plays the person.
+ * The page's recorder will list the resulting `input` events, so anything checking that Mini-Summa caused none must look before this.
+ */
+export const typeIntoComposer = (app: ElectronApplication, partition: 'persist:claude' | 'persist:chatgpt', text: string): Promise<void> => app.evaluate(async ({ session, webContents }, args) => {
+  const wanted = session.fromPartition(args.partition);
+  const contents = webContents.getAllWebContents().find((w) => !w.isDestroyed() && w.session === wanted);
+  if (!contents) throw new Error(`There is no view in ${args.partition}.`);
+  await contents.executeJavaScript('document.getElementById("composer").focus()', true);
+  contents.insertText(args.text);
+}, { partition, text });
+
 /** Every web contents the app has, with its address: the ground truth of what is on screen where. */
 export const allWebContentsUrls = (app: ElectronApplication): Promise<string[]> => app.evaluate(({ webContents }) => webContents.getAllWebContents().filter((w) => !w.isDestroyed()).map((w) => w.getURL()));
 
@@ -97,6 +139,23 @@ export const standInPageState = (app: ElectronApplication): Promise<{ events: st
     return await contents.executeJavaScript('({ events: (window.__standin && window.__standin.events) || [], composer: (document.getElementById("composer") || {}).value || "" })', true);
   } catch { return null; }
 });
+
+/** How many windows and web contents the app has right now: a link or window.open that opened a window of its own would raise either. */
+export const windowCounts = (app: ElectronApplication): Promise<{ windows: number; contents: number }> => app.evaluate(({ BrowserWindow, webContents }) => ({
+  windows: BrowserWindow.getAllWindows().length,
+  contents: webContents.getAllWebContents().filter((w) => !w.isDestroyed()).length,
+}));
+
+export interface CookieFacts { name: string; value: string; domain: string }
+
+/** Puts a cookie into one of the app's browser profiles ('persist:claude', 'persist:chatgpt'), the way a site's own Set-Cookie would. */
+export const setProfileCookie = (app: ElectronApplication, partition: string, cookie: { url: string; name: string; value: string }): Promise<void> => app.evaluate(({ session }, args) => session.fromPartition(args.partition).cookies.set(args.cookie), { partition, cookie });
+
+/** The cookies a browser profile would send to this address. */
+export const profileCookies = (app: ElectronApplication, partition: string, url: string): Promise<CookieFacts[]> => app.evaluate(async ({ session }, args) => {
+  const found = await session.fromPartition(args.partition).cookies.get({ url: args.url });
+  return found.map((c) => ({ name: c.name, value: c.value, domain: c.domain ?? '' }));
+}, { partition, url });
 
 export const readClipboard = (app: ElectronApplication): Promise<string> => app.evaluate(({ clipboard }) => clipboard.readText());
 export const writeClipboard = (app: ElectronApplication, text: string): Promise<void> => app.evaluate(({ clipboard }, value) => { clipboard.writeText(value); }, text);
@@ -119,6 +178,8 @@ interface E2EState {
   openDialogs: OpenDialogCall[];
   messageBoxes: MessageBoxCall[];
   notify?: NotificationSpyState & { live: { emit(event: string): void }[] };
+  /** Addresses the main process handed to shell.openExternal (the person's default browser), once spyOnOpenExternal has been called. */
+  openExternal?: string[];
 }
 type MainGlobal = { __e2e?: E2EState };
 
@@ -161,6 +222,27 @@ export const answerMessageBoxes = (app: ElectronApplication, button: 0 | 1, reco
 export const messageBoxCalls = (app: ElectronApplication): Promise<MessageBoxCall[]> => app.evaluate(() => {
   const g = globalThis as unknown as MainGlobal;
   return g.__e2e?.messageBoxes ?? [];
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// The person's default browser
+
+/**
+ * Replaces shell.openExternal in the main process by a recorder that opens nothing. Every link Mini-Summa hands to the default browser
+ * (a link in an embedded page, the "Open in your browser" actions, the IPC route) goes through that one function, so what the person's
+ * browser would have been asked to open is exactly what `openExternalCalls` returns. The operating system's part is what is played by the
+ * test; Mini-Summa's own code (navigation policy, link validation, the IPC check) is untouched.
+ */
+export const spyOnOpenExternal = (app: ElectronApplication): Promise<void> => app.evaluate(({ shell }) => {
+  const g = globalThis as unknown as MainGlobal;
+  const state = (g.__e2e ??= { openDialogs: [], messageBoxes: [] });
+  state.openExternal = [];
+  (shell as unknown as { openExternal: unknown }).openExternal = async (url: string) => { state.openExternal!.push(String(url)); };
+});
+
+export const openExternalCalls = (app: ElectronApplication): Promise<string[]> => app.evaluate(() => {
+  const g = globalThis as unknown as MainGlobal;
+  return [...(g.__e2e?.openExternal ?? [])];
 });
 
 // ---------------------------------------------------------------------------------------------------------------

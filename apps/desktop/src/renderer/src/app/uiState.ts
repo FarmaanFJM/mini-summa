@@ -14,6 +14,8 @@ export interface RouteMemory {
   projectId: string | null;
   sessionByProject: Record<string, SessionKey>;
   conversationByProject: Record<string, string>;
+  /** The last page of Claude Code on the web each project's Cloud tab was on. */
+  cloudUrlByProject: Record<string, string>;
 }
 
 export interface SetupMemory {
@@ -28,20 +30,42 @@ export interface Memory {
 
 /**
  * One remembered fact, named by what it is about: `route`, `session:<project id>`, `conversation:<project id>`,
- * `setup:dismissed`, `setup:seenEmpty`, or `forget:<project id>` (the project was removed). A change to a fact marks it
- * dirty until the core has it.
+ * `cloud:<project id>` (the page of Claude Code on the web), `setup:dismissed`, `setup:seenEmpty`, or `forget:<project id>`
+ * (the project was removed). A change to a fact marks it dirty until the core has it.
  */
 export type FactKey = string;
 
 const SESSION = 'session:';
 const CONVERSATION = 'conversation:';
+const CLOUD = 'cloud:';
 const FORGET = 'forget:';
 export const sessionFact = (projectId: string): FactKey => `${SESSION}${projectId}`;
 export const conversationFact = (projectId: string): FactKey => `${CONVERSATION}${projectId}`;
+export const cloudFact = (projectId: string): FactKey => `${CLOUD}${projectId}`;
 export const forgetFact = (projectId: string): FactKey => `${FORGET}${projectId}`;
 
-export const routeMemory = (s: RouteMemory): RouteMemory => ({
-  view: s.view, projectId: s.projectId, sessionByProject: s.sessionByProject, conversationByProject: s.conversationByProject,
+/** The route as the store holds it: the remembered facts, and the in-memory choice of which tab of a project's Claude pane is shown. */
+export type RouteSource = RouteMemory & { cloudShown?: Readonly<Record<string, unknown>> };
+
+/**
+ * What the window tells the core about the route, which is what is on screen. A project whose Cloud tab is shown shows no local
+ * session, so none is remembered for it (the core reads this to know whether the person is looking at a session; a session that
+ * finishes in the background must not be taken for the one in front of them). The store keeps the last local choice, so
+ * leaving the Cloud tab remembers it again.
+ */
+export function routeMemory(s: RouteSource): RouteMemory {
+  let sessionByProject = s.sessionByProject;
+  for (const id of Object.keys(s.cloudShown ?? {})) {
+    if (!(id in sessionByProject)) continue;
+    if (sessionByProject === s.sessionByProject) sessionByProject = { ...s.sessionByProject };
+    delete sessionByProject[id];
+  }
+  return { view: s.view, projectId: s.projectId, sessionByProject, conversationByProject: s.conversationByProject, cloudUrlByProject: s.cloudUrlByProject };
+}
+
+/** The route exactly as the store holds it, the last local session of a project included whatever tab shows. */
+export const storedRouteMemory = (s: RouteMemory): RouteMemory => ({
+  view: s.view, projectId: s.projectId, sessionByProject: s.sessionByProject, conversationByProject: s.conversationByProject, cloudUrlByProject: s.cloudUrlByProject,
 });
 
 const ids = (a: object, b: object): string[] => [...new Set([...Object.keys(a), ...Object.keys(b)])];
@@ -55,6 +79,9 @@ export function changedRouteFacts(prev: RouteMemory, next: RouteMemory): FactKey
   }
   if (prev.conversationByProject !== next.conversationByProject) {
     for (const id of ids(prev.conversationByProject, next.conversationByProject)) if (prev.conversationByProject[id] !== next.conversationByProject[id]) out.push(conversationFact(id));
+  }
+  if (prev.cloudUrlByProject !== next.cloudUrlByProject) {
+    for (const id of ids(prev.cloudUrlByProject, next.cloudUrlByProject)) if (prev.cloudUrlByProject[id] !== next.cloudUrlByProject[id]) out.push(cloudFact(id));
   }
   return out;
 }
@@ -80,8 +107,9 @@ export interface BuiltPatch {
 export function buildPatch(facts: Iterable<FactKey>, now: Memory): BuiltPatch {
   const raw: UiPrefsPatch = {};
   const included = new Set<FactKey>();
-  const projects = new Map<string, { sessionKey?: SessionKey | null; conversationId?: string | null } | null>();
-  const projectEntry = (id: string): { sessionKey?: SessionKey | null; conversationId?: string | null } | null | undefined => {
+  type Entry = { sessionKey?: SessionKey | null; conversationId?: string | null; cloudUrl?: string | null };
+  const projects = new Map<string, Entry | null>();
+  const projectEntry = (id: string): Entry | null | undefined => {
     if (!projects.has(id) && projects.size >= UI_LIMITS.projects) return undefined; // no room: next time
     const current = projects.get(id);
     if (current === null) return null;
@@ -104,6 +132,11 @@ export function buildPatch(facts: Iterable<FactKey>, now: Memory): BuiltPatch {
       const e = projectEntry(id);
       if (e === undefined) continue;
       if (e) e.conversationId = now.route.conversationByProject[id] ?? null;
+    } else if (fact.startsWith(CLOUD)) {
+      const id = fact.slice(CLOUD.length);
+      const e = projectEntry(id);
+      if (e === undefined) continue;
+      if (e) e.cloudUrl = now.route.cloudUrlByProject[id] ?? null;
     } else if (fact.startsWith(FORGET)) {
       const id = fact.slice(FORGET.length);
       if (!projects.has(id) && projects.size >= UI_LIMITS.projects) continue;
@@ -136,7 +169,9 @@ const sameMap = (a: Record<string, string>, b: Record<string, string>): boolean 
  *    none, which shows the first project;
  *  - a value only the window has is sent to the core;
  *  - session keys and conversation ids are taken as they are: a key or id that is gone is handled where it is used (the newest
- *    session tab, the preferred conversation), because it can come back (a session resumes, a conversation is added again).
+ *    session tab, the preferred conversation), because it can come back (a session resumes, a conversation is added again);
+ *  - the same goes for the page of Claude Code on the web: it is an address on claude.ai/code and nothing more, and opening it
+ *    is the Cloud tab's business.
  */
 export function reconcile(local: Memory, remembered: UiPrefs | undefined, ctx: { projects: readonly Project[]; touched: ReadonlySet<FactKey> }): Reconciled {
   const result: Reconciled = { route: {}, setup: {}, seed: [] };
@@ -158,12 +193,15 @@ export function reconcile(local: Memory, remembered: UiPrefs | undefined, ctx: {
 
   const sessions = { ...local.route.sessionByProject };
   const conversations = { ...local.route.conversationByProject };
+  const cloudUrls = { ...local.route.cloudUrlByProject };
   for (const [id, entry] of Object.entries(remembered?.perProject ?? {})) {
     if (entry.sessionKey && !ctx.touched.has(sessionFact(id))) sessions[id] = entry.sessionKey;
     if (entry.conversationId && !ctx.touched.has(conversationFact(id))) conversations[id] = entry.conversationId;
+    if (entry.cloudUrl && !ctx.touched.has(cloudFact(id))) cloudUrls[id] = entry.cloudUrl;
   }
   if (!sameMap(sessions, local.route.sessionByProject)) result.route.sessionByProject = sessions;
   if (!sameMap(conversations, local.route.conversationByProject)) result.route.conversationByProject = conversations;
+  if (!sameMap(cloudUrls, local.route.cloudUrlByProject)) result.route.cloudUrlByProject = cloudUrls;
 
   // Choices only this window has, for projects that exist: the core should have them too.
   const seeded: FactKey[] = [];
@@ -173,7 +211,10 @@ export function reconcile(local: Memory, remembered: UiPrefs | undefined, ctx: {
   for (const [id, conversationId] of Object.entries(local.route.conversationByProject)) {
     if (known.has(id) && conversationId && !remembered?.perProject?.[id]?.conversationId && !ctx.touched.has(conversationFact(id))) seeded.push(conversationFact(id));
   }
-  result.seed.push(...seeded.slice(0, UI_LIMITS.projects * 2));
+  for (const [id, url] of Object.entries(local.route.cloudUrlByProject)) {
+    if (known.has(id) && url && !remembered?.perProject?.[id]?.cloudUrl && !ctx.touched.has(cloudFact(id))) seeded.push(cloudFact(id));
+  }
+  result.seed.push(...seeded.slice(0, UI_LIMITS.projects * 3));
 
   for (const flag of ['dismissed', 'seenEmpty'] as const) {
     const fact = `setup:${flag}`;

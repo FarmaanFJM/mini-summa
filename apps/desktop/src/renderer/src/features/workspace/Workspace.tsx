@@ -1,8 +1,9 @@
-import { envLabel } from '@minisumma/shared';
+import { githubRepoUrl } from '@minisumma/shared';
 import type { LayoutOrientation, LayoutPrefs, Project } from '@minisumma/shared';
 import { useEffect, useRef } from 'react';
+import { useNative } from '../../app/native';
 import { useApp, useRuntime, useUi } from '../../app/runtime';
-import { Button, EmptyState, IconButton, Menu, SplitPane } from '../../ui';
+import { Button, EmptyState, IconButton, Menu, SplitPane, Tooltip, toast } from '../../ui';
 import { useLayout } from '../shell/LayoutContext';
 import { HandoffStrip } from '../reports/HandoffStrip';
 import { ChatGptPane } from './ChatGptPane';
@@ -10,6 +11,7 @@ import { ClaudePane } from './ClaudePane';
 import { useElementSize, useSelectedProject } from './hooks';
 import { decideOrientation, onlyPane, ORIENTATION_LABEL, toggleMaximized } from './layout';
 import type { PaneName } from './layout';
+import { maximizedOf, ViewSwitch, viewOf } from './ViewSwitch';
 
 /** The core screen: ChatGPT and Claude side by side (or stacked) for one project. Stays mounted while other views show. */
 export function Workspace({ visible }: { visible: boolean }) {
@@ -58,7 +60,7 @@ function NoProjects() {
       <EmptyState center action={<Button variant="primary" icon="plus" onClick={() => openProjectDialog({ mode: 'create' })}>Create project</Button>}>
         {archived
           ? 'Every project is archived. Restore one from Archived in the sidebar, or create a new one.'
-          : 'Create your first project. A project connects a folder, the ChatGPT conversations you use for it, and its Claude sessions.'}
+          : 'Create your first project. It needs only a name: add a GitHub repository, folders or ChatGPT when you want them.'}
       </EmptyState>
     </div>
   );
@@ -75,6 +77,8 @@ function WorkspaceBody({ project, visible }: { project: Project; visible: boolea
 
   useMaximizeShortcuts(visible, layout.maximized, toggle);
 
+  // Showing one pane alone only hides the other: it stays mounted, so its terminals keep their output and processes and its
+  // native view keeps its page (it is told it has no place on screen, never closed or sent anywhere).
   return (
     <>
       <WorkspaceBar project={project} layout={layout} onChange={update} />
@@ -87,37 +91,28 @@ function WorkspaceBody({ project, visible }: { project: Project; visible: boolea
           only={onlyPane(layout.maximized)}
           label="Resize the ChatGPT and Claude panes"
           names={['ChatGPT', 'Claude']}
-          first={<ChatGptPane project={project} visible={visible && layout.maximized !== 'claude'} maximized={layout.maximized === 'chatgpt'} onToggleMaximize={() => toggle('chatgpt')} />}
-          second={<ClaudePane project={project} visible={visible && layout.maximized !== 'chatgpt'} maximized={layout.maximized === 'claude'} onToggleMaximize={() => toggle('claude')} />}
+          first={<ChatGptPane project={project} visible={visible && layout.maximized !== 'claude'} />}
+          second={<ClaudePane project={project} visible={visible && layout.maximized !== 'chatgpt'} />}
         />
       </div>
     </>
   );
 }
 
-function projectSubtitle(project: Project): string {
-  const first = project.roots[0];
-  const folders = first
-    ? `${first.path}${project.roots.length > 1 ? ` and ${project.roots.length - 1} more ${project.roots.length === 2 ? 'folder' : 'folders'}` : ''}`
-    : 'No folder yet';
-  return [project.githubRepo, folders].filter(Boolean).join(' · ');
-}
-
 interface BarProps { project: Project; layout: LayoutPrefs; onChange: (patch: Partial<LayoutPrefs>) => void }
 
+/** One slim line: the project's name with where it lives, which panes are shown, the project's settings and the layout. */
 function WorkspaceBar({ project, layout, onChange }: BarProps) {
   const openProjectDialog = useUi((s) => s.openProjectDialog);
   const choices: LayoutOrientation[] = ['auto', 'landscape', 'portrait'];
-  const subtitle = projectSubtitle(project);
-  const envs = [...new Set(project.roots.map((r) => r.env))];
   return (
     <header className="ms-wsbar">
       <div className="ms-wsbar__identity">
-        <h1 className="ms-wsbar__name">{project.name}</h1>
-        <span className="ms-wsbar__meta ms-truncate" title={subtitle}>{subtitle}{envs.length === 1 && project.roots.length > 0 ? ` · ${envLabel(envs[0])}` : ''}</span>
+        <h1 className="ms-wsbar__name" title={project.name}>{project.name}</h1>
+        <ProjectPlaces project={project} />
       </div>
       <div className="ms-wsbar__tools">
-        {layout.maximized ? <Button size="sm" variant="ghost" icon="minimize" onClick={() => onChange({ maximized: null })}>Show both panes</Button> : null}
+        <ViewSwitch value={viewOf(layout.maximized)} onChange={(view) => onChange({ maximized: maximizedOf(view) })} />
         <IconButton label={`Edit ${project.name}`} icon="pencil" size="sm" onClick={() => openProjectDialog({ mode: 'edit', projectId: project.id })} />
         <Menu
           label="Layout"
@@ -135,7 +130,46 @@ function WorkspaceBar({ project, layout, onChange }: BarProps) {
   );
 }
 
-/** Ctrl+Shift+Arrow maximises ChatGPT (Left or Up) or Claude (Right or Down); pressing it again restores both. */
+/**
+ * The GitHub repository and the first folder of the project, as quiet text beside its name. Each is what it looks like: pressing the
+ * repository opens it on GitHub, pressing the folder shows it in the file manager. A project with neither shows nothing here (a
+ * project without a folder or a repository is normal, and not something to label).
+ */
+function ProjectPlaces({ project }: { project: Project }) {
+  const native = useNative();
+  const repo = project.githubRepo;
+  const folder = [...project.roots].sort((a, b) => a.position - b.position)[0] ?? null;
+  const more = project.roots.length - 1;
+  if (!repo && !folder) return null;
+
+  const failed = (title: string) => (err: unknown) => toast({ title, body: err instanceof Error ? err.message : undefined, kind: 'error' });
+  return (
+    <div className="ms-wsbar__places">
+      {repo ? (
+        <Tooltip content={`Open ${repo} on GitHub`}>
+          <button type="button" className="ms-wsbar__place" aria-label={`Open ${repo} on GitHub`} onClick={() => { native.shell.openExternal(githubRepoUrl(repo)).catch(failed('Could not open your browser')); }}>
+            <span className="ms-truncate">{repo}</span>
+          </button>
+        </Tooltip>
+      ) : null}
+      {repo && folder ? <span className="ms-wsbar__sep" aria-hidden="true">·</span> : null}
+      {folder ? (
+        native.hasFolderPicker ? (
+          <Tooltip content="Show the folder">
+            <button type="button" className="ms-wsbar__place ms-wsbar__place--folder" aria-label={`Show the folder ${folder.path}`} onClick={() => { native.shell.showItemInFolder(folder.path).catch(failed('Could not show the folder')); }}>
+              <span className="ms-truncate">{folder.path}</span>
+            </button>
+          </Tooltip>
+        ) : (
+          <span className="ms-wsbar__place ms-wsbar__place--folder ms-wsbar__place--text"><span className="ms-truncate" title={folder.path}>{folder.path}</span></span>
+        )
+      ) : null}
+      {more > 0 ? <span className="ms-wsbar__more" title={`${more} more ${more === 1 ? 'folder' : 'folders'}`}>+{more}</span> : null}
+    </div>
+  );
+}
+
+/** Ctrl+Shift+Arrow shows ChatGPT alone (Left or Up) or Claude alone (Right or Down); pressing it again shows both. */
 function useMaximizeShortcuts(enabled: boolean, maximized: PaneName | null, toggle: (pane: PaneName) => void) {
   const latest = useRef({ maximized, toggle });
   latest.current = { maximized, toggle };

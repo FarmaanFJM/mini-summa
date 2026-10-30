@@ -26,8 +26,8 @@ const sessionOf = (app: RenderedApp, k: string) => app.runtime.store.getState().
 const attached = (app: RenderedApp, k: string, text: string) => until(() => adapterOf(app, k)?.text.includes(text) === true, `the terminal of ${k} to attach`);
 
 async function newSession(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'New or resumed session' }));
-  await user.click(screen.getByRole('menuitem', { name: 'New session' }));
+  await user.click(screen.getByRole('button', { name: 'New session' }));
+  await user.click(screen.getByRole('menuitem', { name: 'New local session' }));
 }
 
 /** Atlas API has one folder, so "New session" starts at once. With the trust prompt on, it stays "Starting" until answered. */
@@ -154,7 +154,7 @@ describe('opening, resuming, closing and stopping', () => {
     const calls = vi.spyOn(app.demo, 'call');
     await user.click(project('Trading dashboard'));
     await newSession(user);
-    const dialog = await screen.findByRole('dialog', { name: 'New Claude session' });
+    const dialog = await screen.findByRole('dialog', { name: 'New local session' });
     expect(calls.mock.calls.some((c) => c[0] === 'sessions.start')).toBe(false);
     await user.click(within(dialog).getByRole('button', { name: 'Start session' }));
     await waitFor(() => expect(calls).toHaveBeenCalledWith('sessions.start', expect.objectContaining({ body: expect.objectContaining({ mode: 'new', rootId: expect.stringContaining(IDS.dashboard) }) })));
@@ -210,7 +210,7 @@ describe('opening, resuming, closing and stopping', () => {
     const user = userEvent.setup({ delay: null });
     const calls = vi.spyOn(app.demo, 'call');
     await user.click(project('Atlas API'));
-    await user.click(screen.getByRole('button', { name: 'New or resumed session' }));
+    await user.click(screen.getByRole('button', { name: 'New session' }));
     await user.click(screen.getByRole('menuitem', { name: /^f0e1d2c3, WSL \(Ubuntu\)/ }));
     await waitFor(() => expect(calls).toHaveBeenCalledWith('sessions.start', expect.objectContaining({ body: expect.objectContaining({ mode: 'resume', resumeKey: IDS.s.atlasResumable }) })));
     await waitFor(() => expect(banner().textContent).toContain('Starting'));

@@ -1,6 +1,7 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { dropOrder, moveId, orderBy, sameOrder } from '../../src/renderer/src/features/shell/projectOrder';
 import { IDS } from '../../src/renderer/src/dev/demo/seed';
 import { renderApp, until } from './helpers';
 
@@ -340,5 +341,114 @@ describe('the sidebar as a part of the shell', () => {
     await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
     const side = document.querySelector('aside[aria-label="Mini-Summa navigation"]') as HTMLElement;
     expect(side.hasAttribute('hidden')).toBe(true); // display none: its buttons are not reachable by Tab or a screen reader
+  });
+});
+
+describe('putting the projects in order', () => {
+  const names = () => within(screen.getByRole('navigation', { name: 'Projects' })).getAllByRole('button').map((b) => (b.getAttribute('aria-label') ?? '').split(',')[0]).filter((n) => n !== '' && !n.startsWith('Actions for'));
+  const item = (name: string) => row(name).closest('li') as HTMLElement;
+  const dnd = () => ({ setData: vi.fn(), effectAllowed: '', dropEffect: '' });
+  // jsdom has no DragEvent, so the pointer position is put on the event by hand.
+  const dragAt = (kind: 'dragOver' | 'drop', el: HTMLElement, clientY: number) => {
+    const event = createEvent[kind](el, { dataTransfer: dnd() });
+    Object.defineProperty(event, 'clientY', { value: clientY });
+    fireEvent(el, event);
+  };
+
+  it('has plain functions for the new order', () => {
+    expect(moveId(['a', 'b', 'c', 'd'], 'a', 2)).toEqual(['b', 'c', 'a', 'd']);
+    expect(moveId(['a', 'b', 'c', 'd'], 'd', 0)).toEqual(['d', 'a', 'b', 'c']);
+    expect(moveId(['a', 'b'], 'a', 9)).toEqual(['b', 'a']); // clamped
+    expect(moveId(['a', 'b'], 'zzz', 0)).toEqual(['a', 'b']);
+    expect(dropOrder(['a', 'b', 'c', 'd'], 'a', 'c', false)).toEqual(['b', 'a', 'c', 'd']);
+    expect(dropOrder(['a', 'b', 'c', 'd'], 'a', 'c', true)).toEqual(['b', 'c', 'a', 'd']);
+    expect(dropOrder(['a', 'b', 'c', 'd'], 'd', 'a', false)).toEqual(['d', 'a', 'b', 'c']);
+    expect(dropOrder(['a', 'b', 'c'], 'b', 'b', true)).toEqual(['a', 'b', 'c']);
+    expect(sameOrder(['a', 'b'], ['a', 'b'])).toBe(true);
+    expect(sameOrder(['a', 'b'], ['b', 'a'])).toBe(false);
+    const p = (id: string) => ({ id }) as never;
+    expect(orderBy([p('a'), p('b'), p('c')], ['c', 'a']).map((x: { id: string }) => x.id)).toEqual(['c', 'a', 'b']); // what the order does not name keeps its place at the end
+  });
+
+  it('drops a dragged row before or after the one under the pointer, and tells the core the whole order', async () => {
+    const app = await renderApp();
+    const calls = vi.spyOn(app.demo, 'call');
+    expect(names()).toEqual(['GitManager', 'Atlas API', 'Docs site', 'Trading dashboard']);
+    expect(item('Docs site').getAttribute('draggable')).toBe('true');
+
+    fireEvent.dragStart(item('Docs site'), { dataTransfer: dnd() });
+    dragAt('dragOver', item('GitManager'), -1); // the top half of the first row (jsdom rows have no height, so anything above 0)
+    expect(item('GitManager').getAttribute('data-drop')).toBe('before'); // a line says where it will land
+    expect(item('Docs site').getAttribute('data-dragging')).toBe('true');
+    dragAt('drop', item('GitManager'), -1);
+
+    expect(calls).toHaveBeenCalledWith('projects.reorder', { body: { ids: [IDS.docs, IDS.gitManager, IDS.atlas, IDS.dashboard] } });
+    await waitFor(() => expect(names()).toEqual(['Docs site', 'GitManager', 'Atlas API', 'Trading dashboard']));
+    expect(item('GitManager').hasAttribute('data-drop')).toBe(false);
+    expect(item('Docs site').hasAttribute('data-dragging')).toBe(false);
+    // The core's own list agrees, so a restart keeps it.
+    await waitFor(() => expect(app.runtime.store.getState().projects.slice().sort((a, b) => a.sortOrder - b.sortOrder).map((p) => p.id)).toEqual([IDS.docs, IDS.gitManager, IDS.atlas, IDS.dashboard]));
+  });
+
+  it('drops after the row when the pointer is in its lower half, and a drop on itself changes nothing', async () => {
+    const app = await renderApp();
+    const calls = vi.spyOn(app.demo, 'call');
+    fireEvent.dragStart(item('GitManager'), { dataTransfer: dnd() });
+    dragAt('dragOver', item('Atlas API'), 5);
+    expect(item('Atlas API').getAttribute('data-drop')).toBe('after');
+    dragAt('drop', item('Atlas API'), 5);
+    expect(calls).toHaveBeenCalledWith('projects.reorder', { body: { ids: [IDS.atlas, IDS.gitManager, IDS.docs, IDS.dashboard] } });
+
+    calls.mockClear();
+    fireEvent.dragStart(item('Docs site'), { dataTransfer: dnd() });
+    dragAt('dragOver', item('Docs site'), 5);
+    dragAt('drop', item('Docs site'), 5);
+    expect(calls.mock.calls.some((c) => c[0] === 'projects.reorder')).toBe(false);
+  });
+
+  it('moves the focused project one place with Alt+Up and Alt+Down, keeps the keyboard on it, and says where it went', async () => {
+    const user = userEvent.setup();
+    const app = await renderApp();
+    const calls = vi.spyOn(app.demo, 'call');
+    row('Atlas API').focus();
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}');
+    expect(calls).toHaveBeenCalledWith('projects.reorder', { body: { ids: [IDS.gitManager, IDS.docs, IDS.atlas, IDS.dashboard] } });
+    await waitFor(() => expect(names()).toEqual(['GitManager', 'Docs site', 'Atlas API', 'Trading dashboard']));
+    expect(document.activeElement).toBe(row('Atlas API'));
+    expect(screen.getByRole('status', { name: '' }).textContent).toBe('Atlas API moved to position 3 of 4');
+    await user.keyboard('{Alt>}{ArrowUp}{/Alt}{Alt>}{ArrowUp}{/Alt}');
+    await waitFor(() => expect(names()).toEqual(['Atlas API', 'GitManager', 'Docs site', 'Trading dashboard']));
+    // The first one cannot go higher: nothing is sent.
+    calls.mockClear();
+    await user.keyboard('{Alt>}{ArrowUp}{/Alt}');
+    expect(calls.mock.calls.some((c) => c[0] === 'projects.reorder')).toBe(false);
+    // Arrows without Alt are not this: they never reorder.
+    await user.keyboard('{ArrowDown}');
+    expect(calls.mock.calls.some((c) => c[0] === 'projects.reorder')).toBe(false);
+  });
+
+  it('puts the order back and says so when the core refuses', async () => {
+    const user = userEvent.setup();
+    const app = await renderApp();
+    const original = app.demo.call;
+    vi.spyOn(app.demo, 'call').mockImplementation(((name: string, ...rest: unknown[]) => (
+      name === 'projects.reorder' ? Promise.reject(new Error('The database is locked.')) : (original as (...a: unknown[]) => unknown)(name, ...rest)
+    )) as never);
+    row('GitManager').focus();
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}');
+    expect(await screen.findByText('Could not change the order')).toBeTruthy();
+    await waitFor(() => expect(names()).toEqual(['GitManager', 'Atlas API', 'Docs site', 'Trading dashboard']));
+  });
+
+  it('leaves a lone project alone: nothing to drag it past', async () => {
+    const user = userEvent.setup();
+    const app = await renderApp();
+    for (const id of [IDS.atlas, IDS.docs, IDS.dashboard]) await app.demo.demo.server.call('projects.update', { params: { id }, body: { archived: true } });
+    await waitFor(() => expect(names()).toEqual(['GitManager']));
+    expect(item('GitManager').hasAttribute('draggable')).toBe(false);
+    row('GitManager').focus();
+    const calls = vi.spyOn(app.demo, 'call');
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}');
+    expect(calls.mock.calls.some((c) => c[0] === 'projects.reorder')).toBe(false);
   });
 });

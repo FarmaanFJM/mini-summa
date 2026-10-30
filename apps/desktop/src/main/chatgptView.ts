@@ -150,9 +150,6 @@ export class ChatGptView {
     this.applyZoom();
   }
 
-  /** The zoom factor the view should have now (1 is 100 percent). */
-  get pageZoom(): number { return chooseZoomFactor(this.pageScale, this.paneWidth); }
-
   /** Whether the pane is placed and not covered by an overlay right now. */
   get showing(): boolean { return this.applied.visible; }
 

@@ -36,12 +36,19 @@ const FLOOR_ZOOM = 0.7;
 type PageScale = 'auto' | '100' | '90' | '80' | '70';
 
 // ---------------------------------------------------------------------------------------------------------------
-// The two places that know how this test drives the window. When the workspace layout control changes (Split, ChatGPT, Claude
-// instead of Maximize and Restore buttons in the pane headers), only showPanes needs to learn it.
+// The two places that know how this test drives the window. If the workspace layout control changes again, only showPanes needs to
+// learn it.
 
 type Panes = 'both' | 'chatgpt' | 'claude';
 
 async function showPanes(page: Page, panes: Panes): Promise<void> {
+  // The layout control of the workspace bar: a radio group "Workspace view" with Split, ChatGPT and Claude.
+  const group = page.getByRole('radiogroup', { name: 'Workspace view' });
+  if (await group.count() > 0) {
+    await group.getByRole('radio', { name: { both: 'Split', chatgpt: 'ChatGPT', claude: 'Claude' }[panes], exact: true }).click();
+    return;
+  }
+  // Before that control existed: Maximize and Restore buttons in the two pane headers. (This branch can go once nothing builds without the radio group.)
   const button = (name: string) => page.getByRole('button', { name, exact: true });
   const press = async (name: string): Promise<void> => { await button(name).click(); };
   // Whatever is maximized now is restored first, so every call starts from both panes.
@@ -219,7 +226,7 @@ scenario('[X08] Automatic gives a narrow pane a wider page, fixed sizes apply, a
     const p = await settled(h, `${scale} percent to be applied`, (q) => Math.abs(q.zoom - factor) < 1e-9);
     expect(Math.abs(p.innerWidth - Math.floor(p.bounds.width / factor)), `${scale} percent: the page gets the pane's width divided by ${factor}`).toBeLessThanOrEqual(1);
     expect(p.bounds.width, 'a fixed size does not change the pane').toBe(narrow.bounds.width);
-    fixedRows.push(`${scale}% gives ${p.innerWidth}`);
+    fixedRows.push(`${scale} percent gives ${p.innerWidth} CSS px`);
   }
   // A fixed size also holds in a wide pane (Automatic would leave that at 100 percent).
   await setWindowSize(h.app, 1920, 1080);
@@ -237,7 +244,7 @@ scenario('[X08] Automatic gives a narrow pane a wider page, fixed sizes apply, a
   expect(viewCreations(h), 'one view for the whole run').toBe(1);
   expect(h.standIn.requests.filter((r) => r.path === conversationPath(A)), 'the page was fetched once').toHaveLength(1);
 
-  evidence('X08', `the stand-in page reported window.innerWidth through the real window. Automatic by window and pane: ${rows.join('; ')}. A pane narrower than 630 DIP was held at 70 percent, one between 630 and 900 DIP got a zoom in between, and from 900 DIP the page stayed at 100 percent with innerWidth equal to the pane. In the ${narrow.bounds.width} DIP pane the fixed sizes gave ${fixedRows.join(', ')} CSS px (100, 90, 80 and 70 percent apply exactly); 80 percent also held in a ${wideFixed.bounds.width} DIP pane; Automatic came back at ${Math.round(back.zoom * 100)} percent. The native view equalled its pane slot at every size, the Mini-Summa window itself stayed at zoom 1, the page was fetched once and never reloaded. This proves the mechanism against a stand-in page, not ChatGPT's own layout: the overlap was not reproduced`);
+  evidence('X08', `the stand-in page reported window.innerWidth through the real window. Automatic by window and pane: ${rows.join('; ')}. A pane narrower than 630 DIP was held at 70 percent, one between 630 and 900 DIP got a zoom in between, and from 900 DIP the page stayed at 100 percent with innerWidth equal to the pane. In the ${narrow.bounds.width} DIP pane the fixed sizes applied exactly: ${fixedRows.join(', ')}; 80 percent also held in a ${wideFixed.bounds.width} DIP pane; Automatic came back at ${Math.round(back.zoom * 100)} percent. The native view equalled its pane slot at every size, the Mini-Summa window itself stayed at zoom 1, the page was fetched once and never reloaded. This proves the mechanism against a stand-in page, not ChatGPT's own layout: the overlap was not reproduced`);
 }, { timeout: 180_000 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -339,9 +346,10 @@ scenario('[X08] While zoomed out, the page still takes clicks, text selection, s
   // The only permission is writing: the page may not read the clipboard, whatever the gesture.
   const read = await inPage<string>(h.app, 'navigator.clipboard.readText().then((text) => "READ " + text.length, (error) => "DENIED " + error.name)');
   expect(read).toMatch(/^DENIED /);
-  // ...and the other permissions the stand-in could ask for are refused as well (a sample: the camera, notifications, the location).
-  const others = await inPage<string[]>(h.app, 'Promise.all([navigator.mediaDevices.getUserMedia({ video: true }).then(() => "camera granted", (e) => "camera " + e.name), Notification.requestPermission().then((r) => "notifications " + r), new Promise((resolve) => navigator.geolocation.getCurrentPosition(() => resolve("location granted"), (e) => resolve("location denied " + e.code)))])');
-  expect(others.join(' / ')).not.toMatch(/granted/);
+  // What the page is told about every permission it could ask for: only writing the clipboard is granted.
+  const states = await inPage<Record<string, string>>(h.app, `Promise.all(['camera', 'microphone', 'geolocation', 'notifications', 'clipboard-read', 'clipboard-write'].map((name) => navigator.permissions.query({ name }).then((state) => [name, state.state], () => [name, 'unknown']))).then(Object.fromEntries)`);
+  expect(states['clipboard-write'], 'the page\'s own Copy button is allowed to write').toBe('granted');
+  for (const name of ['camera', 'microphone', 'geolocation', 'notifications', 'clipboard-read']) expect(states[name], `${name} is refused`).toBe('denied');
 
   // A double click selects the word under it. (Where the word is, is again its CSS place times the zoom.)
   const word = await centerOf('(() => { const t = document.getElementById("sentence").firstChild; const range = document.createRange(); range.setStart(t, 0); range.setEnd(t, 9); return range; })()');
@@ -367,5 +375,67 @@ scenario('[X08] While zoomed out, the page still takes clicks, text selection, s
   // Still the same zoom throughout: using the page did not change it.
   expect(scrolled.zoom).toBe(p.zoom);
   expect(h.standIn.submissions()).toEqual([]);
-  evidence('X08', `at ${Math.round(p.zoom * 100)} percent (a ${p.bounds.width} DIP pane in Automatic, the page seeing ${p.innerWidth} CSS px) a real mouse click at the zoomed position of the page's Copy button put its Markdown (${STANDIN_MARKDOWN.length} characters) on the clipboard, a double click selected the word under it, the wheel scrolled the page by ${Math.round(scrolled.scrollY)} CSS px; reading the clipboard from the page was refused, as were camera, notifications and location. The one permission the view grants is clipboard-sanitized-write`);
+  evidence('X08', `at ${Math.round(p.zoom * 100)} percent (a ${p.bounds.width} DIP pane in Automatic, the page seeing ${p.innerWidth} CSS px) a real mouse click at the zoomed position of the page's Copy button put its Markdown (${STANDIN_MARKDOWN.length} characters) on the clipboard, a double click selected the word under it, the wheel scrolled the page by ${Math.round(scrolled.scrollY)} CSS px; the page was told that clipboard-write is granted and that clipboard-read, camera, microphone, location and notifications are denied, and a readText() call was rejected. The one permission the view grants is clipboard-sanitized-write`);
 }, { timeout: 150_000 });
+
+// ---------------------------------------------------------------------------------------------------------------
+
+scenario('[X08] A page on another origin starts at 100 percent in Chromium, and the zoom is applied to it at once', async () => {
+  // Chromium keeps zoom per host, so when ChatGPT sends the view to another host (the sign-in host, say) that page starts at the host's
+  // own zoom, 100 percent the first time. A data: page stands in for that host here: it is a different "host" to Chromium, and the
+  // stand-in server answers only chatgpt.com and claude.ai. The test loads it the way a redirect would, as a navigation of the view's
+  // top frame; Mini-Summa is not asked to open it.
+  //
+  // "At once" matters: the pane's slot often moves a moment later (the view's status line appears above it) and that would repair a
+  // wrong zoom by accident. So the zoom is sampled inside the navigation events themselves. The test's listeners were added after the
+  // product's, so they run after them: did-navigate and dom-ready must already find the zoom back, and did-frame-navigate, which
+  // comes before both, shows what Chromium committed the page with.
+  const { h } = await start({ width: 1280, height: 720 });
+  const before = await settled(h, 'Automatic to zoom the narrow pane', (p) => meetsAutomatic(p) && p.zoom < 0.95);
+  const load = (url: string): Promise<void> => h.app.evaluate(({ session, webContents }, target) => {
+    const partition = session.fromPartition('persist:chatgpt');
+    const contents = webContents.getAllWebContents().find((w) => !w.isDestroyed() && w.session === partition);
+    if (!contents) throw new Error('There is no ChatGPT view.');
+    return contents.loadURL(target);
+  }, url);
+  const here = (): Promise<{ url: string; zoom: number; width: number; innerWidth: number } | null> => h.app.evaluate(async ({ BrowserWindow, session, webContents }) => {
+    const partition = session.fromPartition('persist:chatgpt');
+    const contents = webContents.getAllWebContents().find((w) => !w.isDestroyed() && w.session === partition);
+    const win = BrowserWindow.getAllWindows()[0];
+    const view = contents && win.contentView.children.find((c) => (c as unknown as { webContents?: unknown }).webContents === contents);
+    if (!contents || !view) return null;
+    try { return { url: contents.getURL(), zoom: contents.getZoomFactor(), width: view.getBounds().width, innerWidth: await contents.executeJavaScript('window.innerWidth', true) as number }; } catch { return null; }
+  });
+  interface Samples { commit: number[]; navigate: number[]; ready: number[] }
+  await h.app.evaluate(({ session, webContents }) => {
+    const partition = session.fromPartition('persist:chatgpt');
+    const contents = webContents.getAllWebContents().find((w) => !w.isDestroyed() && w.session === partition);
+    if (!contents) throw new Error('There is no ChatGPT view.');
+    const samples: Samples = { commit: [], navigate: [], ready: [] };
+    (globalThis as unknown as { __x08Samples: Samples }).__x08Samples = samples;
+    contents.on('did-frame-navigate', (_event, _url, _code, _text, isMainFrame) => { if (isMainFrame) samples.commit.push(contents.getZoomFactor()); });
+    contents.on('did-navigate', () => { samples.navigate.push(contents.getZoomFactor()); });
+    contents.on('dom-ready', () => { samples.ready.push(contents.getZoomFactor()); });
+  });
+  const sampled = (): Promise<Samples> => h.app.evaluate(() => structuredClone((globalThis as unknown as { __x08Samples: Samples }).__x08Samples));
+
+  await load('data:text/html,<title>Another origin</title><p>A page on another origin</p>');
+  const other = await until('the zoom to be in force on the page on the other origin', async () => {
+    const now = await here();
+    return now && now.url.startsWith('data:') && Math.abs(now.zoom - before.zoom) < 1e-9 && Math.abs(now.innerWidth - Math.floor(now.width / now.zoom)) <= 1 ? now : null;
+  }, { timeout: 20_000 });
+  const first = await sampled();
+  expect(first.commit[0], 'the premise: Chromium commits a page on another origin at 100 percent (if this fails, Chromium changed and the re-apply after navigation may be unnecessary)').toBe(1);
+  expect(first.navigate[0], 'the zoom is back by the time did-navigate has been handled').toBeCloseTo(before.zoom, 9);
+  expect(first.ready[0], 'and at dom-ready').toBeCloseTo(before.zoom, 9);
+
+  // Back on the conversation (a different origin again for Chromium): the same.
+  await load(conversationUrl(A));
+  const back = await settled(h, 'the zoom to be in force on the conversation again', (p) => meetsAutomatic(p) && Math.abs(p.zoom - before.zoom) < 1e-9);
+  expect(back.innerWidth).toBe(before.innerWidth);
+  const second = await sampled();
+  expect(second.navigate[1]).toBeCloseTo(before.zoom, 9);
+  expect(second.ready[1]).toBeCloseTo(before.zoom, 9);
+  expect(await rendererZoom(h.app)).toBe(1);
+  evidence('X08', `the view was sent to a page on another origin (a data: page standing in for the sign-in host) and back to the conversation. Chromium committed the other page at zoom ${first.commit[0]} (it keeps zoom per host and starts a host it has not seen at 1) and the conversation at ${second.commit[1]}; by the time did-navigate and dom-ready had been handled the zoom was ${Math.round(first.navigate[0] * 100)} percent again each time, so the other page saw ${other.innerWidth} CSS px in the ${other.width} DIP pane instead of ${other.width}`);
+}, { timeout: 120_000 });

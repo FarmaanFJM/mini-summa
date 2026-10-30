@@ -300,6 +300,32 @@ async function main(): Promise<void> {
       notTested('report, delivery, feed', 'the session never produced a hook, so no prompt was sent');
     }
 
+    if (live) {
+      // "Claude finished": a real turn that ends WITHOUT the report marker notifies once, as itself, and the turn above that ended WITH a
+      // report did not also notify as finished. Headless, so the notification record says what the host would have been asked.
+      const finishedFor = async () => (await client.call('notifications.list', { query: { limit: 200 } })).filter((n) => n.projectId === project.id && /Claude finished/.test(n.title));
+      await until('the session to be ready for the next prompt', async () => {
+        const s = await client.call('sessions.get', { params: { key } });
+        return ['turn_ended', 'idle', 'report_ready', 'waiting_for_you'].includes(s.state) ? s : null;
+      });
+      const beforeFinished = await finishedFor();
+      const reportsBefore = (await client.call('reports.list', { query: { projectId: project.id } })).items.length;
+      const sentAt = Date.now();
+      await sendLine('Do not use any tools. Reply with the single word ok and nothing else, with no report section.');
+      await check('finished: a real turn that ends without a report notifies once as "Claude finished", the turn that ended with a report did not', async () => {
+        expect(beforeFinished.length === 0, `the turn that ended with a report also produced ${beforeFinished.length} "Claude finished" notification(s)`);
+        const first = await until('a "Claude finished" notification', async () => (await finishedFor())[0]);
+        const seenAfter = Date.now() - sentAt;
+        expect(first.target.view === 'workspace' && first.target.sessionKey === key, `the notification targets ${JSON.stringify(first.target)}`);
+        await sleep(4000); // a second Stop for the same turn, or a replay, would show up here
+        const all = await finishedFor();
+        expect(all.length === 1, `${all.length} "Claude finished" notifications for one turn`);
+        const reportsAfter = (await client.call('reports.list', { query: { projectId: project.id } })).items.length;
+        expect(reportsAfter === reportsBefore, `a plain answer created ${reportsAfter - reportsBefore} report(s)`);
+        return `one notification ${seenAfter} ms after the prompt was sent (includes the model's reply time), desktop result "${first.native}"`;
+      });
+    }
+
     if (live && !skipPermission) {
       await until('the session to be ready for the next prompt', async () => {
         const s = await client.call('sessions.get', { params: { key } });

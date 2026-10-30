@@ -340,14 +340,14 @@ describe('long titles, accessible names and the keyboard', () => {
 });
 
 describe('beside the Claude pane', () => {
-  it('keeps "Start a session" quiet while the strip has the main button, and brings its emphasis back after', async () => {
+  it('keeps "New local session" quiet while the strip has the main button, and brings its emphasis back after', async () => {
     const user = userEvent.setup();
     const app = await baseApp({ route: { projectId: IDS.gitManager } });
     const project = await app.demo.call('projects.create', { body: { name: 'Fresh', roots: [{ path: 'C:\\code\\fresh', env: 'win' }] } });
     await app.demo.call('conversations.add', { params: { id: project.id }, body: { url: 'https://chatgpt.com/c/6a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d', makePreferred: true } });
     open(app, project.id);
     await screen.findByRole('heading', { level: 1, name: 'Fresh' });
-    const start = () => within(screen.getByRole('region', { name: 'Claude' })).getByRole('button', { name: 'Start a session' });
+    const start = () => within(screen.getByRole('region', { name: 'Claude' })).getByRole('button', { name: 'New local session' });
     expect(start().className).toContain('sm-btn--primary');
     let added!: ReturnType<typeof addReportScene>;
     act(() => { added = addReportScene(app.server, { projectId: project.id, title: 'First report', state: 'ready_for_handoff' }); });

@@ -3,7 +3,7 @@
 // The renderer is trusted only as far as it is the core's own page. Even so, every argument is checked for type, size
 // and shape before it reaches a native API, and the sender is checked on every call.
 import path from 'node:path';
-import { parseChatGptUrl } from '@minisumma/shared';
+import { classifyClaudeNavigation, parseChatGptUrl, parseClaudeCodeUrl } from '@minisumma/shared';
 import type { Rect } from '@minisumma/shared';
 import { isUsableRect } from './bounds.ts';
 
@@ -60,6 +60,34 @@ export function validateChatGptUrl(value: unknown): string {
   if (typeof value !== 'string' || value.length > 2048) return bad('ChatGPT address');
   const parsed = parseChatGptUrl(value);
   return parsed.ok ? parsed.info.url : bad('ChatGPT address');
+}
+
+/** The longest address the renderer may ask a native view to load. */
+export const MAX_PAGE_URL_LENGTH = 2048;
+
+/**
+ * Addresses the renderer may load in the Claude Code on the web view: https on claude.ai, under /code, and nothing else. Returns the
+ * address to load: scheme, host and path normalized by parseClaudeCodeUrl, the QUERY KEPT (the documented way to preselect a repository
+ * is ?repositories=owner/repo, and a prefilled prompt travels the same way) and the fragment dropped.
+ *
+ * It does not guess a missing scheme, as the shared helper does for text a person typed: the renderer always holds a full address, and
+ * anything else is a mistake that should show up as an error and not be quietly repaired. An address that could be read two ways (a
+ * backslash, control characters, spaces) is refused outright, the same refusal the view applies to links inside the page.
+ */
+export function validateClaudeWebUrl(value: unknown): string {
+  const refuse = (): never => { throw new ValidationError('Invalid Claude Code address. Only https addresses on claude.ai/code can be shown in this view.'); };
+  if (typeof value !== 'string') return refuse();
+  const raw = value.trim();
+  if (raw === '' || raw.length > MAX_PAGE_URL_LENGTH) return refuse();
+  // eslint-disable-next-line no-control-regex
+  if (/[\\\u0000-\u0020\u007f-\u009f\u2028\u2029]/.test(raw)) return refuse();
+  if (!/^https:\/\//i.test(raw)) return refuse();
+  const parsed = parseClaudeCodeUrl(raw);
+  if (!parsed.ok) return refuse();
+  let search: string;
+  try { search = new URL(raw).search; } catch { return refuse(); }
+  const url = `${parsed.info.url}${search}`;
+  return classifyClaudeNavigation(url) === 'claude' ? url : refuse();
 }
 
 /** https only, no credentials, no whitespace or control characters. Returns the normalized href. */

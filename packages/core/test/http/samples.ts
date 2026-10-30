@@ -73,6 +73,7 @@ export const samples: { [K in RouteName]: RouteInput<K> } = {
   'push.configure': { body: { serviceAccountJson: JSON.stringify({ type: 'service_account', project_id: 'demo-project', private_key: 'k'.repeat(40) }) } },
   'push.clear': {},
   'push.test': {},
+  'notifications.test': {},
   'tailscale.status': {},
   'tailscale.setServe': { body: { enabled: true } },
   'data.usage': {},

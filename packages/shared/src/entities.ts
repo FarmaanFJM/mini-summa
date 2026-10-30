@@ -647,10 +647,11 @@ export interface Settings {
     /** How external mode finds the browser: the default browser, or the optional extension that can focus a tab. */
     externalBrowser: 'default' | 'extension';
     /**
-     * Size of the ChatGPT page inside its pane, as the browser's own page zoom. `auto` keeps ChatGPT in its wide layout in a narrow
-     * pane by zooming out just enough (never below 70 percent); the others are fixed percentages. ChatGPT lays itself out by the width
-     * it is given in CSS pixels, and a pane that is only a few hundred pixels wide gets its narrow layout, where its floating
-     * controls can sit on top of the conversation.
+     * Size of the ChatGPT page inside its pane, as the browser's own page zoom. `auto` tries to keep ChatGPT in its wide layout in a
+     * narrow pane by zooming out just enough (never below 70 percent); the others are fixed percentages. ChatGPT lays itself out by
+     * the width it is given in CSS pixels, and a pane that is only a few hundred pixels wide is likely to get its narrow layout,
+     * where floating controls can sit on top of the conversation. That cause is a hypothesis: it was not reproduced against the real
+     * site (see docs/CHATGPT_PANE.md).
      */
     pageScale: 'auto' | '100' | '90' | '80' | '70';
   };

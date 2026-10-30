@@ -4,7 +4,7 @@
 // This file is bundled with everything it needs into one CommonJS script (a sandboxed preload can only require
 // 'electron'), so it imports types from the shared package and constants from channels.ts and nothing else.
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ChatGptViewState, NativeApi, NavigationTarget, Rect } from '@minisumma/shared';
+import type { ChatGptViewState, ClaudeWebViewState, NativeApi, NavigationTarget, Rect } from '@minisumma/shared';
 import { CH, VERSION_ARG_PREFIX } from '../main/channels.ts';
 
 const versionArg = process.argv.find((a) => a.startsWith(VERSION_ARG_PREFIX));
@@ -47,6 +47,17 @@ const api: NativeApi = {
     focus: () => invoke(CH.chatgptFocus),
     getState: () => invoke<ChatGptViewState>(CH.chatgptGetState),
     onState: (listener) => subscribe<ChatGptViewState>(CH.chatgptState, listener),
+  },
+  // Claude Code on the web: the same shape as `chatgpt` without an overlay switch (the one above covers both native views).
+  claudeWeb: {
+    setBounds: (rect: Rect | null) => invoke(CH.claudeWebSetBounds, rect),
+    navigate: (url: string) => invoke(CH.claudeWebNavigate, url),
+    reload: () => invoke(CH.claudeWebReload),
+    back: () => invoke(CH.claudeWebBack),
+    forward: () => invoke(CH.claudeWebForward),
+    focus: () => invoke(CH.claudeWebFocus),
+    getState: () => invoke<ClaudeWebViewState>(CH.claudeWebGetState),
+    onState: (listener) => subscribe<ClaudeWebViewState>(CH.claudeWebState, listener),
   },
   clipboard: { writeText: (text: string) => invoke(CH.clipboardWriteText, text) },
   dialogs: { selectDirectory: (opts) => invoke<string | null>(CH.selectDirectory, opts) },

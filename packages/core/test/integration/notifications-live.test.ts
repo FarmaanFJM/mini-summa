@@ -10,7 +10,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { NativeNotification, SessionKey } from '@minisumma/shared';
-import { directive } from '../../src/testing/fake-claude/index.ts';
+import { buildSettings } from '@minisumma/claude-integration';
+import { directive, readHookRuns } from '../../src/testing/fake-claude/index.ts';
 import { runHook } from '../claude/helpers/observer-hook.ts';
 import { cleanup, startHarness } from './harness.ts';
 import type { Harness } from './harness.ts';
@@ -90,6 +91,19 @@ describe('Claude finished', () => {
     expect(titles(h)).toEqual(['GitManager: report ready', 'GitManager: Claude finished']);
   }, 60_000);
 
+  it('is on for a project that an older build saved without the switch, and the switch then works', async () => {
+    const first = await boot();
+    const a = await first.project('GitManager');
+    first.core.base.db.run('UPDATE projects SET notification_prefs_json = ? WHERE id = ?', [
+      JSON.stringify({ enabled: true, permission: true, input: true, error: true, report: true, sessionEnded: false, presenceLost: true, push: true }), a.project.id,
+    ]);
+    const again = await first.restart(); open.push(again);
+    expect((await again.client.call('projects.get', { params: { id: a.project.id } })).notificationPrefs).toMatchObject({ turnEnded: true });
+    const sa = await again.start(a.project.id);
+    await again.type(sa.key, 'a question after the upgrade');
+    await again.waitFor('the "Claude finished" notification', () => finishedBy(again)[0]);
+  }, 60_000);
+
   it('can be switched off per project, which leaves the feed entry and the other notifications alone', async () => {
     const h = await boot();
     const a = await h.project('GitManager');
@@ -161,6 +175,32 @@ describe('one turn, one notification (the real reducer, hooks as Claude Code fir
     await stopOf(h, a.dir, 'p2', 'A plain answer.');
     await h.waitFor('the "Claude finished" notification', () => finishedBy(h)[0]);
     expect(titles(h)).toEqual(['GitManager: report ready', 'GitManager: Claude finished']);
+  }, 60_000);
+
+  it('hooks registered twice (the user\'s settings and Mini-Summa\'s own for the session) deliver every event twice and still notify once per turn', async () => {
+    const h = await boot();
+    const a = await h.project('GitManager', { conversations: [CONV] });
+    // The user installed Mini-Summa's hooks in their Claude settings as well: Claude Code runs both registrations for every event.
+    const layout = await h.core.services.environments.layout('posix');
+    const runtime = layout.runtime ?? { command: process.execPath, runAsNode: false };
+    const userSettings = buildSettings({
+      env: 'posix', node: runtime.command, capture: layout.captureScriptInEnv, spool: layout.spoolDirInEnv, registry: layout.registryFileInEnv,
+      handlers: ['ms-user'], runAsNode: runtime.runAsNode,
+    });
+    fs.mkdirSync(path.join(h.stateDir, 'config'), { recursive: true });
+    fs.writeFileSync(path.join(h.stateDir, 'config', 'settings.json'), JSON.stringify(userSettings));
+
+    const sa = await h.start(a.project.id);
+    await h.type(sa.key, 'a plain question');
+    await h.waitFor('the "Claude finished" notification', () => finishedBy(h)[0]);
+    await h.type(sa.key, `Done ${directive.report({ task: 'Twice delivered' })}`);
+    await h.waitFor('the report notification', () => h.native.notifications.find((n) => n.title === 'GitManager: report ready'));
+    await pause(600);
+
+    const stops = readHookRuns(h.stateDir, sa.sessionId).filter((r) => r.event === 'Stop');
+    expect(stops.length).toBe(4); // two turns, two registrations each: it really was delivered twice
+    expect(titles(h)).toEqual(['GitManager: Claude finished', 'GitManager: report ready']);
+    expect((await h.client.call('notifications.list', {}))).toHaveLength(2);
   }, 60_000);
 
   it('a turn that ends with background work pending is in the feed but not announced; the turn that really ends is', async () => {

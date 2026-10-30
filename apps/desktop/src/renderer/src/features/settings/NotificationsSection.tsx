@@ -161,7 +161,7 @@ function ProjectTable() {
                   {PROJECT_COLUMNS.map((c) => {
                     const value = overlay[`${p.id}:${c.key}`] ?? p.notificationPrefs[c.key];
                     return (
-                      <td key={c.key}>
+                      <td key={c.key} data-label={c.label}>
                         <Switch aria-label={`${c.label}, ${p.name}`} checked={value} disabled={c.key !== 'enabled' && !(overlay[`${p.id}:enabled`] ?? p.notificationPrefs.enabled)} onChange={(v) => { void set(p, c.key, v); }} />
                       </td>
                     );

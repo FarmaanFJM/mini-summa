@@ -413,13 +413,37 @@ describe('notifications', () => {
     expect(app.runtime.store.getState().settings?.notifications.defaults).toMatchObject({ enabled: false, sessionEnded: true });
   });
 
+  it('has a switch for "Claude finished", on for everyone until turned off, for new projects and for each project', async () => {
+    const user = userEvent.setup();
+    const app = await open('notifications');
+    const spy = vi.spyOn(app.demo, 'call');
+    const group = screen.getByRole('region', { name: 'For new projects' });
+    const defaults = within(group).getByRole('switch', { name: 'Claude finished' });
+    expect(defaults.getAttribute('aria-checked')).toBe('true');
+    // It says what it is, because the label alone could be read as "the task is done".
+    expect(textOf(group)).toContain('A turn ending does not mean the task is complete.');
+    await user.click(defaults);
+    await waitFor(() => expect(patchOf(spy)).toEqual([{ notifications: { defaults: { turnEnded: false } } }]));
+    expect(app.runtime.store.getState().settings?.notifications.defaults.turnEnded).toBe(false);
+
+    const table = screen.getByRole('table', { name: 'Notifications per project' });
+    const mine = within(table).getByRole('switch', { name: 'Claude finished, GitManager' });
+    expect(mine.getAttribute('aria-checked')).toBe('true');
+    await user.click(mine);
+    await waitFor(() => expect(callsTo(spy, 'projects.update')).toEqual([{ params: { id: IDS.gitManager }, body: { notificationPrefs: { turnEnded: false } } }]));
+    await waitFor(() => expect(app.runtime.store.getState().projects.find((p) => p.id === IDS.gitManager)?.notificationPrefs.turnEnded).toBe(false));
+    // Only that project, and only that kind.
+    expect(app.runtime.store.getState().projects.find((p) => p.id === IDS.atlas)?.notificationPrefs.turnEnded).toBe(true);
+    expect(app.runtime.store.getState().projects.find((p) => p.id === IDS.gitManager)?.notificationPrefs.report).toBe(true);
+  });
+
   it('has one row per project with a switch for each kind, phone included, and saves one change at a time', async () => {
     const user = userEvent.setup();
     const app = await open('notifications');
     const spy = vi.spyOn(app.demo, 'call');
     const table = screen.getByRole('table', { name: 'Notifications per project' });
     const headers = within(table).getAllByRole('columnheader').map((h) => textOf(h));
-    expect(headers).toEqual(['Project', 'Notify', 'Permission', 'Input', 'Error', 'Report', 'Ended', 'Lost', 'Phone']);
+    expect(headers).toEqual(['Project', 'Notify', 'Permission', 'Input', 'Error', 'Report', 'Finished', 'Ended', 'Lost', 'Phone']);
     const rows = within(table).getAllByRole('row').slice(1);
     expect(rows.map((r) => textOf(within(r).getAllByRole('rowheader')[0]))).toEqual(['GitManager', 'Atlas API', 'Docs site', 'Trading dashboard']);
 

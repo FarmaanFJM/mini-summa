@@ -29,11 +29,17 @@ export function chatGptSession(): Session {
   return session.fromPartition(CHATGPT_PARTITION);
 }
 
-export function createChatGptViewHandle(win: BrowserWindow): ViewHandle {
-  hardenChatGptSession(chatGptSession());
+/**
+ * The native view of an embedded site (ChatGPT, Claude Code on the web): a profile of its own (`partition`), the permission rule above
+ * applied to that profile before anything loads, the strictest web preferences and NO preload, so nothing of Mini-Summa runs inside the
+ * page. It is added to the window hidden; the controller of each site shows, moves and hides it, and nothing here can remove it.
+ * Written once so that the settings that matter for security cannot drift apart between the sites.
+ */
+export function createEmbeddedView(win: BrowserWindow, partition: string): WebContentsView {
+  hardenChatGptSession(session.fromPartition(partition));
   const view = new WebContentsView({
     webPreferences: {
-      partition: CHATGPT_PARTITION,
+      partition,
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
@@ -42,12 +48,17 @@ export function createChatGptViewHandle(win: BrowserWindow): ViewHandle {
       webSecurity: true,
       allowRunningInsecureContent: false,
       webviewTag: false,
-      // No preload on purpose: nothing of Mini-Summa runs inside the ChatGPT page.
+      // No preload on purpose, and no user agent: the page sees the browser as it is.
     },
   });
   view.setBackgroundColor(BACKGROUND);
   view.setVisible(false);
   win.contentView.addChildView(view);
+  return view;
+}
+
+export function createChatGptViewHandle(win: BrowserWindow): ViewHandle {
+  const view = createEmbeddedView(win, CHATGPT_PARTITION);
   const wc = view.webContents;
   return {
     setBounds: (r) => view.setBounds(r),

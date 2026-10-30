@@ -1,0 +1,104 @@
+/*
+  Settings. One column of groups on the panel, each a heading with its note and then its controls, all starting at the same left edge.
+  Groups are separated by space, not by boxes. Cards (one environment, one device) step up one surface (--s2) and hold plain rows
+  (--s3). Class names carry the ms-set- prefix; shared pieces (ms-x-*) live in reports/shared.css.
+*/
+.ms-set-view .ms-view__body { padding-top: var(--sp-4); padding-bottom: var(--sp-6); }
+.ms-set-page { display: flex; flex-direction: column; gap: var(--sp-6); max-width: 720px; min-width: 0; }
+
+/* The save status sits in the header, right-aligned. A failure may be a sentence long, so the header can grow to hold it. */
+.ms-set-view .ms-view__head { height: auto; padding-top: 6px; padding-bottom: 6px; }
+.ms-set-head-status { max-width: min(620px, 65%); text-align: right; }
+.ms-set-head-status .ms-x-saving { align-items: flex-start; line-height: 1.4; }
+.ms-set-head-status .ms-x-saving .sm-icon, .ms-set-head-status .ms-x-saving .sm-spinner { margin-top: 2px; flex: none; }
+.ms-set-narrow { max-width: 320px; }
+
+.ms-set-group { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.ms-set-group__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 28px; }
+.ms-set-group__title { font-size: var(--fs); font-weight: 600; letter-spacing: -0.005em; }
+.ms-set-group__note { max-width: 62ch; }
+.ms-set-group__body { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+
+/* Lists keep the left edge of the page: the bullet or the number hangs in the gutter instead of pushing the words in (P11). */
+.ms-set-points, .ms-set-steps { margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; line-height: 1.5; max-width: 66ch; list-style: none; }
+.ms-set-points { color: var(--text-2); font-size: var(--fs); }
+.ms-set-steps { color: var(--text); font-size: var(--fs); counter-reset: ms-step; }
+.ms-set-points > li, .ms-set-steps > li { position: relative; }
+.ms-set-points > li::before { content: ""; position: absolute; right: calc(100% + 8px); top: 0.7em; width: 4px; height: 4px; border-radius: 50%; background: var(--text-2); }
+.ms-set-steps > li { counter-increment: ms-step; }
+.ms-set-steps > li::before { content: counter(ms-step); position: absolute; right: calc(100% + 7px); top: 0; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.ms-set-steps .ms-mono { font-size: var(--fs-sm); }
+
+.ms-set-choice { padding: 6px 0; }
+.ms-set-choice .ms-choice, .ms-set-fieldset .ms-choice { align-items: flex-start; }
+.ms-set-choice .ms-choice__box, .ms-set-fieldset .ms-choice__box { margin-top: 2px; }
+.ms-set-choice__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ms-set-fieldset { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.ms-set-fieldset legend { padding: 0; margin-bottom: var(--sp-2); }
+
+.ms-set-cards { display: flex; flex-direction: column; gap: var(--sp-3); margin: 0; padding: 0; list-style: none; }
+.ms-set-card { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); border-radius: var(--r-lg); background: var(--s2); min-width: 0; }
+.ms-set-card__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.ms-set-card__title { font-size: var(--fs); font-weight: 600; }
+.ms-set-card__state { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--fs-sm); }
+
+.ms-set-install { display: flex; flex-direction: column; gap: var(--sp-2); }
+.ms-set-commands { display: flex; flex-direction: column; gap: var(--sp-3); margin: 0; padding: 0; list-style: none; }
+.ms-set-commands li { display: flex; flex-direction: column; gap: 4px; }
+.ms-set-commands .ms-x-text { padding: 8px 12px; }
+.ms-set-warnings { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+
+.ms-set-inline { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.ms-set-inline > .ms-mono { min-width: 0; }
+/* A small icon button beside a value must not make its row taller than the rows around it. */
+.ms-set-inline .sm-icon-btn { margin-block: -4px; }
+.ms-set-details summary { cursor: pointer; width: fit-content; color: var(--text-2); font-size: var(--fs-sm); border-radius: var(--r-sm); }
+.ms-set-details summary:hover { color: var(--text); }
+.ms-set-plain { display: flex; flex-direction: column; gap: 4px; margin: var(--sp-2) 0 0; padding: 0; list-style: none; font-size: var(--fs-sm); }
+
+.ms-set-times { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+.ms-set-times .ms-field { width: 150px; }
+.ms-set-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--sp-4); }
+
+/* The exact lines that will change. + and - are written out, so the colour only backs the words up. It sits in a dialog (--s3), so it is --s4. */
+.ms-diff { max-height: 320px; overflow: auto; padding: 8px 0; border-radius: var(--r); background: var(--s4); font-size: var(--fs-sm); line-height: 1.55; user-select: text; }
+.ms-diff__line { padding: 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 1.55em; color: var(--text-2); }
+.ms-diff__line[data-kind="add"] { color: var(--text); background: color-mix(in srgb, var(--term-green) 14%, transparent); }
+.ms-diff__line[data-kind="del"] { color: var(--text); background: color-mix(in srgb, var(--term-red) 14%, transparent); }
+.ms-diff__line[data-kind="hunk"], .ms-diff__line[data-kind="file"] { color: var(--text-2); }
+
+/* A pairing code. The QR image is black on white with its quiet zone, whatever the theme: that is what cameras read. */
+.ms-pair { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--sp-5); padding: var(--sp-4); border-radius: var(--r-lg); background: var(--s2); }
+.ms-pair__qr { flex: none; width: 232px; height: 232px; border-radius: var(--r); overflow: hidden; background: #ffffff; }
+.ms-pair__qr img { display: block; }
+.ms-pair__qr-wait { width: 100%; height: 100%; background: var(--s3); }
+.ms-pair__text { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.ms-pair__lead { margin: 0; line-height: 1.5; }
+
+/* Notifications per project: one row per project, one switch per kind. A card on the panel; its rows are a hover fill. The wrapper is a
+   container, so the table answers to the room it has and not to the window. */
+.ms-set-table-wrap { overflow-x: auto; border-radius: var(--r-lg); background: var(--s2); container: ms-notifications / inline-size; }
+.ms-set-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.ms-set-table th, .ms-set-table td { padding: 8px 6px; text-align: center; white-space: nowrap; }
+.ms-set-table thead th { color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; padding-top: 12px; }
+.ms-set-table .ms-set-table__name { text-align: left; font-weight: 500; font-size: var(--fs); padding-left: 14px; position: sticky; left: 0; background: var(--s2); }
+.ms-set-table thead .ms-set-table__name { font-size: var(--fs-xs); font-weight: 600; }
+.ms-set-table tbody tr:hover > * { background: var(--s3); }
+.ms-set-table td .ms-switch { justify-content: center; }
+.ms-set-table .ms-switch__track { background: var(--s4); }
+.ms-set-table tbody tr:hover .ms-switch__track:not([aria-checked="true"]) { background: var(--s5); }
+
+/* Too narrow for ten columns (the smallest window, or a tall one): each project becomes a block, its name over one labelled switch per kind,
+   instead of a table that scrolls sideways inside its card and hides the last columns. The header row stays for assistive technology. The
+   table is about 680px wide at its natural size, so the switch happens just above that. */
+@container ms-notifications (max-width: 699px) {
+  .ms-set-table, .ms-set-table tbody, .ms-set-table tr, .ms-set-table th, .ms-set-table td { display: block; }
+  .ms-set-table thead { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .ms-set-table tbody tr { padding: 12px 14px 8px; }
+  .ms-set-table tbody tr + tr { box-shadow: 0 -1px 0 var(--line); } /* repeated rows may carry one hairline each (P12) */
+  .ms-set-table tbody tr:hover > * { background: none; }
+  .ms-set-table .ms-set-table__name { position: static; padding: 0 0 4px; background: none; font-size: var(--fs); font-weight: 600; }
+  .ms-set-table td { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 36px; padding: 0; text-align: left; white-space: normal; }
+  .ms-set-table td::before { content: attr(data-label); content: attr(data-label) / ""; color: var(--text); font-size: var(--fs); }
+  .ms-set-table td .ms-switch { justify-content: flex-end; }
+}

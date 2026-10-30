@@ -217,7 +217,8 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
         //  * never straight after a report (from === 'report_ready'). A Stop that declares a report sets that state without a
         //    transition, so one Stop cannot produce both; but a second Stop with no work in between (a stop hook that sent Claude on
         //    for one more step, or a duplicate delivery) would otherwise follow the report notification with a "finished" for the
-        //    same turn. A real new turn always passes through `working` first.
+        //    same turn. A real new turn passes through `working` first (its UserPromptSubmit); only if every hook of a turn but its
+        //    Stop were lost would this stay silent for a new turn.
         //  * only for a session that belongs to a project. Hooks are installed for every Claude Code session on this computer;
         //    "finished" for each unrelated one would bury the ones that matter, and an unassigned session has no project switch.
         if (created && canNotify && to === 'turn_ended' && from !== 'report_ready' && view.projectId) notify(entry, hint('turnEnded', 'normal'));

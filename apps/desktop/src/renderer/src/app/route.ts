@@ -1,5 +1,5 @@
 // Which view, project, session and report the person is looking at. Persisted (guarded) so the app reopens where it was left.
-import { isSessionKey } from '@minisumma/shared';
+import { isSessionKey, parseClaudeCodeUrl, UI_LIMITS } from '@minisumma/shared';
 import type { NavigationTarget, SessionKey } from '@minisumma/shared';
 import { createStore } from 'zustand';
 import type { StoreApi } from 'zustand';
@@ -17,6 +17,16 @@ export interface RouteState {
   sessionByProject: Record<string, SessionKey>;
   /** The conversation each project's ChatGPT pane was last showing. */
   conversationByProject: Record<string, string>;
+  /** The last page of Claude Code on the web each project's Cloud tab was on (an address on claude.ai/code, without query). */
+  cloudUrlByProject: Record<string, string>;
+  /**
+   * Projects whose Claude pane shows the Cloud tab instead of a local session. In memory only, and never the persisted `sessionKey`:
+   * choosing any session (a tab, a new session, a notification) takes the pane back to local sessions, and after a restart the pane
+   * shows the last local session tab again.
+   */
+  cloudShown: Record<string, true>;
+  /** "New cloud session" was chosen for these projects and the Cloud tab has not opened the start page for it yet. In memory only. */
+  cloudStart: Record<string, true>;
   reportId: string | null;
   deliveryId: string | null;
   activityId: string | null;
@@ -33,6 +43,14 @@ export interface RouteActions {
   selectProject(projectId: string | null): void;
   selectSession(projectId: string, key: SessionKey | null): void;
   selectConversation(projectId: string, conversationId: string | null): void;
+  /** Remember the page of Claude Code on the web a project's Cloud tab is on (null forgets it). */
+  selectCloudUrl(projectId: string, url: string | null): void;
+  /** Show the Cloud tab of a project's Claude pane. `start`: open the start page of a new session (the repository preselected), not the remembered page. */
+  showCloud(projectId: string, opts?: { start?: boolean }): void;
+  /** Go back from the Cloud tab to the project's local sessions. */
+  hideCloud(projectId: string): void;
+  /** The Cloud tab has opened the start page that "New cloud session" asked for. */
+  finishCloudStart(projectId: string): void;
   /** Return to the view before this one (the back chevron of a view that replaced the sidebar). */
   back(fallback?: ViewId): void;
 }
@@ -59,8 +77,24 @@ function validate(raw: unknown): Partial<RouteState> | null {
   if (isRecord(raw.conversationByProject)) {
     out.conversationByProject = Object.fromEntries(Object.entries(raw.conversationByProject).filter((e): e is [string, string] => typeof e[1] === 'string'));
   }
+  if (isRecord(raw.cloudUrlByProject)) {
+    // Only a page of Claude Code on the web is kept, in its plain form: whatever else was stored is not an address this build opens.
+    const pages: [string, string][] = [];
+    for (const [id, value] of Object.entries(raw.cloudUrlByProject)) {
+      const read = typeof value === 'string' && value.length <= UI_LIMITS.urlChars ? parseClaudeCodeUrl(value) : null;
+      if (read?.ok) pages.push([id, read.info.url]);
+    }
+    out.cloudUrlByProject = Object.fromEntries(pages);
+  }
   return out;
 }
+
+const without = <V>(map: Record<string, V>, id: string): Record<string, V> => {
+  if (!(id in map)) return map;
+  const next = { ...map };
+  delete next[id];
+  return next;
+};
 
 export function createRouteStore(options: RouteOptions = {}): RouteStore {
   const { storage, resolveSessionProject } = options;
@@ -71,6 +105,9 @@ export function createRouteStore(options: RouteOptions = {}): RouteStore {
     projectId: null,
     sessionByProject: {},
     conversationByProject: {},
+    cloudUrlByProject: {},
+    cloudShown: {},
+    cloudStart: {},
     reportId: null,
     deliveryId: null,
     activityId: null,
@@ -85,11 +122,14 @@ export function createRouteStore(options: RouteOptions = {}): RouteStore {
         let projectId = target.projectId ?? s.projectId;
         if (target.sessionKey && !target.projectId) projectId = resolveSessionProject?.(target.sessionKey) ?? projectId;
         const sessionByProject = target.sessionKey && projectId ? { ...s.sessionByProject, [projectId]: target.sessionKey } : s.sessionByProject;
+        // A session that is named is the one to look at, even when the Cloud tab was showing.
+        const cloudShown = target.sessionKey && projectId ? without(s.cloudShown, projectId) : s.cloudShown;
         const changedView = view !== s.view;
         return {
           view,
           projectId,
           sessionByProject,
+          cloudShown,
           reportId: target.reportId ?? (changedView ? null : s.reportId),
           deliveryId: target.deliveryId ?? (changedView ? null : s.deliveryId),
           activityId: target.activityId ?? (changedView ? null : s.activityId),
@@ -106,7 +146,7 @@ export function createRouteStore(options: RouteOptions = {}): RouteStore {
       set((s) => {
         const next = { ...s.sessionByProject };
         if (key) next[projectId] = key; else delete next[projectId];
-        return { sessionByProject: next };
+        return { sessionByProject: next, cloudShown: key ? without(s.cloudShown, projectId) : s.cloudShown };
       });
     },
     selectConversation(projectId, conversationId) {
@@ -115,6 +155,26 @@ export function createRouteStore(options: RouteOptions = {}): RouteStore {
         if (conversationId) next[projectId] = conversationId; else delete next[projectId];
         return { conversationByProject: next };
       });
+    },
+    selectCloudUrl(projectId, url) {
+      set((s) => {
+        if (url === null) return s.cloudUrlByProject[projectId] === undefined ? s : { cloudUrlByProject: without(s.cloudUrlByProject, projectId) };
+        const read = parseClaudeCodeUrl(url);
+        if (!read.ok || s.cloudUrlByProject[projectId] === read.info.url) return s; // not a page of Claude Code on the web, or nothing new
+        return { cloudUrlByProject: { ...s.cloudUrlByProject, [projectId]: read.info.url } };
+      });
+    },
+    showCloud(projectId, opts) {
+      set((s) => ({
+        cloudShown: s.cloudShown[projectId] ? s.cloudShown : { ...s.cloudShown, [projectId]: true },
+        cloudStart: opts?.start ? { ...s.cloudStart, [projectId]: true } : s.cloudStart,
+      }));
+    },
+    hideCloud(projectId) {
+      set((s) => (s.cloudShown[projectId] ? { cloudShown: without(s.cloudShown, projectId) } : s));
+    },
+    finishCloudStart(projectId) {
+      set((s) => (s.cloudStart[projectId] ? { cloudStart: without(s.cloudStart, projectId) } : s));
     },
     back(fallback = 'workspace') {
       set((s) => {
@@ -129,6 +189,7 @@ export function createRouteStore(options: RouteOptions = {}): RouteStore {
     store.subscribe((s) => {
       writeJson(storage, STORAGE_KEY, {
         view: s.view, projectId: s.projectId, sessionByProject: s.sessionByProject, conversationByProject: s.conversationByProject,
+        cloudUrlByProject: s.cloudUrlByProject,
       });
     });
   }

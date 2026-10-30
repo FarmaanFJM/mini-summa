@@ -9,7 +9,7 @@ import { useApi, useApp } from '../../app/runtime';
 import { Button, Field, Icon, IconButton, Radio, TextInput } from '../../ui';
 import { KIND_LABEL, verificationText } from './conversationText';
 import { SettingsSection } from './parts';
-import { failureText, useAddText, useCommitText, useSavedFlag } from './useCommit';
+import { failureText, useAddText, useCommitText, useSavedFlag, useTrack } from './useCommit';
 
 const TITLE_MAX = 200;
 
@@ -25,27 +25,32 @@ export function ConversationsSection({ project }: { project: Project }) {
   const preferredId = chosen ?? project.preferredConversationId;
   useEffect(() => { if (chosen !== null && project.preferredConversationId === chosen) setChosen(null); }, [chosen, project.preferredConversationId]);
 
-  const prefer = async (conversation: Conversation) => {
+  const track = useTrack();
+  const prefer = (conversation: Conversation) => track(async () => {
     setChosen(conversation.id);
     setProblem(null);
     try {
       await api.call('conversations.setPreferred', { params: { id: project.id }, body: { conversationId: conversation.id } });
       flash();
+      return true;
     } catch (err) {
       setChosen(null);
       setProblem(failureText(err));
+      return false;
     }
-  };
+  });
 
-  const remove = async (conversation: Conversation) => {
+  const remove = (conversation: Conversation) => track(async () => {
     setProblem(null);
     try {
       await api.call('conversations.remove', { params: { id: conversation.id } });
       flash();
+      return true;
     } catch (err) {
       setProblem(failureText(err));
+      return false;
     }
-  };
+  });
 
   const add = useAddText<string>({
     check: (text) => {

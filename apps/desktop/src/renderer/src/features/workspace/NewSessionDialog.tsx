@@ -22,7 +22,7 @@ export function NewSessionDialog({ project, open, starting, onStart, onClose }: 
     <Dialog
       open={open}
       onClose={onClose}
-      title="New Claude session"
+      title="New local session"
       size="sm"
       busy={starting}
       footer={(

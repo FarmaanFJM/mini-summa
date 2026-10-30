@@ -1,5 +1,5 @@
 // Shared test doubles and a harness that boots the whole renderer on the in-memory demo core.
-import type { ChatGptViewState, NavigationTarget, Rect, SessionKey } from '@minisumma/shared';
+import type { ChatGptViewState, ClaudeWebViewState, NavigationTarget, Rect, SessionKey } from '@minisumma/shared';
 import { render, screen, waitFor } from '@testing-library/react';
 import type { RenderResult } from '@testing-library/react';
 import { vi } from 'vitest';
@@ -75,17 +75,36 @@ export interface FakeNative {
   native: RendererNative;
   /** Emit a ChatGPT view state to onState listeners. */
   emitView(state: Partial<ChatGptViewState>): void;
+  /** Emit a Claude Code on the web state to its onState listeners (as the host does when the page moves or fails). */
+  emitClaudeView(state: Partial<ClaudeWebViewState>): void;
   /** Deliver a navigation request, as the main process does for a notification click. */
   navigate(target: NavigationTarget): void;
   lastBounds(): Rect | null | undefined;
+  /** The last rectangle the Claude Code view was given (null: hidden), undefined before it was told anything. */
+  lastClaudeBounds(): Rect | null | undefined;
 }
 
-export function createFakeNative(over: { embedded?: boolean; view?: Partial<ChatGptViewState> } = {}): FakeNative {
+export interface FakeNativeOptions {
+  /** Desktop shell (true, the default) or a plain browser. */
+  embedded?: boolean;
+  view?: Partial<ChatGptViewState>;
+  /**
+   * Whether the host can embed Claude Code on the web: true or a first state for it (the default in the desktop shell), false for a
+   * host that cannot (the default in a browser).
+   */
+  claudeWeb?: boolean | Partial<ClaudeWebViewState>;
+}
+
+export function createFakeNative(over: FakeNativeOptions = {}): FakeNative {
   let view: ChatGptViewState = { mode: 'embedded', status: 'ready', url: null, title: null, canGoBack: false, canGoForward: false, note: null, ...over.view };
   const listeners = new Set<(s: ChatGptViewState) => void>();
   let navigateListener: ((t: NavigationTarget) => void) | null = null;
   const bounds = vi.fn(async (_rect: Rect | null) => {});
   const embedded = over.embedded ?? true;
+  const hasClaudeWeb = over.claudeWeb === undefined ? embedded : over.claudeWeb !== false;
+  let claudeView: ClaudeWebViewState = { status: 'ready', url: null, title: null, canGoBack: false, canGoForward: false, note: null, ...(typeof over.claudeWeb === 'object' ? over.claudeWeb : {}) };
+  const claudeListeners = new Set<(s: ClaudeWebViewState) => void>();
+  const claudeBounds = vi.fn(async (_rect: Rect | null) => {});
   const native: RendererNative = {
     kind: embedded ? 'electron' : 'browser',
     appVersion: 'test',
@@ -104,6 +123,18 @@ export function createFakeNative(over: { embedded?: boolean; view?: Partial<Chat
       getState: vi.fn(async () => view),
       onState: vi.fn((l: (s: ChatGptViewState) => void) => { listeners.add(l); return () => { listeners.delete(l); }; }),
     },
+    ...(hasClaudeWeb ? {
+      claudeWeb: {
+        setBounds: claudeBounds,
+        navigate: vi.fn(async () => {}),
+        reload: vi.fn(async () => {}),
+        back: vi.fn(async () => {}),
+        forward: vi.fn(async () => {}),
+        focus: vi.fn(async () => {}),
+        getState: vi.fn(async () => claudeView),
+        onState: vi.fn((l: (s: ClaudeWebViewState) => void) => { claudeListeners.add(l); return () => { claudeListeners.delete(l); }; }),
+      },
+    } : {}),
     clipboard: { writeText: vi.fn(async () => {}) },
     dialogs: { selectDirectory: vi.fn(async () => null) },
     shell: { openExternal: vi.fn(async () => {}), showItemInFolder: vi.fn(async () => {}) },
@@ -116,8 +147,10 @@ export function createFakeNative(over: { embedded?: boolean; view?: Partial<Chat
   return {
     native,
     emitView(state) { view = { ...view, ...state }; for (const l of listeners) l(view); },
+    emitClaudeView(state) { claudeView = { ...claudeView, ...state }; for (const l of claudeListeners) l(claudeView); },
     navigate(target) { navigateListener?.(target); },
     lastBounds() { return bounds.mock.calls.at(-1)?.[0]; },
+    lastClaudeBounds() { return claudeBounds.mock.calls.at(-1)?.[0]; },
   };
 }
 
@@ -181,6 +214,34 @@ export async function renderApp(options: HarnessOptions = {}): Promise<RenderedA
 
 export async function until(check: () => boolean, message = 'condition'): Promise<void> {
   await waitFor(() => { if (!check()) throw new Error(`Timed out waiting for ${message}`); });
+}
+
+export interface WorkspaceGeometry {
+  /** The area that holds both panes (decides side by side or stacked). */
+  area?: { width: number; height: number };
+  /** Where the ChatGPT page's empty slot is. */
+  chatgpt?: Rect;
+  /** Where the Claude Code page's empty slot is. */
+  claude?: Rect;
+}
+
+/**
+ * jsdom has no layout. Gives the pane area and the two native slots (found by their labels) a size, and everything else none.
+ * Call it before rendering; `vi.restoreAllMocks()` undoes it.
+ */
+export function stubWorkspaceGeometry(g: WorkspaceGeometry = {}): { chatgpt: Rect; claude: Rect } {
+  const area = g.area ?? { width: 1180, height: 860 };
+  const chatgpt = g.chatgpt ?? { x: 260, y: 82, width: 590, height: 818 };
+  const claude = g.claude ?? { x: 860, y: 150, width: 560, height: 740 };
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    const label = this.getAttribute?.('aria-label');
+    const r = this.classList?.contains('ms-workspace__area') ? { x: 260, y: 44, ...area }
+      : label === 'Embedded ChatGPT view' ? chatgpt
+        : label === 'Embedded Claude Code view' ? claude
+          : { x: 0, y: 0, width: 0, height: 0 };
+    return { ...r, left: r.x, top: r.y, right: r.x + r.width, bottom: r.y + r.height, toJSON: () => ({}) } as DOMRect;
+  });
+  return { chatgpt, claude };
 }
 
 /** Give a measured element a size (jsdom has no layout). */

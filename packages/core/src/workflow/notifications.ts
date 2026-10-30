@@ -263,6 +263,23 @@ export function createNotificationsService(deps: NotificationsServiceDeps): Noti
       return { sent, failed, skipped: null };
     },
 
+    async sendTestDesktop() {
+      const settings = deps.settings.get();
+      const quiet = quietReason(settings.notifications.quiet, clock.now()) !== null;
+      if (!settings.notifications.native) return { shown: false, reason: 'Desktop notifications are turned off in Settings.', quiet };
+      try {
+        // The same host call real notifications make. Quiet mode holds those back but not this: the person asked for it, to see what the system does.
+        const r = await deps.native.notify({
+          title: 'Mini-Summa', body: 'This is a test notification. If you can read it, notifications reach you.', tag: `test-${newId('ntf')}`,
+          target: { view: 'activity' }, urgency: 'normal', silent: false,
+        });
+        return r.shown ? { shown: true, reason: null, quiet } : { shown: false, reason: r.reason ?? 'The system did not accept the notification.', quiet };
+      } catch (err) {
+        log.warn('test notification failed', { error: String(err) });
+        return { shown: false, reason: err instanceof Error && err.message ? err.message : 'The system did not accept the notification.', quiet };
+      }
+    },
+
     prune(olderThanIso) {
       return db.run('DELETE FROM notifications WHERE at < ?', [olderThanIso]).changes;
     },

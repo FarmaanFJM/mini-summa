@@ -1,13 +1,14 @@
 // The renderer-facing IPC surface (the other half of window.miniSumma). Every handler checks who is asking and what was
 // sent before touching a native API. The desktop token leaves this process only through `ms:connection`, and only to the
 // main window's top frame on the core's origin.
-import type { ChatGptViewState } from '@minisumma/shared';
+import type { ChatGptViewState, ClaudeWebViewState } from '@minisumma/shared';
 import { CH, INVOKE_CHANNELS } from './channels.ts';
 import type { ChatGptView } from './chatgptView.ts';
+import type { ClaudeWebView } from './claudeView.ts';
 import type { Logger } from './log.ts';
 import {
   isTrustedSender, validateAbsolutePath, validateBadgeCount, validateBounds, validateBoolean, validateChatGptUrl,
-  validateClipboardText, validateDirectoryOptions, validateExternalUrl,
+  validateClaudeWebUrl, validateClipboardText, validateDirectoryOptions, validateExternalUrl,
 } from './validation.ts';
 
 /** The slice of Electron's IpcMainInvokeEvent that is used. */
@@ -28,6 +29,8 @@ export interface IpcDeps {
   mainContentsId(): number | null;
   connection(): { baseUrl: string; token: string };
   chatgpt: Pick<ChatGptView, 'setBounds' | 'setOverlayActive' | 'navigate' | 'reload' | 'back' | 'forward' | 'focus' | 'getState'>;
+  /** Claude Code on the web, the second native view. It has no overlay channel of its own: the one for ChatGPT switches both. */
+  claudeWeb: Pick<ClaudeWebView, 'setBounds' | 'setOverlayActive' | 'navigate' | 'reload' | 'back' | 'forward' | 'focus' | 'getState'>;
   writeClipboard(text: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   selectDirectory(opts: { title?: string; defaultPath?: string }): Promise<string | null>;
@@ -65,13 +68,29 @@ export function registerIpc(deps: IpcDeps): () => void {
   handle(CH.connection, () => deps.connection());
 
   handle(CH.chatgptSetBounds, (rect) => { deps.chatgpt.setBounds(validateBounds(rect)); });
-  handle(CH.chatgptSetOverlayActive, (active) => { deps.chatgpt.setOverlayActive(validateBoolean(active, 'overlay flag')); });
+  // A menu, dialog or toast of the renderer covers every native view, so the one switch drives both. Each view keeps its own flag and
+  // places itself again from its own rectangle when the switch is released, so a view that was hidden before stays hidden. One view
+  // failing must not leave the other drawn over the dialog.
+  handle(CH.chatgptSetOverlayActive, (active) => {
+    const flag = validateBoolean(active, 'overlay flag');
+    for (const [name, view] of [['chatgpt', deps.chatgpt], ['claudeWeb', deps.claudeWeb]] as const) {
+      try { view.setOverlayActive(flag); } catch (error) { deps.log.warn('overlay switch failed', { view: name, error }); }
+    }
+  });
   handle(CH.chatgptNavigate, (url) => deps.chatgpt.navigate(validateChatGptUrl(url)));
   handle(CH.chatgptReload, () => { deps.chatgpt.reload(); });
   handle(CH.chatgptBack, () => { deps.chatgpt.back(); });
   handle(CH.chatgptForward, () => { deps.chatgpt.forward(); });
   handle(CH.chatgptFocus, () => { deps.chatgpt.focus(); });
   handle(CH.chatgptGetState, (): ChatGptViewState => deps.chatgpt.getState());
+
+  handle(CH.claudeWebSetBounds, (rect) => { deps.claudeWeb.setBounds(validateBounds(rect)); });
+  handle(CH.claudeWebNavigate, (url) => deps.claudeWeb.navigate(validateClaudeWebUrl(url)));
+  handle(CH.claudeWebReload, () => { deps.claudeWeb.reload(); });
+  handle(CH.claudeWebBack, () => { deps.claudeWeb.back(); });
+  handle(CH.claudeWebForward, () => { deps.claudeWeb.forward(); });
+  handle(CH.claudeWebFocus, () => { deps.claudeWeb.focus(); });
+  handle(CH.claudeWebGetState, (): ClaudeWebViewState => deps.claudeWeb.getState());
 
   handle(CH.clipboardWriteText, (text) => deps.writeClipboard(validateClipboardText(text)));
   handle(CH.selectDirectory, (opts) => deps.selectDirectory(validateDirectoryOptions(opts)));

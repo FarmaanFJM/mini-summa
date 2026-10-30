@@ -49,6 +49,7 @@ export const NOTIFICATION_SWITCHES: { key: Exclude<keyof ProjectNotificationPref
   { key: 'input', label: 'Claude asks you something', column: 'Input', description: 'A session asked a question and waits for your answer.' },
   { key: 'error', label: 'A session hit an error', column: 'Error', description: 'A turn or a session ended with an error.' },
   { key: 'report', label: 'A report is ready', column: 'Report', description: 'Claude declared a task finished and the report waits for its handoff.' },
+  { key: 'turnEnded', label: 'Claude finished', column: 'Finished', description: 'A session stopped and is waiting for you, without a report. A turn ending does not mean the task is complete.', hint: true },
   { key: 'sessionEnded', label: 'A session ended abnormally', column: 'Ended', description: 'A session that was working stopped. A normal end only goes to the feed.', hint: true },
   { key: 'presenceLost', label: 'A session is no longer visible', column: 'Lost', description: 'Claude Code stopped listing a session. It may have ended; this is not confirmed.', hint: true },
   { key: 'push', label: 'Also send to my phone', column: 'Phone', description: 'Send a short push notification to paired phones, when push is set up.' },

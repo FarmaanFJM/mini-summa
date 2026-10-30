@@ -1,0 +1,32 @@
+/*
+  The handoff strip: one calm band between the project bar and the two panes. It is a notice, not an alert: a card-step surface (--s2)
+  on the panel, no border and no accent edge. Emerald is only the main button, as everywhere.
+*/
+.ms-strip {
+  flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--sp-3); padding: 8px var(--sp-3) 8px 16px;
+  background: var(--s2); color: var(--text);
+}
+.ms-strip > .sm-icon { flex: none; color: var(--text-2); }
+.ms-strip__text { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ms-strip__headline, .ms-strip__detail { margin: 0; min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.ms-strip__headline { font-size: var(--fs); font-weight: 600; line-height: 1.35; }
+.ms-strip__detail { color: var(--text-2); font-size: var(--fs-sm); line-height: 1.4; }
+.ms-strip__result { margin: 2px 0 0; color: var(--text); font-size: var(--fs-sm); line-height: 1.4; overflow-wrap: anywhere; }
+.ms-strip__result[data-tone="warning"] { color: var(--warn); }
+.ms-strip__result[data-tone="error"] { color: var(--danger); }
+.ms-strip__result > p { margin: 0 0 6px; }
+.ms-strip__fallback { width: 100%; min-height: 64px; }
+.ms-strip__actions { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); margin-left: auto; }
+/* Buttons on this surface sit one step lighter than it, as on other raised surfaces. */
+.ms-strip .sm-btn { background: var(--s3); }
+.ms-strip .sm-btn:hover:not(:disabled) { background: var(--s4); }
+.ms-strip .sm-btn:active:not(:disabled) { background: var(--s5); }
+.ms-strip .sm-btn--primary { background: var(--accent); }
+.ms-strip .sm-btn--primary:hover:not(:disabled) { background: var(--accent-hover); }
+.ms-strip .sm-btn--primary:active:not(:disabled) { background: var(--accent); }
+.ms-strip .sm-btn--ghost { background: transparent; }
+.ms-strip .sm-btn--ghost:hover:not(:disabled) { background: var(--s3); }
+.ms-strip .sm-input { background: var(--s3); }
+.ms-strip .ms-x-linkbtn { color: var(--text-2); font-size: var(--fs-sm); }
+.ms-strip .ms-x-linkbtn:hover { color: var(--text); }
+.ms-strip .ms-x-linkbtn:focus-visible { outline: 1.5px solid var(--focus); outline-offset: 2px; }

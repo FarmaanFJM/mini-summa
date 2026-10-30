@@ -1,0 +1,57 @@
+/*
+  The project dialogs (New project, and a project's settings). Filled rows and fields on the dialog surface, one step lighter than it
+  (P01, P02): no box inside a box. Headings are plain muted text with their content at the same left edge (P11); the space between
+  sections is the separation (P12).
+*/
+.ms-pj-form { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; }
+.ms-pj-panel { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.ms-pj-panel:empty { display: none; }
+.ms-pj-panel:focus { outline: none; }
+
+.ms-pj-inline { display: flex; align-items: stretch; gap: var(--sp-2); min-width: 0; }
+.ms-pj-inline .sm-input { flex: 1; min-width: 0; }
+.ms-pj-inline .sm-btn { flex: none; }
+
+/* A field whose label is the heading above it: the label stays for assistive technology and for the click target, not for the eye. */
+.ms-pj-bare > .ms-field__head { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ms-pj-bare { position: relative; }
+
+/* The source selector: a filled segmented control. The dialog is --s3, so the track is --s4 and the chosen segment --s5. */
+.ms-pj-form .ms-tabs { align-self: flex-start; max-width: 100%; padding: 2px; border-radius: var(--r); background: var(--s4); gap: 2px; }
+.ms-pj-form .ms-tab:hover { background: var(--select); }
+.ms-pj-form .ms-tab[data-selected] { background: var(--s5); }
+
+/* Sections of the settings. A heading belongs to what is under it, so it sits close to it; "Saved" sits right after the heading. */
+.ms-pj-section { gap: var(--sp-2); }
+.ms-pj-section .ms-section__head { justify-content: flex-start; min-height: 20px; }
+.ms-pj-saved { color: var(--text-2); font-size: var(--fs-sm); }
+
+.ms-pj-line { display: block; }
+.ms-pj-note { margin: 0; color: var(--text-2); font-size: var(--fs-sm); }
+
+.ms-pj-address { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: var(--fs-sm); }
+.ms-pj-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+
+/* Folders and conversations: flat filled rows. */
+.ms-pj-rows { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ms-pj-row { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 6px 8px 6px 12px; border-radius: var(--r); background: var(--s4); min-width: 0; }
+.ms-pj-row > .sm-icon { color: var(--text-3); flex: none; }
+.ms-pj-row__main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.ms-pj-row__sub { color: var(--text-2); font-size: var(--fs-xs); line-height: 1.4; }
+.ms-pj-row__actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.ms-pj-row--conversation { align-items: flex-start; padding-top: 10px; padding-bottom: 10px; }
+.ms-pj-row--conversation > .ms-choice { margin-top: 7px; }
+.ms-pj-row--conversation .ms-pj-row__actions { margin-top: 2px; }
+.ms-pj-row .sm-input { background: var(--s5); }
+.ms-pj-row .sm-btn--ghost:hover:not(:disabled), .ms-pj-row .sm-icon-btn:hover:not(:disabled) { background: var(--s5); }
+.ms-pj-row__sub[data-verification="mismatch"], .ms-pj-row__sub[data-verification="unreachable"], .ms-pj-row__sub[data-verification="login_required"] { color: var(--warn); }
+
+/* What was typed, read back: where the folder is, what an address will do. */
+.ms-pj-reading { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--text-2); min-width: 0; }
+.ms-pj-reading:empty { display: none; }
+.ms-pj-reading p { margin: 0; }
+.ms-pj-reading__label { color: var(--text-3); }
+.ms-pj-reading__note { color: var(--text-2); }
+.ms-pj-reading__warn { display: flex; align-items: flex-start; gap: 6px; color: var(--text-2); }
+.ms-pj-reading__warn .sm-icon { margin-top: 2px; color: var(--warn); flex: none; }
+.ms-pj-question { display: flex; flex-direction: column; gap: 6px; }

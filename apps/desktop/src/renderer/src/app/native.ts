@@ -8,8 +8,10 @@ export interface RendererNative extends Omit<NativeApi, 'kind'> {
   readonly kind: 'electron' | 'browser';
   /** The embedded ChatGPT view exists only inside the desktop shell. */
   readonly hasEmbeddedChatGpt: boolean;
-  /** "Browse" can open a real folder picker only inside the desktop shell. */
+  /** "Browse" can open a real folder picker, and a folder can be shown in the file manager, only inside the desktop shell. */
   readonly hasFolderPicker: boolean;
+  // `claudeWeb` (from NativeApi) is there only when the host can embed Claude Code on the web. A browser never can, so the renderer
+  // offers to open the page in the person's browser instead.
 }
 
 const IDLE_EXTERNAL: ChatGptViewState = {

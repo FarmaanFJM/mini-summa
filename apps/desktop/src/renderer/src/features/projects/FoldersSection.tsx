@@ -10,7 +10,7 @@ import { Button, Field, Icon, IconButton, TextInput } from '../../ui';
 import { FolderReadingView, useHostPlatform } from './FolderInput';
 import { SettingsSection } from './parts';
 import { NEEDS_DISTRO_NOTE, readFolder } from './readings';
-import { failureText, useAddText, useSavedFlag } from './useCommit';
+import { failureText, useAddText, useSavedFlag, useTrack } from './useCommit';
 
 interface NewFolder { path: string; env: EnvId }
 
@@ -52,26 +52,28 @@ export function FoldersSection({ project }: { project: Project }) {
     if (!picked) return;
     const read = readFolder(picked, hostPlatform, null);
     if (read.kind === 'ok') {
-      setProblem(null);
-      await add.send({ path: read.path, env: read.env }, picked);
+      add.setText(picked);
       return;
     }
     setDistro(null);
     add.setText(picked);
   };
 
-  const remove = async (id: string) => {
+  const track = useTrack();
+  const remove = (id: string) => track(async () => {
     setRemoving(id);
     setProblem(null);
     try {
       await api.call('projects.removeRoot', { params: { id: project.id, rootId: id } });
       flash();
+      return true;
     } catch (err) {
       setProblem(failureText(err));
+      return false;
     } finally {
       setRemoving(null);
     }
-  };
+  });
 
   const roots = project.roots.slice().sort((a, b) => a.position - b.position);
   return (

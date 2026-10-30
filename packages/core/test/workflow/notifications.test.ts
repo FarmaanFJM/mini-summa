@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { ProjectNotificationPrefs, QuietMode } from '@minisumma/shared';
 import type { NotifyHint } from '../../src/contracts.ts';
 import { PUSH_BODY, createNotificationsService, quietReason } from '../../src/workflow/notifications.ts';
+import { defaultNotificationPrefs, defaultSettings } from '@minisumma/shared';
+import { SETTINGS_SPEC, lenientPartial, strictPatch } from '../../src/infra/settings-schema.ts';
+import { NOTIFICATION_PREF_KEYS, parsePrefs } from '../../src/infra/project-rows.ts';
 import { FakeDevices, FakeProjects, FakePush, KEY_A, activityEvent, fakeNative, fakeSettings, hasEmDash, makeEnv, notifyHint } from './helpers.ts';
 
 type Kind = Exclude<NotifyHint['kind'], 'info'>;
@@ -224,6 +227,30 @@ describe('notifications: Claude finished (turnEnded) and the person who is alrea
     const payload = (t.push as FakePush).sent[0].payload;
     expect(payload).toEqual({ title: 'GitManager', body: 'Claude finished and is waiting for you', data: { kind: 'turnEnded', projectId: t.project.id, activityId: 'drv_secret', sessionKey: KEY_A } });
     expect(JSON.stringify(payload)).not.toContain('SECRET');
+  });
+});
+
+describe('notifications: the Claude finished switch exists wherever preferences are kept', () => {
+  it('is on by default, for a project and for the global default', () => {
+    expect(defaultNotificationPrefs().turnEnded).toBe(true);
+    expect(defaultSettings().notifications.defaults.turnEnded).toBe(true);
+    expect(NOTIFICATION_PREF_KEYS).toContain('turnEnded');
+  });
+
+  it('is on for a project saved before it existed, whatever else that project had switched off', () => {
+    const old = JSON.stringify({ enabled: true, permission: false, input: true, error: true, report: false, sessionEnded: true, presenceLost: true, push: false });
+    expect(parsePrefs(old)).toEqual({ enabled: true, permission: false, input: true, error: true, report: false, turnEnded: true, sessionEnded: true, presenceLost: true, push: false });
+    expect(parsePrefs(JSON.stringify({ turnEnded: false })).turnEnded).toBe(false);
+    expect(parsePrefs(JSON.stringify({ turnEnded: 'no' })).turnEnded).toBe(true); // anything that is not true or false is ignored
+    expect(parsePrefs('not json').turnEnded).toBe(true);
+  });
+
+  it('is accepted and checked in settings like the other switches (a wrong type is refused, stored data is repaired)', () => {
+    expect(strictPatch({ notifications: { defaults: { turnEnded: false } } })).toEqual({ notifications: { defaults: { turnEnded: false } } });
+    expect(() => strictPatch({ notifications: { defaults: { turnEnded: 'off' } } })).toThrow(/true or false/);
+    expect(lenientPartial({ notifications: { defaults: { turnEnded: 'off', report: false } } })).toEqual({ notifications: { defaults: { report: false } } });
+    const leaf = (SETTINGS_SPEC.notifications.defaults as Record<string, unknown>).turnEnded;
+    expect(leaf).toEqual({ t: 'bool' });
   });
 });
 
@@ -480,6 +507,45 @@ describe('notifications: sendTest', () => {
     const t = setup();
     (t.push as FakePush).throwOnSend = new Error('offline');
     expect(await t.svc.sendTest()).toEqual({ sent: 0, failed: 1, skipped: null });
+  });
+});
+
+describe('notifications: sendTestDesktop', () => {
+  it('asks the host to show a marked test through the call real notifications use, and records nothing', async () => {
+    const t = setup();
+    expect(await t.svc.sendTestDesktop()).toEqual({ shown: true, reason: null, quiet: false });
+    expect(t.native.notifications).toHaveLength(1);
+    const n = t.native.notifications[0];
+    expect(n.title).toBe('Mini-Summa');
+    expect(n.body).toMatch(/test notification/i);
+    expect(n.target).toEqual({ view: 'activity' });
+    expect(n.suppressIfViewing).toBeUndefined(); // a test is never held back for being looked at
+    expect(t.svc.list()).toEqual([]);
+    expect(t.env.of('notification.added')).toHaveLength(0);
+    expect(hasEmDash(n)).toBe(false);
+    expect((t.push as FakePush).sent).toHaveLength(0); // the phone has its own test
+  });
+
+  it('says why when the system does not show it', async () => {
+    const refused = setup();
+    refused.native.notifyImpl = () => ({ shown: false, reason: 'Notifications are blocked for Mini-Summa.' });
+    expect(await refused.svc.sendTestDesktop()).toEqual({ shown: false, reason: 'Notifications are blocked for Mini-Summa.', quiet: false });
+    const silent = setup();
+    silent.native.notifyImpl = () => ({ shown: false });
+    expect((await silent.svc.sendTestDesktop()).reason).toMatch(/did not accept/);
+    const broken = setup();
+    broken.native.notifyImpl = () => { throw new Error('host is gone'); };
+    expect(await broken.svc.sendTestDesktop()).toEqual({ shown: false, reason: 'host is gone', quiet: false });
+  });
+
+  it('respects the desktop switch, and shows in quiet mode while saying that quiet mode is on', async () => {
+    const off = setup();
+    off.settings.set({ notifications: { native: false } });
+    expect(await off.svc.sendTestDesktop()).toEqual({ shown: false, reason: expect.stringMatching(/turned off/i), quiet: false });
+    expect(off.native.notifications).toHaveLength(0);
+    const hushed = setup();
+    hushed.settings.set({ notifications: { quiet: { enabled: true, until: null } } });
+    expect(await hushed.svc.sendTestDesktop()).toEqual({ shown: true, reason: null, quiet: true });
   });
 });
 

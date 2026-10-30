@@ -12,6 +12,13 @@
 */
 
 /* ---------------------------------------------------------------- Buttons */
+/* Pressed is one step beyond hover. The bundle's :active rules are out-ranked by its own :hover rules (two more :not() each), so the pressed
+   step never showed while the pointer was still on the button; the same rules, restated with the weight of the hover ones, make it show. */
+.sm-btn:active:not(:disabled):not([aria-disabled="true"]) { background: var(--s5); }
+.sm-btn--primary:active:not(:disabled):not([aria-disabled="true"]) { background: var(--accent); }
+.sm-btn--ghost:active:not(:disabled):not([aria-disabled="true"]) { background: var(--s3); }
+.sm-btn--danger:active:not(:disabled):not([aria-disabled="true"]) { background: var(--danger-solid); }
+.sm-btn--danger-quiet:active:not(:disabled):not([aria-disabled="true"]) { background: var(--s5); }
 .ms-btn--sm { height: var(--control-h-sm); padding: 0 10px; border-radius: var(--r-sm); font-size: var(--fs-sm); }
 .ms-btn__label { overflow: hidden; text-overflow: ellipsis; }
 /* Loading is not disabled: Button sets aria-busy and aria-disabled together, and the bundle dims aria-disabled. */
@@ -96,6 +103,7 @@
 .ms-option { align-items: flex-start; }
 .ms-option__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .ms-option__desc { color: var(--text-2); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-menu__item.ms-option > .sm-icon { margin-top: 3px; } /* an item with a second line: its icon sits on the first line */
 .sm-menu__item.ms-option[aria-selected="true"] { background: var(--select); }
 .sm-menu__item.ms-option[aria-selected="true"]:hover, .sm-menu__item.ms-option[aria-selected="true"]:focus-visible { background: var(--select-strong); }
 .sm-menu__item:active:not(:disabled):not([aria-disabled="true"]) { background: var(--select-strong); }
@@ -178,7 +186,7 @@
 .ms-skeleton-list--wide { width: min(760px, 100%); gap: 8px; }
 .ms-skeleton-list--wide .ms-skeleton-row { height: 44px; border-radius: var(--r); }
 /* Rows that are on their way keep the height of the rows that will replace them, so nothing shifts when they arrive. */
-.ms-skeleton-row { height: 32px; border-radius: var(--r-sm); background: linear-gradient(90deg, var(--s2), var(--s3), var(--s2)); background-size: 200% 100%; animation: sm-shimmer 1.4s linear infinite; opacity: 0.7; }
+.ms-skeleton-row { height: 32px; border-radius: var(--r); background: linear-gradient(90deg, var(--s2), var(--s3), var(--s2)); background-size: 200% 100%; animation: sm-shimmer 1.4s linear infinite; opacity: 0.7; }
 @media (prefers-reduced-motion: reduce) { .ms-skeleton-row { animation: none; } }
 
 /* Toast region is portaled; keep it above dialogs and the floating menus. */

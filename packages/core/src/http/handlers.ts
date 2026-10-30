@@ -231,6 +231,7 @@ export function createHandlers(deps: HandlerDeps): HandlerMap {
       return OK;
     },
     'push.test': () => services.notifications.sendTest(),
+    'notifications.test': () => services.notifications.sendTestDesktop(),
 
     // remote access
     'tailscale.status': ({ query }) => services.tailscale.status(query.refresh === undefined ? undefined : { refresh: query.refresh }),

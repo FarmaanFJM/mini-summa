@@ -1,5 +1,5 @@
 // What is left of the sidebar when it is collapsed: a quiet tab on the window's left edge that opens it again
-// (docs/WORKSPACE_PATTERN.md, 7a: a panel is shown and hidden by an edge chevron). There is no icon rail: a rail would need
+// (Summa-UI docs/WORKSPACE_PATTERN.md, 7a: a panel is shown and hidden by an edge chevron). There is no icon rail: a rail would need
 // an icon for every project, and a folder icon repeated per project says nothing. Projects are one keystroke away in the
 // quick switcher, and the tab carries the one fact worth seeing from outside: that a session is waiting for the person.
 import { useApp } from '../../app/runtime';

@@ -2,60 +2,81 @@
 
 The renderer follows the vendored Summa-UI guidance (`third_party/summa-ui-guidance`, principles P01 to P22). The principles are
 defaults (P22): each place where Mini-Summa differs from them is listed here with the reason. Anything not listed follows the
-principle. The vendored bundle is read-only and is never edited; the differences live in code that loads after it.
+principle. The vendored bundle is read-only and is never edited; the tokens are used as they are, and the few differences live in code
+that loads after them.
 
-## Owner decisions (not usability arguments)
+## Owner decisions and the palette
 
-### X1. Palette values come from the product owner, not from the vendored bundle
+### X1. The palette is the bundle's, with no override
 
-`apps/desktop/src/renderer/src/styles/mini-summa-tokens.css` is the only place the palette is defined. It loads after the bundle's
-`tokens.css` and overrides its values. Token names are the bundle's, so every `sm-*` preset keeps working.
+Until round 3 Mini-Summa overrode the bundle's surfaces, lines, text and select colours with the owner's own values
+(`#0C0D0E` page, `#141618` panel, and so on). That override is gone. `third_party/summa-ui-guidance/css/tokens.css` is the source of
+truth for surfaces (`--s0` to `--s4`), lines, text, accent, focus, select, danger, warn, radius, spacing, type scale and shadow, and
+`apps/desktop/src/renderer/src/styles/mini-summa-tokens.css` overrides none of them. It holds only what the bundle has no token for
+(X4). The window and the native ChatGPT view already used the bundle's page colour (`#141515`, `src/main`).
 
-| Token | Bundle | Mini-Summa | Source |
-| --- | --- | --- | --- |
-| `--s0` page, terminal | #141515 | #0C0D0E | owner |
-| `--s1` panels, sidebar, pane headers | #1b1c1c | #141618 | owner |
-| `--s2` inputs, hovered rows | #232424 | #1A1D1F | derived (between s1 and s3) |
-| `--s3` raised controls, selected rows, dialogs | #2c2d2d | #202326 | owner |
-| `--s4` menus, popovers, pressed | #373838 | #272A2D | derived (s3 plus one step) |
-| `--line` | rgba(255,255,255,.07) | #2B2E31, opaque | owner |
-| `--text` | #ececeb | #ECEEEF | owner |
-| `--text-2` | #a3a6a4 | #8D9298 | owner |
-| `--text-3` | #6f7371 | #6F767D | derived, 3.9:1 on `--s1` and 3.1:1 on `--s4` |
-| `--accent` | #10b981 | #10B981 | owner (same as the bundle) |
+What this means for the checks (computed with WCAG relative luminance on the real values; the in-page check below measures the same
+on the rendered text):
 
-Still true: emerald is used only for the brand mark and the single primary action of a view; there is no lime, no gradient, and no
-glow. The terminal palette (`--term-*`) is muted and keeps 4.5:1 or better on `--term-bg` for every colour except ANSI black, which is
-used for fills.
+| Pair | Ratio |
+| --- | --- |
+| Each surface step, dark to light: `--s0` to `--s1`, `--s2`, `--s3`, `--s4`, `--s5` | 1.07, 1.10, 1.13, 1.17, 1.22 per step, always lighter (P02) |
+| `--text` on `--s0` to `--s4` | 15.5, 14.5, 13.2, 11.7, 10.0 |
+| `--text-2` on `--s0` to `--s4` | 7.5, 7.0, 6.3, 5.6, 4.8 (3.9 on `--s5`, the hover step of a menu) |
+| `--text-3` on `--s0` to `--s4` | 3.8, 3.6, 3.2, 2.9, 2.5 |
+| Focus ring (`--focus` over the surface) on `--s0` to `--s4` | 4.7, 4.6, 4.4, 4.2, 3.8 (needs 3) |
+| `--accent-ink` on `--accent`, `--danger-ink` on `--danger-solid` | 6.2, 5.1 (6.1 on hover) |
 
-### X2. Compact density
+So text a person has to read uses `--text` or `--text-2`. `--text-3` fails 4.5:1 on every surface and is used for placeholders,
+disabled controls and decoration only (there is no word set in it anywhere in the shell, the views or the kit; the browser check below
+would flag one). A checkbox or radio ring is `--text-2`, not the bundle's `--text-3`, so it keeps 3:1 on a dialog (`--text-3` gives 2.9:1
+on `--s3`). The sidebar count is `--text-2` in a smaller size, not `--text-3` as in the reference.
 
-`--control-h-sm: 28px` and `--fs-md: 13px` make toolbars, tabs and the sidebar compact, as the owner asked. This is a desktop app;
-P18 (mobile navigation breathing room) does not apply, and every control keeps a visible focus ring and an accessible name.
+Evidence of the rendered result (demo build in Chromium, the Summa-UI reference checks from `scripts/lib/collector.mjs` plus a
+contrast and surface-order pass over every text node): the shell, the sidebar, the quick switcher, Activity, Reports and Settings (every
+section) show no nested border or ring (CHK-001), no left border (CHK-002), no tinted destructive button (CHK-003, CHK-019), no
+gradient or glow (CHK-013), no em dash (CHK-017) and no horizontal overflow (CHK-021) at 1440x900, 960x600 and 900x1200; every text node
+there is at least 4.5:1 on its real, composited surface; and 149 keyboard focus stops were walked, each with a neutral ring of 1.5px or
+less at 3:1 or better.
+
+### X2. Compact controls (P18)
+
+The bundle's controls are 32px (`--control-h`) and 40px. Toolbars, tab strips, filters and the pane headers use `--control-h-sm`
+(28px, the size of the bundle's own `.sm-icon-btn--sm`), because two panes and their headers share a window that can be 960px wide. This
+is a desktop application; P18 (mobile navigation breathing room) does not apply, targets stay at 28px or more, and every control keeps a
+visible focus ring and an accessible name. The owner's earlier 13px body size (`--fs-md`) is retired: the type scale is the bundle's
+(`--fs` 14px for body text, `--fs-sm` 12.5px for dense and secondary text).
 
 ## Usability reasons
 
-### X3. Structural hairlines between regions (P01, P02, P12)
+### X3. One hairline: the pane divider (P12)
 
-P02 says elevation should read without borders. With the owner's darker values the steps between `--s0`, `--s1` and `--s3` are about
-1.1:1, too small to separate the sidebar, the pane headers and the terminal on their own. So each region boundary has one 1px
-`--line` hairline: right edge of the sidebar, under each pane header, the divider between the two panes. Hairlines are never nested
-(no box inside a box), never decorative, and never on the left edge as an accent (P03). The only outline on a floating overlay is
-`--line-strong`, as in the bundle.
+With the bundle's palette the sidebar needs no line against the panel: it sits on the page (`--s0`) with no border, and the content is
+one inset, rounded `--s1` panel (the reference `AppShell`), so the step of surface is the boundary. The only line left in the shell is
+the divider between the ChatGPT and Claude panes. It is the drag handle first (a 1px `--line` hairline at rest, `--line-strong` under
+the pointer, the focus ring on the keyboard) and it is never nested: no box inside a box, no accent, never on the left edge (P03). The
+only outline on a floating overlay is `--line-strong`, as in the bundle.
 
-### X4. Token names added beyond the bundle's
+### X4. Tokens added beyond the bundle's
 
-`--s5` (hover and pressed on `--s4` surfaces; the bundle's presets hard-code `#444545` there, which does not fit the owner's ladder),
-`--term-*` (the terminal palette, font and metrics, read by `xtermAdapter`), `--control-h-sm`, `--fs-md`. No bundle token is renamed
-or removed.
+`styles/mini-summa-tokens.css` adds three things, and no bundle token is renamed, removed or given another value:
+
+- `--s5` (`#444545`): one step beyond `--s4`, for hover and pressed on menu, dialog and tooltip surfaces. The bundle's presets hard-code
+  this value; here it has a name.
+- `--control-h-sm` (28px): the compact control of X2.
+- `--term-*`: the terminal's palette, font and metrics, read by `xtermAdapter` when a terminal is created. `--term-bg` is `--s1`, the
+  panel's surface, so the terminal reads as part of the panel and not as a darker hole in it (P02). The neutrals follow the bundle's text
+  colours; ANSI black is `--s3` and is a fill, never text; every other colour, bright black included, keeps 4.5:1 or better on `--s1`
+  (computed: red 5.5, green 7.2, yellow 8.7, blue 6.4, magenta 6.6, cyan 7.9, white 10.1, bright black 4.9).
 
 ### X5. Status colours on dots and notices (P06)
 
 Two non-neutral colours appear besides emerald: amber (`--warn`) for "needs your attention" and red (`--danger`) for an error. A person
 looking at four projects has to see in one glance which one is waiting for them; neutral grey cannot do that. They are never the only
 carrier: the dot always sits beside its words ("Waiting for your permission", "Ended with an error"), the sidebar marker has an
-accessible name ("Needs your attention"), and the project row's accessible label repeats it. All other states (busy, idle, no process)
-use neutral tones.
+accessible name ("Needs your attention"), and the project row's accessible label repeats it. The same dot is on the quick switcher's
+rows and, while the sidebar is collapsed, on the edge tab that opens it (its accessible description says why). All other states (busy,
+idle, no process) use neutral tones.
 
 ### X6. Persistent explanatory copy (P05, AP-010)
 
@@ -76,16 +97,36 @@ Four places carry sentences that a minimal interface would drop. Each states a f
 
 The 16 ANSI colours are program output, not interface chrome. Claude Code, compilers and test runners use red, green, yellow, blue,
 magenta and cyan to mean things, and flattening them to one hue would remove information from the output. The palette is muted and
-checked for contrast; it never leaks into the surrounding interface.
+checked for contrast on `--term-bg` (X4); it never leaks into the surrounding interface.
+
+## Shell, sidebar and quick switcher (round 3)
+
+### X13. The quick switcher draws no title (P05, the kit's rule that a dialog is titled)
+
+The quick switcher is a palette: a filter field and a list. Its dialog is named "Switch project" for assistive technology (an `h2` that
+is present and not drawn, `hideTitle`) and the field says what it is for ("Switch to a project"). A drawn heading over a search field would
+be words that say nothing the field does not. Every other dialog keeps its visible title. It is a modal dialog like the others: focus is
+trapped and restored, Esc closes it, the page behind is inert, and the native ChatGPT view steps aside.
+
+### X14. The checkbox and radio ring is `--text-2` (P01 allows the outline; the bundle's value fails 3:1 on a dialog)
+
+See X1. This is a deviation from the bundle's preset CSS (`--text-3`), not from a principle: the ring is the one outline a control may
+have, and it has to be perceivable.
 
 ## Checked and not exceptions
 
-- P14: there is exactly one sidebar. A view that needs its own navigation (settings) replaces the sidebar content and shows a back
-  chevron (`SidebarContent`); the ChatGPT and Claude panes are content, not sidebars.
+- P14: there is exactly one sidebar and never a second column. A view that needs its own navigation (Settings, Reports) replaces the
+  sidebar content and shows a back chevron (`SidebarContent`). While such a view holds the sidebar it is on screen even if the person
+  collapsed it, and the person's choice returns when the view lets go (`sidebarShown`). The ChatGPT and Claude panes are content, not
+  sidebars. (Round 3 removed the old X8, a column inside the view when the sidebar was a rail.)
 - P04: tags exist only as functional controls (filter or group buttons). Sessions show a state dot and words, not coloured pills.
-- P20: no placeholder avatars or generated identity; a session is named by its short id, origin and environment.
+- P20: no placeholder avatars or generated identity; a session is named by its short id, origin and environment, and a project by its name
+  (no initials, no circles, no folder icon per project; a dot only when a session waits).
 - P19: destructive confirmations use a solid red button with a verb ("Delete project", "Stop session") and start with focus on Cancel.
-- P13: no em dashes in user-facing copy (checked by search over `src/renderer`).
+- P13: no em dashes in user-facing copy. `test/renderer/copy-no-em-dash.test.ts` scans every string, markup text and CSS content of
+  `src/renderer`, `src/main` and `src/preload` and fails with the file and line (comments may keep one).
+- P15, P17: selected is the quiet `--select` fill (rows) or `--s3` (active navigation, a toggled-on icon button); focus is a 1.5px
+  `--focus` ring (a 1px ring on text inputs); neither uses the accent. Emerald is the brand mark and the one primary action of a view.
 - The demo build draws a plain rectangle where the native ChatGPT view would be (`dev/demoNative.ts`). It is a test stand-in with its
   own colours, not product interface.
 
@@ -93,15 +134,6 @@ checked for contrast; it never leaks into the surrounding interface.
 
 The four feature areas (`features/reports`, `features/activity`, `features/settings`, `features/onboarding`) follow the same rules. These
 are the places where they differ from the principles, each with the reason.
-
-### X8. A navigation column inside the view when the sidebar is only a rail (P14)
-
-A view that needs its own navigation (the report queue, the settings sections) replaces the sidebar content and shows a back chevron.
-When the sidebar is collapsed to its 52px rail there is no room for that content, so `SideNavigator` shows the same list, with the same
-back chevron, as a column at the left edge of the view, beside the rail. It is still one list of places, never a second sidebar next to
-an expanded one, and it goes back into the sidebar as soon as the sidebar is expanded. The column has one hairline on its right edge,
-like the region boundaries in X3. The cleaner fix is in the shell (give a replaced sidebar its full width while a view holds it); the
-column can be removed when that exists.
 
 ### X9. Explanatory sentences that state a fact the person decides on (P05, AP-010, extends X6)
 
@@ -158,3 +190,26 @@ is done.
   a verb, a plain statement of what happens, and focus starting on Cancel.
 - P13: no em dashes or en dashes in any copy or comment of these areas (checked by `test/renderer/features-copy.test.ts`).
 - The pairing, push and Tailscale fixtures use made-up addresses on example domains only (also checked by that test).
+
+## Project dialogs (round 3)
+
+New project and a project's settings (`features/projects`) make no exception to a principle. These are the places a reader might expect one,
+with why none is needed.
+
+- P04, AP-005: settings are applied at once, and each change is confirmed by the word "Saved" beside the section heading for about two
+  seconds. It is plain text in a status region, with no background and no border, and it goes away by itself; it is not a tag, and not a
+  toast (the notification preset says "at most show quiet saved state in context"). A refusal by the core is written in words beside the
+  field and stays until the next attempt.
+- P05, AP-010: under the ChatGPT Project address, "Only the address is saved. Nothing in the project is imported or synced." stays on
+  screen. AP-010 allows copy that prevents a wrong assumption: without it a person would reasonably expect the project's files and
+  conversations to appear in Mini-Summa. It is the only explanatory sentence in either dialog. The live readings under a field ("Title:
+  Caissa trainer", "Will be saved as acme/billing", the folder's environment) say what the typed text will do and appear only while
+  something is typed.
+- P01, P02: the source selector is a filled segmented control (track `--s4`, chosen segment `--s5`) on the dialog's `--s3`. The folder and
+  conversation rows are `--s4` with their inputs one step lighter. The only outlines are the dialog's own, the radio's ring (allowed), and
+  the 1px red ring of a field that has a refusal beside it (a semantic colour, always with its words).
+- P10: controls that do not apply are not drawn: "Open on GitHub" only when a repository is saved, Browse only where the host has a folder
+  picker, "Change" only while the address is not being changed. A project with no folder shows no sentence about it, only the way to add one.
+- P12: the sections of the settings are separated by space, with no divider line.
+- P21: "New sessions start in", the Save and Cancel buttons of the old edit dialog, and the draft are gone. Which folder (and so which
+  environment) a session starts in is asked when a session starts.

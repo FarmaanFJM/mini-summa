@@ -12,9 +12,11 @@ import { createCore } from '@minisumma/core';
 import type { Core, CoreOptions } from '@minisumma/core';
 import { app, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, powerMonitor, screen, session, shell, Tray } from 'electron';
 import type { BrowserWindow, MenuItemConstructorOptions } from 'electron';
-import { badgeBitmap, badgeDescription } from './badge.ts';
+import { badgeBitmap, badgeDescription, watchBadge } from './badge.ts';
 import { CH } from './channels.ts';
 import { ChatGptView } from './chatgptView.ts';
+import { claudeWebSession, createClaudeWebViewHandle } from './claudeElectronView.ts';
+import { ClaudeWebView } from './claudeView.ts';
 import { isHookInvocation } from './hookInvocation.ts';
 import { chatGptSession, createChatGptViewHandle } from './electronView.ts';
 import { registerIpc } from './ipc.ts';
@@ -98,20 +100,36 @@ const notifier = createNotifier({
   log,
 });
 
+/** The window's content area in DIP and the zoom factor of the renderer page: what the native views are placed with (bounds.ts). Null without a window. */
+const windowContent = (): { width: number; height: number; zoomFactor: number } | null => {
+  const win = windowAlive();
+  if (!win) return null;
+  const [width, height] = win.getContentSize();
+  return { width, height, zoomFactor: win.webContents.getZoomFactor() };
+};
+
 const chatgpt = new ChatGptView({
   createView: () => {
     const win = windowAlive();
     if (!win) throw new Error('There is no window to attach the ChatGPT view to.');
     return createChatGptViewHandle(win);
   },
-  content: () => {
-    const win = windowAlive();
-    if (!win) return null;
-    const [width, height] = win.getContentSize();
-    return { width, height, zoomFactor: win.webContents.getZoomFactor() };
-  },
+  content: windowContent,
   requestWorkspace: () => router.navigate({ view: 'workspace' }),
   revealWindow: () => { router.reveal(); },
+  openExternal: openExternalLink,
+  log,
+});
+
+// Claude Code on the web (claude.ai/code) in a second native view with a browser profile of its own (persist:claude). Only the renderer
+// drives it; the core knows nothing about it. See claudeView.ts and docs/SECURITY.md.
+const claudeWeb = new ClaudeWebView({
+  createView: () => {
+    const win = windowAlive();
+    if (!win) throw new Error('There is no window to attach the Claude Code view to.');
+    return createClaudeWebViewHandle(win);
+  },
+  content: windowContent,
   openExternal: openExternalLink,
   log,
 });
@@ -149,9 +167,14 @@ const quit = createQuitFlow({
     await core?.stop();
   },
   flushStorage: async () => {
-    const ses = chatGptSession();
-    await ses.cookies.flushStore();
-    ses.flushStorageData();
+    // Both embedded sites keep their sign-in in their own profile; both are written out before the process ends, side by side (the whole
+    // flush has a few seconds), and a failure of one does not skip the other.
+    const results = await Promise.allSettled([chatGptSession(), claudeWebSession()].map(async (ses) => {
+      await ses.cookies.flushStore();
+      ses.flushStorageData();
+    }));
+    const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failed) throw failed.reason;
   },
   hideWindow: () => { windowAlive()?.hide(); },
   // The window is already hidden by now, so this is a dialog of its own. It is only reached when ending the terminals has taken
@@ -216,7 +239,7 @@ function coreOptions(): CoreOptions {
 async function start(launchLink: string | null): Promise<void> {
   await app.whenReady();
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null);
-  installCertificateTrust({ app, sessions: [chatGptSession()], seams });
+  installCertificateTrust({ app, sessions: [chatGptSession(), claudeWebSession()], seams });
 
   const create = await loadCreateCore(seams);
   core = await create(coreOptions());
@@ -240,8 +263,8 @@ async function start(launchLink: string | null): Promise<void> {
   mainWindow = win;
   if (!fs.existsSync(locations.preloadPath)) log.error('preload script is missing', { path: locations.preloadPath });
 
-  // The native ChatGPT view follows the window.
-  const reapply = (): void => chatgpt.reapply();
+  // The native views (ChatGPT, Claude Code on the web) follow the window.
+  const reapply = (): void => { chatgpt.reapply(); claudeWeb.reapply(); };
   const windowEvents: NodeJS.EventEmitter = win;
   for (const event of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen', 'restore', 'show']) windowEvents.on(event, reapply);
   win.webContents.on('zoom-changed', reapply);
@@ -253,6 +276,9 @@ async function start(launchLink: string | null): Promise<void> {
   }
   chatgpt.onState((state) => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CH.chatgptState, state);
+  });
+  claudeWeb.onState((state) => {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CH.claudeWebState, state);
   });
   // The page size of the ChatGPT view (Settings, ChatGPT) is the view's own browser zoom. The core keeps the setting; this
   // process applies it, now and whenever it changes. Nothing is sent to the page (see pageScale.ts and chatgptView.ts).
@@ -273,12 +299,27 @@ async function start(launchLink: string | null): Promise<void> {
   // the terminal dialog while the system is shutting down. No question, a short stop, then exit.
   win.on('session-end', () => { void quit.endSession(); });
 
+  // The taskbar button shows how many sessions wait for the person (permission, input, error): the window may be behind another one.
+  // The count comes from the core as it changes, here, not from the page: nothing in the renderer has to be open for it to be right.
+  const applyBadge = (count: number): void => {
+    app.setBadgeCount(count);
+    if (process.platform === 'win32' && !win.isDestroyed()) {
+      win.setOverlayIcon(count > 0 ? nativeImage.createFromBitmap(badgeBitmap().data, { width: 16, height: 16 }) : null, count > 0 ? badgeDescription(count) : '');
+    }
+  };
+  const stopWatchingCounts = watchBadge({
+    counts: () => running.counts(),
+    subscribe: (listener) => running.base.bus.subscribe((_seq, event) => { if (event.type === 'counts') listener(); }),
+  }, applyBadge);
+  win.once('closed', stopWatchingCounts);
+
   registerIpc({
     ipcMain,
     coreOrigin,
     mainContentsId: () => (win.isDestroyed() ? null : win.webContents.id),
     connection: () => ({ baseUrl: running.baseUrl, token: running.desktopToken }),
     chatgpt,
+    claudeWeb,
     writeClipboard: (text) => bridge.clipboard.writeText(text),
     openExternal: (url) => shell.openExternal(url),
     selectDirectory: async (opts) => {
@@ -287,12 +328,7 @@ async function start(launchLink: string | null): Promise<void> {
       return answer.canceled || answer.filePaths.length === 0 ? null : answer.filePaths[0];
     },
     showItemInFolder: (target) => shell.showItemInFolder(target),
-    setBadgeCount: (count) => {
-      app.setBadgeCount(count);
-      if (process.platform === 'win32' && !win.isDestroyed()) {
-        win.setOverlayIcon(count > 0 ? nativeImage.createFromBitmap(badgeBitmap().data, { width: 16, height: 16 }) : null, count > 0 ? badgeDescription(count) : '');
-      }
-    },
+    setBadgeCount: applyBadge,
     paths: () => ({ dataDir, logsDir: app.getPath('logs') }),
     log,
   });

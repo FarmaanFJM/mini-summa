@@ -670,7 +670,6 @@ describe('page size of the view', () => {
     expect(contents.zoom).toBe(1);
     view.setBounds(rectOf(1200));
     expect(contents.zoom).toBe(1);
-    expect(view.pageZoom).toBe(1);
   });
 
   it('follows the window as it is resized, maximized and shrunk', async () => {

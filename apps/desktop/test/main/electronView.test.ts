@@ -54,7 +54,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-const { CHATGPT_ALLOWED_PERMISSIONS, CHATGPT_PARTITION, chatGptSession, createChatGptViewHandle, hardenChatGptSession } = await import('../../src/main/electronView.ts');
+const { CHATGPT_ALLOWED_PERMISSIONS, CHATGPT_PARTITION, chatGptSession, createChatGptViewHandle, createEmbeddedView, hardenChatGptSession } = await import('../../src/main/electronView.ts');
 
 beforeEach(() => { created.length = 0; sessions.clear(); });
 
@@ -146,6 +146,34 @@ describe('the embedded ChatGPT view', () => {
     handle.contents.setZoomFactor(0.8);
     expect(wc.setZoomFactor).toHaveBeenCalledWith(0.8);
     expect(handle.contents.getZoomFactor()).toBe(0.8);
+  });
+});
+
+describe('the view every embedded site is made of', () => {
+  const makeWin = () => ({ contentView: { addChildView: vi.fn() } });
+
+  it('gives whichever partition it is asked for the hardened session, the strictest preferences and no preload, and adds the view hidden', () => {
+    const win = makeWin();
+    const view = createEmbeddedView(win as never, 'persist:somewhere-else') as any;
+    expect(created).toHaveLength(1);
+    expect(created[0].view).toBe(view);
+    const prefs = created[0].options.webPreferences;
+    expect(prefs.partition).toBe('persist:somewhere-else');
+    expect(prefs).toMatchObject({
+      sandbox: true, contextIsolation: true, nodeIntegration: false, nodeIntegrationInSubFrames: false, nodeIntegrationInWorker: false,
+      webSecurity: true, allowRunningInsecureContent: false, webviewTag: false,
+    });
+    expect(Object.keys(prefs).sort()).toEqual([
+      'allowRunningInsecureContent', 'contextIsolation', 'nodeIntegration', 'nodeIntegrationInSubFrames', 'nodeIntegrationInWorker', 'partition', 'sandbox',
+      'webSecurity', 'webviewTag',
+    ]);
+    expect(win.contentView.addChildView).toHaveBeenCalledWith(view);
+    expect(view.setVisible).toHaveBeenCalledWith(false);
+    expect(view.setBackgroundColor).toHaveBeenCalledWith('#141515');
+    const ses = sessions.get('persist:somewhere-else');
+    expect(ses.setPermissionRequestHandler).toHaveBeenCalledTimes(1);
+    expect(ses.setDevicePermissionHandler).toHaveBeenCalledTimes(1);
+    expect(sessions.has('persist:chatgpt')).toBe(false);
   });
 });
 

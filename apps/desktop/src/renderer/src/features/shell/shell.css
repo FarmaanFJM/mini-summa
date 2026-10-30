@@ -70,6 +70,13 @@
 .ms-project:hover .ms-project__more, .ms-project:focus-within .ms-project__more, .ms-project[data-menu-open] .ms-project__more { opacity: 1; }
 .ms-project:hover .ms-project__main, .ms-project:focus-within .ms-project__main, .ms-project[data-menu-open] .ms-project__main { padding-right: 34px; }
 .ms-project__more:hover { background: var(--s4); }
+/* Reordering: the row being dragged steps back, and a line marks where it will land. A row is a plain list item, so there is no handle. */
+.ms-project[data-dragging] { opacity: 0.5; }
+.ms-project[data-drop]::before { content: ""; position: absolute; left: 6px; right: 6px; height: 2px; border-radius: 1px; background: var(--text-2); pointer-events: none; }
+.ms-project[data-drop="before"]::before { top: -2px; }
+.ms-project[data-drop="after"]::before { bottom: -2px; }
+.ms-project:has(.ms-project__main:active) { background: var(--s3); }
+.ms-project[data-selected]:has(.ms-project__main:active) { background: var(--select-strong); }
 .ms-project--archived .ms-project__main { font-weight: 400; }
 .ms-project--archived .ms-project__more, .ms-project--archived .sm-icon-btn { opacity: 0; position: static; flex: none; }
 .ms-project--archived:hover .sm-icon-btn, .ms-project--archived:focus-within .sm-icon-btn { opacity: 1; }
@@ -114,7 +121,8 @@
 .ms-quick__input.sm-input { height: 40px; padding-left: 36px; font-size: var(--fs); }
 .ms-quick__list { display: flex; flex-direction: column; gap: 1px; max-height: min(340px, 50vh); margin: 0; padding: 4px 8px 8px; overflow: auto; }
 .ms-quick__option { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 10px; border-radius: var(--r); color: var(--text); cursor: pointer; }
-.ms-quick__option[aria-selected="true"] { background: var(--select); }
+/* The dialog is --s3: the active option is one step above it. (--select would leave --text-2 at 4.3:1 on it; --s4 keeps 4.8:1.) */
+.ms-quick__option[aria-selected="true"] { background: var(--s4); }
 .ms-quick__name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ms-quick__meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: var(--fs-sm); }
 .ms-quick__option > .ms-dot, .ms-quick__option > .sm-menu__check { margin-left: auto; flex: none; }

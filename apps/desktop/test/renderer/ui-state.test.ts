@@ -3,7 +3,7 @@
 import type { Project, SessionKey, SessionView, UiPrefs } from '@minisumma/shared';
 import { UI_LIMITS } from '@minisumma/shared';
 import { describe, expect, it } from 'vitest';
-import { buildPatch, changedRouteFacts, changedSetupFacts, conversationFact, forgetFact, reconcile, sessionFact } from '../../src/renderer/src/app/uiState';
+import { buildPatch, changedRouteFacts, changedSetupFacts, cloudFact, conversationFact, forgetFact, reconcile, sessionFact } from '../../src/renderer/src/app/uiState';
 import type { Memory, RouteMemory } from '../../src/renderer/src/app/uiState';
 import { pickConversation } from '../../src/renderer/src/features/workspace/ChatGptPane';
 import { newestSession, pickSelectedTab } from '../../src/renderer/src/features/workspace/tabs';
@@ -13,7 +13,12 @@ const KEY_A = 'win|a1b2c3d4-5e6f-4a70-8b91-c2d3e4f50617' as SessionKey;
 const KEY_B = 'win|b7c8d9e0-1f2a-4b3c-9d4e-5f6a7b8c9d0e' as SessionKey;
 const GONE = 'win|ffffffff-0000-4000-8000-000000000000' as SessionKey;
 
-const route = (over: Partial<RouteMemory> = {}): RouteMemory => ({ view: 'workspace', projectId: null, sessionByProject: {}, conversationByProject: {}, ...over });
+// A page of Claude Code on the web, built from its parts: the publish guard refuses a literal session address, and these are made up.
+const page = (segment: string, tail = ''): string => `https://claude.ai/code/${segment}${tail}`;
+const SESSION_PAGE = page('session_abc123');
+const OTHER_PAGE = page('session_xyz789');
+
+const route = (over: Partial<RouteMemory> = {}): RouteMemory => ({ view: 'workspace', projectId: null, sessionByProject: {}, conversationByProject: {}, cloudUrlByProject: {}, ...over });
 const memory = (r: Partial<RouteMemory> = {}, setup: Partial<Memory['setup']> = {}): Memory => ({ route: route(r), setup: { dismissed: false, seenEmpty: false, ...setup } });
 const project = (id: string, over: Partial<Project> = {}): Project => ({ ...createSeed().projects[0], id, name: id, archivedAt: null, ...over });
 const projects = [project('prj_a'), project('prj_b'), project('prj_archived', { archivedAt: '2026-01-01T00:00:00.000Z' })];
@@ -31,6 +36,14 @@ describe('which remembered facts changed', () => {
     expect(changedRouteFacts(before, { ...before, sessionByProject: {}, conversationByProject: { prj_a: 'cnv_1', prj_b: 'cnv_2' } })).toEqual([sessionFact('prj_a'), conversationFact('prj_b')]);
   });
 
+  it('names the project whose page of Claude Code on the web changed', () => {
+    const before = route({ cloudUrlByProject: { prj_a: SESSION_PAGE } });
+    expect(changedRouteFacts(before, before)).toEqual([]);
+    expect(changedRouteFacts(before, { ...before, cloudUrlByProject: { prj_a: OTHER_PAGE } })).toEqual([cloudFact('prj_a')]);
+    expect(changedRouteFacts(before, { ...before, cloudUrlByProject: { prj_a: SESSION_PAGE, prj_b: OTHER_PAGE } })).toEqual([cloudFact('prj_b')]);
+    expect(changedRouteFacts(before, { ...before, cloudUrlByProject: {} })).toEqual([cloudFact('prj_a')]);
+  });
+
   it('names the setup flags that changed', () => {
     expect(changedSetupFacts({ dismissed: false, seenEmpty: false }, { dismissed: false, seenEmpty: false })).toEqual([]);
     expect(changedSetupFacts({ dismissed: false, seenEmpty: false }, { dismissed: true, seenEmpty: true })).toEqual(['setup:dismissed', 'setup:seenEmpty']);
@@ -45,6 +58,22 @@ describe('what is sent to the core', () => {
     expect(buildPatch([sessionFact('prj_b')], now).patch).toEqual({ perProject: { prj_b: { sessionKey: KEY_B } } });
     expect(buildPatch([sessionFact('prj_a'), conversationFact('prj_a'), 'setup:dismissed'], now).patch)
       .toEqual({ perProject: { prj_a: { sessionKey: KEY_A, conversationId: 'cnv_1' } }, setup: { dismissed: true } });
+  });
+
+  it('sends the page of Claude Code on the web with the project\'s other choices, and null when it was forgotten', () => {
+    const now = memory({ sessionByProject: { prj_a: KEY_A }, cloudUrlByProject: { prj_a: SESSION_PAGE } });
+    expect(buildPatch([cloudFact('prj_a')], now).patch).toEqual({ perProject: { prj_a: { cloudUrl: SESSION_PAGE } } });
+    expect(buildPatch([sessionFact('prj_a'), cloudFact('prj_a')], now).patch).toEqual({ perProject: { prj_a: { sessionKey: KEY_A, cloudUrl: SESSION_PAGE } } });
+    expect(buildPatch([cloudFact('prj_b')], now).patch).toEqual({ perProject: { prj_b: { cloudUrl: null } } });
+  });
+
+  it('leaves out an address that is not a page of Claude Code on the web, instead of sending what the core would refuse', () => {
+    const now = memory({ cloudUrlByProject: { prj_a: 'https://example.com/code/session_x', prj_b: page('a'.repeat(UI_LIMITS.urlChars)), prj_c: SESSION_PAGE } });
+    const built = buildPatch([cloudFact('prj_a'), cloudFact('prj_b'), cloudFact('prj_c')], now);
+    expect(built.patch.perProject?.prj_c).toEqual({ cloudUrl: SESSION_PAGE });
+    expect(built.patch.perProject?.prj_a?.cloudUrl).toBeUndefined();
+    expect(built.patch.perProject?.prj_b?.cloudUrl).toBeUndefined();
+    expect(built.included.size).toBe(3); // the two that can never be accepted do not wait for ever
   });
 
   it('says null for a choice that was cleared, and forgets a removed project whole', () => {
@@ -144,6 +173,22 @@ describe('what is shown when the core remembers something', () => {
     const local = memory({ projectId: 'prj_a', sessionByProject: { prj_a: KEY_A } }, { dismissed: false, seenEmpty: false });
     const result = reconcile(local, { route: { projectId: 'prj_a', view: 'workspace' }, perProject: { prj_a: { sessionKey: KEY_A } } }, { projects, touched: noneTouched });
     expect(result).toEqual({ route: {}, setup: {}, seed: [] });
+  });
+
+  it('shows the page of Claude Code on the web the core remembers, and keeps the one the person went to in this run', () => {
+    const asked: UiPrefs = { perProject: { prj_a: { cloudUrl: SESSION_PAGE }, prj_b: { cloudUrl: OTHER_PAGE } } };
+    expect(reconcile(memory(), asked, { projects, touched: noneTouched }).route.cloudUrlByProject).toEqual({ prj_a: SESSION_PAGE, prj_b: OTHER_PAGE });
+    const local = memory({ cloudUrlByProject: { prj_a: OTHER_PAGE } });
+    expect(reconcile(local, asked, { projects, touched: noneTouched }).route.cloudUrlByProject).toEqual({ prj_a: SESSION_PAGE, prj_b: OTHER_PAGE }); // the core wins
+    expect(reconcile(local, asked, { projects, touched: new Set([cloudFact('prj_a')]) }).route.cloudUrlByProject).toEqual({ prj_a: OTHER_PAGE, prj_b: OTHER_PAGE }); // this run wins
+    expect(reconcile(memory({ cloudUrlByProject: { prj_a: SESSION_PAGE, prj_b: OTHER_PAGE } }), asked, { projects, touched: noneTouched }).route.cloudUrlByProject).toBeUndefined(); // already agrees
+  });
+
+  it('sends the page of Claude Code on the web only the window has, for projects that exist', () => {
+    const local = memory({ cloudUrlByProject: { prj_a: SESSION_PAGE, prj_deleted: OTHER_PAGE } });
+    expect(reconcile(local, undefined, { projects, touched: noneTouched }).seed).toEqual([cloudFact('prj_a')]);
+    expect(reconcile(local, { perProject: { prj_a: { cloudUrl: SESSION_PAGE } } }, { projects, touched: noneTouched }).seed).toEqual([]);
+    expect(reconcile(local, undefined, { projects, touched: new Set([cloudFact('prj_a')]) }).seed).toEqual([]);
   });
 
   it('takes a session key or a conversation id that is gone as it is; the places that use them fall back (below)', () => {

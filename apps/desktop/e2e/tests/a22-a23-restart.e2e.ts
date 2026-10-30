@@ -114,13 +114,13 @@ scenario('[A22] Project and session records persist after restart', async () => 
   const tab = claude.getByRole('tab', { name: new RegExp(`^Session ${build.sessionId.slice(0, 8)}, managed, Linux\\. Session ended`) });
   await tab.waitFor();
   expect(await tab.getAttribute('aria-selected')).toBe('true');
-  expect(await claude.getByRole('tab').count(), 'only the session that was open has a tab: the never-prompted one is not offered').toBe(1);
+  expect(await claude.getByRole('tab', { name: /^Session / }).count(), 'only the session that was open has a tab: the never-prompted one is not offered').toBe(1);
   const notice = claude.getByRole('status').filter({ hasText: 'This session ended' });
   await notice.waitFor();
   const resumeButton = notice.getByRole('button', { name: 'Resume session' });
   await resumeButton.waitFor();
   // The "+" menu lists what can be resumed: the prompted session, not the one that never got a prompt.
-  await claude.getByRole('button', { name: 'New or resumed session' }).click();
+  await claude.getByRole('button', { name: 'New session', exact: true }).click();
   await h2.page.getByRole('menuitem', { name: new RegExp(`^${build.sessionId.slice(0, 8)}, Linux`) }).waitFor();
   expect(await h2.page.getByRole('menuitem', { name: new RegExp(`^${idle.sessionId.slice(0, 8)}`) }).count()).toBe(0);
   await h2.page.keyboard.press('Escape');

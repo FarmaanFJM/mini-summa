@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   isExternalUrl, isTrustedSender, originOf, validateAbsolutePath, validateBadgeCount, validateBounds, validateBoolean,
-  validateChatGptUrl, validateClipboardText, validateDirectoryOptions, validateExternalUrl, ValidationError,
+  validateChatGptUrl, validateClaudeWebUrl, validateClipboardText, validateDirectoryOptions, validateExternalUrl, ValidationError,
 } from '../../src/main/validation.ts';
 
 const CORE = 'http://127.0.0.1:41234';
@@ -79,6 +79,38 @@ describe('argument validators', () => {
     for (const bad of ['http://chatgpt.com/', 'https://evil.example/', 'https://chatgpt.com.evil.example/', 'javascript:alert(1)', 'file:///etc/passwd', '', 5, null, undefined, `https://chatgpt.com/${'a'.repeat(3000)}`]) {
       expect(() => validateChatGptUrl(bad)).toThrow(ValidationError);
     }
+  });
+
+  it('Claude Code address: https on claude.ai under /code only, query kept, fragment dropped', () => {
+    expect(validateClaudeWebUrl('https://claude.ai/code')).toBe('https://claude.ai/code');
+    expect(validateClaudeWebUrl('https://claude.ai/code/')).toBe('https://claude.ai/code');
+    expect(validateClaudeWebUrl('  https://claude.ai/code?repositories=acme/webapp#frag  ')).toBe('https://claude.ai/code?repositories=acme/webapp');
+    expect(validateClaudeWebUrl('https://www.claude.ai/code/new?repositories=acme/webapp&prompt=Fix%20it')).toBe('https://claude.ai/code/new?repositories=acme/webapp&prompt=Fix%20it');
+    // Built from parts: nothing in this repository may look like a real session address (made-up id).
+    const sessionSegment = 'session_abc123';
+    const sessionPage = (tail = ''): string => `https://claude.ai/code/${sessionSegment}${tail}`;
+    expect(validateClaudeWebUrl(sessionPage('?from=cli'))).toBe(sessionPage('?from=cli'));
+    expect(validateClaudeWebUrl(`HTTPS://claude.ai//code///${sessionSegment}`)).toBe(sessionPage());
+    expect(validateClaudeWebUrl('https://claude.ai:443/code')).toBe('https://claude.ai/code');
+    expect(validateClaudeWebUrl('https://claude.ai/code\n')).toBe('https://claude.ai/code'); // surrounding white space of a pasted address is trimmed, as for ChatGPT
+    for (const bad of [
+      'http://claude.ai/code', 'claude.ai/code', '//claude.ai/code', 'https://example.org/code', 'https://claude.ai.example.org/code', 'https://example.org/claude.ai/code',
+      'https://claude.ai/', 'https://claude.ai/chat/abc', 'https://claude.ai/login', 'https://claude.ai/codes', 'https://claude.ai/Code',
+      'https://claude.ai/code/../chat', 'https://claude.ai/code/%2e%2e/chat', 'https://claude.com/code', 'https://api.claude.ai/code', 'https://anthropic.com/code',
+      'https://u:p@claude.ai/code', 'https://claude.ai@example.org/code', 'https://claude.ai:8443/code', 'https://claude.ai\\@example.org/code', 'https://claude.ai/code\\x',
+      'https://claude.ai/code x', 'https://claude.ai/co\nde', 'https://claude.ai/co\tde', 'https://claude.ai/co\u0000de', 'https://claude.ai/co\u2028de',
+      'javascript:alert(1)', 'file:///etc/passwd', 'data:text/html,hi', 'about:blank', 'minisumma://settings', '', '   ', 'https://', `https://claude.ai/code?x=${'a'.repeat(3000)}`,
+      5, null, undefined, {}, ['https://claude.ai/code'],
+    ]) {
+      expect(() => validateClaudeWebUrl(bad), String(bad).slice(0, 60)).toThrow(ValidationError);
+    }
+    expect(() => validateClaudeWebUrl('https://example.org/')).toThrow(/Invalid Claude Code address\. Only https addresses on claude\.ai\/code/);
+  });
+
+  it('Claude Code address: the longest accepted address is 2048 characters', () => {
+    const pad = (n: number): string => `https://claude.ai/code?q=${'a'.repeat(n - 'https://claude.ai/code?q='.length)}`;
+    expect(validateClaudeWebUrl(pad(2048))).toHaveLength(2048);
+    expect(() => validateClaudeWebUrl(pad(2049))).toThrow(ValidationError);
   });
 
   it('external link: plain https only', () => {

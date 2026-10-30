@@ -10,6 +10,14 @@ export const CH = {
   chatgptForward: 'ms:chatgpt:forward',
   chatgptFocus: 'ms:chatgpt:focus',
   chatgptGetState: 'ms:chatgpt:getState',
+  /** Claude Code on the web (claude.ai/code). There is no overlay channel of its own: chatgptSetOverlayActive covers both native views. */
+  claudeWebSetBounds: 'ms:claudeWeb:setBounds',
+  claudeWebNavigate: 'ms:claudeWeb:navigate',
+  claudeWebReload: 'ms:claudeWeb:reload',
+  claudeWebBack: 'ms:claudeWeb:back',
+  claudeWebForward: 'ms:claudeWeb:forward',
+  claudeWebFocus: 'ms:claudeWeb:focus',
+  claudeWebGetState: 'ms:claudeWeb:getState',
   clipboardWriteText: 'ms:clipboard:writeText',
   selectDirectory: 'ms:dialogs:selectDirectory',
   openExternal: 'ms:shell:openExternal',
@@ -18,6 +26,7 @@ export const CH = {
   getPaths: 'ms:app:getPaths',
   /** main -> renderer events */
   chatgptState: 'ms:chatgpt:state',
+  claudeWebState: 'ms:claudeWeb:state',
   navigate: 'ms:app:navigate',
 } as const;
 
@@ -26,6 +35,7 @@ export const INVOKE_CHANNELS = [
   CH.connection, CH.chatgptSetBounds, CH.chatgptSetOverlayActive, CH.chatgptNavigate, CH.chatgptReload, CH.chatgptBack,
   CH.chatgptForward, CH.chatgptFocus, CH.chatgptGetState, CH.clipboardWriteText, CH.selectDirectory, CH.openExternal,
   CH.showItemInFolder, CH.setBadgeCount, CH.getPaths,
+  CH.claudeWebSetBounds, CH.claudeWebNavigate, CH.claudeWebReload, CH.claudeWebBack, CH.claudeWebForward, CH.claudeWebFocus, CH.claudeWebGetState,
 ] as const;
 
 /** Name of the process argument that carries the app version into the sandboxed preload (it cannot ask `app`). */
