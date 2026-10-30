@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "application": {
+    "name": "mini-summa",
+    "repository": "https://github.com/FarmaanFJM/mini-summa"
+  },
+  "guidance": {
+    "name": "summa-ui-guidance",
+    "version": "0.1.0",
+    "bundleDigest": "5ef73215334c313089cb3cd87f6f78f65eef48f67dfdc5d53bd84fedad408cc7",
+    "source": "vendored"
+  },
+  "recordedAt": "2026-10-30T17:08:09Z",
+  "exceptions": [
+    {
+      "principle": "P01",
+      "reason": "X3 one structural hairline between regions because the owner palette steps are only about 1.1 to 1",
+      "scope": "sidebar edge, pane headers, pane divider"
+    },
+    {
+      "principle": "P02",
+      "reason": "X3 and X11 hairlines between regions and a white block behind the pairing QR so phones can scan it",
+      "scope": "app shell, pairing QR"
+    },
+    {
+      "principle": "P05",
+      "reason": "X6 and X9 persistent sentences that state a fact the person decides on, such as where keystrokes go and what consent covers",
+      "scope": "terminal header, observed session panel, starting hint, hooks consent, handoff card"
+    },
+    {
+      "principle": "P06",
+      "reason": "X5 X7 X10 amber and red status dots always beside words, ANSI colours in program output, tint on diff lines",
+      "scope": "session status, terminal, hooks diff"
+    },
+    {
+      "principle": "P07",
+      "reason": "X7 terminal ANSI colours are program output and not interface chrome",
+      "scope": "terminal"
+    },
+    {
+      "principle": "P12",
+      "reason": "X3 hairlines separate regions where tonal steps are too small",
+      "scope": "app shell"
+    },
+    {
+      "principle": "P14",
+      "reason": "X8 and X12 a navigation column inside the view while the sidebar is a rail, and a setup checklist that floats and never blocks",
+      "scope": "reports, settings, onboarding"
+    },
+    {
+      "principle": "P18",
+      "reason": "X2 compact density chosen by the owner for a desktop application",
+      "scope": "desktop controls"
+    }
+  ]
+}

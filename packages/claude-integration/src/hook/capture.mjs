@@ -132,10 +132,7 @@ function tightenSpoolDir(spool) {
     if (typeof process.getuid === 'function' && st.uid !== process.getuid()) return;
     const dir = fs.opendirSync(spool);
     try {
-      for (let seen = 0, entry; (entry = dir.readSync()) !== null; seen++) {
-        if (!OURS.test(entry.name)) return;
-        if (seen >= 256) break; // a spool this full is certainly ours; do not list it all on every hook
-      }
+      for (let entry; (entry = dir.readSync()) !== null;) if (!OURS.test(entry.name)) return;
     } finally { dir.closeSync(); }
     fs.chmodSync(spool, 0o700);
   } catch { /* leave the mode as it was */ }

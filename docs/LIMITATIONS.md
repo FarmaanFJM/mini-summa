@@ -58,6 +58,9 @@ Windows, no WSL2, no phone and no ChatGPT login. Until you have done them, treat
 ## 4. Deferred polish
 
 * A light theme; the interface is dark only.
+* When the sidebar is collapsed to its narrow rail, Reports and Settings show their own navigation column inside the view
+  (recorded as exception X8 in [UI_PRINCIPLE_EXCEPTIONS.md](UI_PRINCIPLE_EXCEPTIONS.md)). A cleaner fix lets a view that
+  replaces the sidebar borrow its full width while it is open.
 * An automated accessibility audit (axe) of the interface; contrast ratios were computed from the tokens, not measured on screen.
 * Keyboard shortcuts beyond maximising a pane.
 * Auto-update for the desktop app.
