@@ -1,0 +1,203 @@
+{
+  "generated": "2026-10-30T11:42:22.166Z",
+  "env": "posix",
+  "platform": "linux",
+  "arch": "x64",
+  "node": "v22.22.0",
+  "claude": "2.1.314 (Claude Code)",
+  "os": "Linux 6.18.44-fc-v185",
+  "wsl_distro": null,
+  "results": [
+    {
+      "id": "Q01",
+      "title": "Claude CLI version detection",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "claude 2.1.314 via claude"
+      ],
+      "at": "2026-10-30T11:41:35.948Z"
+    },
+    {
+      "id": "Q02",
+      "title": "Isolated configuration created, normal one refused",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "config dir <CONFIG>",
+        "shared dir <SHARED>",
+        "settings.json written with 2 handlers",
+        "setup refuses the normal config directory (checked in code)"
+      ],
+      "at": "2026-10-30T11:41:35.935Z"
+    },
+    {
+      "id": "Q03",
+      "title": "Hook command executes in the real hook shell, for all 9 events, including a path with spaces",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "all 9 events exited 0 with no decision output, in both a normal path and a path with spaces",
+        "shell used: sh -c"
+      ],
+      "at": "2026-10-30T11:41:36.651Z"
+    },
+    {
+      "id": "Q04",
+      "title": "Atomic spool writes: no partial file is ever visible to a concurrent reader",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "30/30 files, partial reads 0 over 502 observations, temp residue 0"
+      ],
+      "at": "2026-10-30T11:41:36.951Z"
+    },
+    {
+      "id": "Q05",
+      "title": "WSL spool delivered across the WSL/Windows boundary and ingested on Windows",
+      "scope": "wsl+win",
+      "status": "NOT TESTED",
+      "notes": [
+        "needs WSL then Windows"
+      ],
+      "at": null
+    },
+    {
+      "id": "Q06",
+      "title": "Event ingestion in this environment",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "raw 14, reports 1, project projA, final state ended",
+        "report body byte-identical to the Stop message"
+      ],
+      "at": "2026-10-30T11:41:37.489Z"
+    },
+    {
+      "id": "Q07",
+      "title": "Session discovery command works against the isolated config",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "claude agents --json returned 0 session(s) for the isolated config"
+      ],
+      "at": "2026-10-30T11:41:37.831Z"
+    },
+    {
+      "id": "Q08",
+      "title": "External session discovered (started by a human in another terminal)",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "listed: kind=interactive status=idle pid=15710",
+        "the session was started by a human, not by this script"
+      ],
+      "at": "2026-10-30T11:41:46.424Z"
+    },
+    {
+      "id": "Q09",
+      "title": "Session UUID consistent across --session-id, hooks and discovery",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "chosen <session-uuid>",
+        "listing <session-uuid>",
+        "hook session_id <session-uuid>"
+      ],
+      "at": "2026-10-30T11:41:46.424Z"
+    },
+    {
+      "id": "Q10",
+      "title": "Session mapped to the correct project",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "mapped to projA (matched); expected projA"
+      ],
+      "at": "2026-10-30T11:41:46.424Z"
+    },
+    {
+      "id": "Q11",
+      "title": "Session resume keeps the UUID and opens generation 2 (needs one tiny prompt: an unused session is not saved)",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "generation 2 (expected 2 or more), same UUID <session-uuid>",
+        "final state ended"
+      ],
+      "at": "2026-10-30T11:42:15.488Z"
+    },
+    {
+      "id": "Q12",
+      "title": "Duplicate registrations collapse; no real event is lost",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "live: SessionStart raw 2 (expected 2: two handlers), logical 1 (expected 1)"
+      ],
+      "at": "2026-10-30T11:41:46.424Z"
+    },
+    {
+      "id": "Q13",
+      "title": "Hard process kill detected (observed exit or suspected loss)",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "state presence_lost, evidence absent_from_snapshot, closed by snapshot #17, unresolved hooks 0, SessionEnd hook seen: false",
+        "suspected presence loss: absent from the listing, no pid evidence"
+      ],
+      "at": "2026-10-30T11:41:57.459Z"
+    },
+    {
+      "id": "Q14",
+      "title": "Report captured from a real model run (costs tokens)",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "declared complete; body equals claude's result: true",
+        "one run proves the mechanism, not protocol reliability"
+      ],
+      "at": "2026-10-30T11:42:22.155Z"
+    },
+    {
+      "id": "Q15",
+      "title": "Ingestor restart is idempotent",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "re-ingest: new 0, already seen 14; raw 14; derived ids identical across restart; ingest CLI exit 0"
+      ],
+      "at": "2026-10-30T11:41:37.550Z"
+    },
+    {
+      "id": "Q16",
+      "title": "Normal Claude settings unmodified",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "hashed settings, CLAUDE.md, rules, commands, agents, skills, hooks in 1 location(s); identical before and after"
+      ],
+      "at": "2026-10-30T11:41:37.846Z"
+    },
+    {
+      "id": "Q17",
+      "title": "Path normalization against the real file system",
+      "scope": "any",
+      "status": "PASS",
+      "notes": [
+        "spellings and case variants resolve to the same project"
+      ],
+      "at": "2026-10-30T11:41:37.832Z"
+    },
+    {
+      "id": "Q18",
+      "title": "WSL sessions discovered separately from Windows",
+      "scope": "win",
+      "status": "NOT TESTED",
+      "notes": [
+        "only meaningful on native Windows"
+      ],
+      "at": null
+    }
+  ]
+}

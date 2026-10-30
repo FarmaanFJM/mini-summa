@@ -20,7 +20,7 @@ export function loadFixture(name, startSeq = 1) {
   const fx = JSON.parse(fs.readFileSync(path.join(root, 'fixtures', `${name}.json`), 'utf8'));
   return fx.events.map((e, i) => e.kind === 'discovery'
     ? { seq: startSeq + i, kind: 'discovery', transport: { received_at: 'x', transport_id: `fx-${name}-${i}` }, payload: e.payload }
-    : { seq: startSeq + i, kind: 'hook', transport: { transport_id: `fx-${name}-${i}`, monotonic_ns: String(1000 + (startSeq + i) * 10), claude_project_dir: null, handler_id: e.handler ?? 'h1' }, payload: e.payload });
+    : { seq: startSeq + i, kind: 'hook', transport: { transport_id: `fx-${name}-${i}`, monotonic_ns: String(1000 + (startSeq + i) * 10), claude_project_dir: null, handler_id: e.handler ?? 'h1', clock_domain: 'fx' }, payload: e.payload });
 }
 export const labels = (r) => r.derived.filter((d) => d.label).map((d) => d.label);
 export const kinds = (r) => r.derived.map((d) => d.kind);

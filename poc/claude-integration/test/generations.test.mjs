@@ -8,13 +8,14 @@ import { takeSnapshot } from '../src/lib/snapshot.mjs';
 import { root, registry, S1, labels } from './helpers.mjs';
 
 const CWD = '/w/GitManager';
-const live = { kind: 'interactive', cwd: CWD, startedAt: 1000, pid: 10, status: 'idle', sessionId: S1 };
+const live = { kind: 'interactive', cwd: CWD, startedAt: 1000, pid: process.pid, status: 'idle', sessionId: S1 };
 let n = 0;
-const hook = (ev, extra = {}, tr = {}) => { n++; return { kind: 'hook', transport: { transport_id: `g${n}`, monotonic_ns: String(n * 10), handler_id: 'h1', ...tr },
+const hook = (ev, extra = {}, tr = {}) => { n++; return { kind: 'hook', transport: { transport_id: `g${n}`, monotonic_ns: String(n * 10), handler_id: 'h1', clock_domain: 'T', ...tr },
   payload: { session_id: S1, cwd: CWD, hook_event_name: ev, ...extra } }; };
 const snap = (sessions, tr = {}, payload = {}) => ({ kind: 'discovery', transport: { ...tr }, payload: { scope: { cwd: null }, sessions, ...payload } });
 const run = (es) => replay(es.map((e, i) => ({ seq: i + 1, ...e })), registry);
 const st = (r, key = S1) => r.sessions.get(key);
+const INTERVAL = (uncertain = []) => ({ interval: { complete: true, before_files: 0, drained: 0, uncertain } });
 
 test('BARRIER (found live): a SessionStart written before the snapshots cannot resurrect the session, whatever order files are read', () => {
   const d = fs.mkdtempSync(path.join((fs.mkdirSync(path.join(root, '.tmp-tests'), { recursive: true }), path.join(root, '.tmp-tests')), 'bar-'));
@@ -34,12 +35,13 @@ test('BARRIER (found live): a SessionStart written before the snapshots cannot r
     const r = replay(store.raw, registry);
     const sx = st(r, `posix|${S1}`);
     assert.equal(sx.state, 'presence_lost'); assert.equal(sx.gen.n, 1);
-    assert.equal(sx.gen.term.ordering, 'barrier');
+    assert.equal(sx.gen.term.kind, 'absent_from_snapshot');
+    assert.ok(store.raw.filter((x) => x.kind === 'discovery').every((x) => x.payload.interval.complete), 'snapshots record their interval');
   })();
 });
 
 test('LEGITIMATE RESUME: a SessionStart that arrives after the barrier snapshot opens generation 2', () => {
-  const es = [hook('SessionStart', { source: 'startup' }), snap([live], {}, { barrier: { n: 1 } }), snap([], {}, { barrier: { n: 0 } }),
+  const es = [hook('SessionStart', { source: 'startup' }), snap([live], {}, INTERVAL()), snap([], {}, INTERVAL()),
     hook('SessionStart', { source: 'resume' })];
   const r = run(es);
   assert.equal(st(r).gen.n, 2); assert.equal(st(r).state, 'idle');
@@ -47,11 +49,12 @@ test('LEGITIMATE RESUME: a SessionStart that arrives after the barrier snapshot 
   assert.equal(r.derived.filter((d) => d.kind === 'generation').length, 1);
 });
 
-test('CLOCK FALLBACK: without a barrier an older wall-clock hook is stale, a newer one is a resume', () => {
+test('WALL CLOCKS ESTABLISH NOTHING: neither an older nor a newer wall-clock hook can open or revive a generation', () => {
+  // Snapshots recorded without interval metadata, hooks carrying only wall_ms: order is not established either way.
   const base = [snap([live], { wall_ms: 100 }), snap([], { wall_ms: 200 })];
-  assert.equal(st(run([...base, hook('SessionStart', { source: 'startup' }, { wall_ms: 50, monotonic_ns: undefined })])).state, 'presence_lost');
-  const r = run([...base, hook('SessionStart', { source: 'resume' }, { wall_ms: 300, monotonic_ns: undefined })]);
-  assert.equal(st(r).gen.n, 2); assert.equal(st(r).state, 'idle');
+  const older = run([...base, hook('SessionStart', { source: 'startup' }, { wall_ms: 50, monotonic_ns: undefined, clock_domain: null })]);
+  const newer = run([...base, hook('SessionStart', { source: 'resume' }, { wall_ms: 300, monotonic_ns: undefined, clock_domain: null })]);
+  for (const r of [older, newer]) { assert.equal(st(r).state, 'presence_lost'); assert.equal(st(r).gen.n, 1); assert.equal(st(r).unresolved.length, 1); }
 });
 
 test('AMBIGUOUS ordering (no barrier, no clocks): a hook does not revive a terminated session; the ambiguity is counted', () => {
@@ -85,22 +88,22 @@ test('SessionStart sources clear and compact stay in the same generation', () =>
 });
 
 test('SUSPECTED vs OBSERVED: a suspected loss is revised when the same process is listed again; an observed exit is not', () => {
-  const flap = run([snap([live], { wall_ms: 1 }, { barrier: {} }), snap([], { wall_ms: 2 }, { barrier: {} }), snap([live], { wall_ms: 3 }, { barrier: {} })]);
+  const flap = run([snap([live], { wall_ms: 1 }, INTERVAL()), snap([], { wall_ms: 2 }, INTERVAL()), snap([live], { wall_ms: 3 }, INTERVAL())]);
   assert.equal(st(flap).gen.n, 1); assert.equal(st(flap).gen.phase, 'live');
   const dead = { ...live, pid_alive: false };
-  const obs = run([snap([live], {}, { barrier: {} }), snap([dead], {}, { barrier: {} }), snap([live], {}, { barrier: {} })]);
+  const obs = run([snap([live], {}, INTERVAL()), snap([dead], {}, INTERVAL()), snap([live], {}, INTERVAL())]);
   assert.equal(st(obs).gen.phase, 'ended_observed'); assert.equal(obs.stale_listings, 1);
   assert.equal(st(obs).state, 'ended');
 });
 
 test('a different process (pid or start time) serving the same session id is a new generation, found by discovery alone', () => {
-  const r = run([snap([live], {}, { barrier: {} }), snap([{ ...live, pid_alive: false }], {}, { barrier: {} }),
-    snap([{ ...live, pid: 77, startedAt: 5000 }], {}, { barrier: {} })]);
+  const r = run([snap([live], {}, INTERVAL()), snap([{ ...live, pid_alive: false }], {}, INTERVAL()),
+    snap([{ ...live, pid: 77, startedAt: 5000 }], {}, INTERVAL())]);
   assert.equal(st(r).gen.n, 2); assert.equal(st(r).gen.proc.pid, 77); assert.equal(st(r).state, 'idle');
 });
 
 test('SessionEnd arriving after the process exit was already observed is redundant history, never a new incarnation', () => {
-  const r = run([snap([live], {}, { barrier: {} }), snap([{ ...live, pid_alive: false }], {}, { barrier: {} }), hook('SessionEnd', { reason: 'other' })]);
+  const r = run([snap([live], {}, INTERVAL()), snap([{ ...live, pid_alive: false }], {}, INTERVAL()), hook('SessionEnd', { reason: 'other' })]);
   assert.equal(st(r).gen.n, 1);
 });
 

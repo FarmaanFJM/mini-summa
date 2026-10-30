@@ -196,13 +196,17 @@ test('discovery: a listed session whose pid is dead on this host is an OBSERVED 
 
 test('found live: a hook file that predates the "gone" snapshot but is ingested after it does not resurrect the session', () => {
   const live = { kind: 'interactive', cwd: '/w/GitManager', startedAt: 1, pid: 10, status: 'idle', sessionId: S1 };
-  const snap = (seq, ms, sessions) => ({ seq, kind: 'discovery', transport: { wall_ms: ms }, payload: { scope: { cwd: null }, sessions } });
+  const snap = (seq, ms, sessions, interval) => ({ seq, kind: 'discovery', transport: { wall_ms: ms }, payload: { scope: { cwd: null }, sessions, ...(interval ? { interval } : {}) } });
   const hook = (seq, ms, ev, extra = {}) => ({ seq, kind: 'hook', transport: { transport_id: `h${seq}`, wall_ms: ms },
     payload: { session_id: S1, cwd: '/w/GitManager', hook_event_name: ev, ...extra } });
-  const late = replay([snap(1, 100, [live]), snap(2, 200, []), hook(3, 50, 'SessionStart', { source: 'startup' })], registry);
-  assert.equal(stateOf(late, S1), 'presence_lost');
-  const resumed = replay([snap(1, 100, [live]), snap(2, 200, []), hook(3, 300, 'SessionStart', { source: 'resume' })], registry);
-  assert.equal(stateOf(resumed, S1), 'idle', 'a hook AFTER the loss observation is a genuine resume');
+  // Whether or not the snapshot has interval metadata, a SessionStart whose position is not established cannot reopen.
+  for (const interval of [undefined, { complete: true, uncertain: ['h3'] }]) {
+    const r = replay([snap(1, 100, [live], interval), snap(2, 200, [], interval), hook(3, 50, 'SessionStart', { source: 'startup' })], registry);
+    assert.equal(r.sessions.get(S1).state, 'presence_lost'); assert.equal(r.sessions.get(S1).gen.n, 1);
+  }
+  // Only a hook that landed AFTER the completed observation (not in flight, per the interval) is a genuine resume.
+  const resumed = replay([snap(1, 100, [live], { complete: true, uncertain: [] }), snap(2, 200, [], { complete: true, uncertain: [] }), hook(3, 300, 'SessionStart', { source: 'resume' })], registry);
+  assert.equal(resumed.sessions.get(S1).state, 'idle'); assert.equal(resumed.sessions.get(S1).gen.n, 2);
 });
 
 test('found live: user interrupt fires no Stop; an idle observation corrects stale hook state, labelled as inferred', () => {

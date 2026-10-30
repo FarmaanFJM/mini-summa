@@ -7,7 +7,7 @@
 | Spool directory | One complete JSON file per hook invocation. Temp files start with `.tmp-` and are ignored. | Hold partial files |
 | `Store` | Append-only `raw.jsonl` (fsynced), idempotent ingestion, persistence of reports and candidates. | Drop or rewrite raw events |
 | `Reducer` | Pure function from the ordered raw log to derived events, sessions, reports. | Read the clock, the network or the disk |
-| `takeSnapshot` | Run `claude agents --json`, order it causally against hooks (barrier), append it. | Mutate any session |
+| `takeSnapshot` | Run `claude agents --json`, classify hook receipts against the call interval, append it. | Mutate any session, or record a snapshot of a failed call |
 
 ## Session discovery
 `claude agents --json` prints every live session, interactive and background, for one config directory. Fields used:
@@ -58,16 +58,43 @@ Without a `prompt_id`, a task cannot be identified, so distinct Stops stay disti
 
 ## Ordering and generations
 A session id can outlive a process, so each process incarnation is a **generation**.
-- **Observed termination:** a SessionEnd hook, or a listed pid that is dead on this host. It closes the generation for good: a lingering listing of the same process is ignored.
-- **Suspected presence loss:** absent from a full snapshot, or unknown pid. It is revised if the same process is listed again.
-- **New generation:** a SessionStart after a closed generation, a second startup or resume in a live one, or discovery listing a different pid or start time for the session id.
 
-Ordering, strongest first:
-1. **Barrier.** Before asking Claude for a snapshot, record which hook files already wait in the spool; ingest exactly those first, then append the snapshot. Hooks written before the snapshot began are therefore earlier in the log, and later ones later, with no clock comparison.
-2. **Monotonic clock** between two hooks of the same environment.
-3. **Wall clock** only for a snapshot recorded without a barrier.
-4. **Unknown.** The hook does not revive a closed generation; the case is counted in `ordering_ambiguous`.
-A stale hook is kept as history (and a stale Stop still yields its report) but never changes state. Different environments are never ordered by clock.
+**A discovery call is an interval, not an instant.** `claude agents --json` takes time and hooks keep arriving while it runs.
+`takeSnapshot` therefore scans the spool twice and records the result in the snapshot (`interval`):
+
+| Class | Meaning | How it is known |
+|---|---|---|
+| Before | landed before the call started | present in the first scan; ingested first, so it precedes the snapshot in the log |
+| Uncertain | landed while the call was in flight; may be before or after Claude's observation | absent from the first scan, present in the second; listed by transport id in `interval.uncertain` |
+| After | landed after the call had returned | absent from both scans; ingested after the snapshot and not listed as uncertain |
+
+"Landed" means the atomic rename into the spool. No clock, delay or retry is involved. A failed or interrupted call records a
+`discovery_error` and no snapshot: it observed nothing, so nothing is inferred, and pending hooks stay in the spool for normal ingestion.
+
+**Terminal transitions need affirmative evidence.** Closing a generation and opening the next are both terminal:
+- A generic hook (tool use, permission, notification, Stop, prompt) never opens a generation. After a termination it is kept as history and counted as unresolved activity. A stale `Stop` still yields its report evidence but never changes state.
+- A generation opens only on (a) a `startup`, `resume` or `fork` SessionStart whose order after the termination, or after the previous start, is established, or (b) discovery listing a live process whose identity (pid and start time) differs from the closed generation's known process. `clear` and `compact` happen inside a live process and are never a new one.
+- A listing cannot open a generation if the closed generation never had a known process: it is indistinguishable from the dying tail of the old process, so it is recorded as unresolved.
+- A `SessionEnd` closes a generation only if it provably belongs to it. A late one never creates a generation and never closes a newer one.
+
+**What establishes "ordered after".** Only these:
+1. The snapshot interval above: a hook classified After relative to the snapshot that closed the generation.
+2. Two hooks of the same environment inside one trusted monotonic clock domain. A domain is known only where it can be identified exactly: Linux and every WSL distribution (boot id, which also covers reboots). Native Windows and macOS have none here, so monotonic comparison is unavailable there. Windows and WSL2 are different environments and are never compared.
+3. Nothing else. Wall clocks establish no order. Anything not covered is **uncertain**, and uncertain stays uncertain: the hook is kept, `unresolved` records it with the reason, and a `unresolved_ordering` event is derived. It is resolved only by later affirmative evidence, such as a different live process being listed.
+
+**Observed versus suspected.**
+| | Evidence | Can it be reopened? |
+|---|---|---|
+| Observed termination | SessionEnd hook, or the listed pid is dead on this host | No. A lingering listing of the same process is ignored. A different process identity may open a new generation |
+| Suspected presence loss | absent from a full snapshot, or pid liveness unknown (for example a WSL pid seen from Windows) | Yes, if the same process (pid and start time) is listed again |
+Suspected loss is never converted into confirmed termination.
+
+**Hard limits of the interface.** Stated, not hidden:
+- Order is about when a record *landed*. How long a hook process ran before landing is not documented. A SessionStart from a process killed during startup could land after a "gone" snapshot and look like a resume. It is the only kind of hook that can, and only when it lands after the interval.
+- A hook that lands during a call can never be placed relative to the observation. It stays uncertain until discovery or a later SessionStart settles it. If neither ever arrives, it remains uncertain permanently.
+- On native Windows, hook-only ordering is unavailable. A resume there is settled by a snapshot interval or by discovery seeing a new process.
+- A watcher that ingests an in-flight file before the snapshot is appended places it before the snapshot in the log. It is still listed as uncertain in the snapshot, and its effect is that of history preceding an observation of "gone".
+- Each ingested hook is a receipt of one invocation. Claude Code provides no event id for most hooks.
 
 ## Report protocol
 At SessionStart, for sessions whose directory is in the registry, the hook adds context asking the model to end a finished task with a
@@ -82,4 +109,4 @@ No repository file is modified; the instruction travels through the user-level h
 - Permission state clears on the next tool event; there is no "permission answered" hook. A user interrupt fires no Stop; an idle observation corrects the state and says it is inferred.
 - Hook payloads and the `agents --json` schema are not versioned. Unknown fields are ignored and unknown events are listed as unhandled.
 - Session cwd is resolved once, from the first usable directory, and then kept.
-- Cross-environment spools are ordered per environment only.
+- Cross-environment spools are never ordered against each other; within an environment, ingestion order across clock domains (for example across a reboot) carries no causal meaning.

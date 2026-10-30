@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { parseMarker } from './marker.mjs';
+import { markerOf, compareMarkers } from './clock.mjs';
 
 // Deterministic reducer: derived state is a pure function of the ordered raw log.
 // See docs/DESIGN.md for the rules. In short:
@@ -15,11 +16,22 @@ import { parseMarker } from './marker.mjs';
 //   notification  the derived transition id: a notification exists only for a state change.
 //   delivery    (report, destination). Not implemented in this PoC.
 //
-// GENERATIONS
-//   A session id can outlive a process (resume). Each process incarnation is a generation. Termination is
-//   "observed" (SessionEnd hook, or the listed pid is dead on this host) or "suspected" (absent from a full
-//   discovery snapshot). A stale hook must not revive a terminated generation; a later one may open a new one.
-
+// GENERATIONS AND ORDERING
+//   A session id can outlive a process (resume). Each process incarnation is a generation.
+//   Termination is "observed" (SessionEnd hook, or a listed pid that is dead on this host) or "suspected" (absent
+//   from a full discovery snapshot).
+//
+//   Closing a generation and opening the next are both TERMINAL transitions, so both need affirmative evidence:
+//     * A generic hook (tool use, permission, notification, Stop, prompt...) never opens a generation. It says the
+//       session id is active, not that a new process exists. After a termination it is kept as history and listed
+//       as unresolved activity.
+//     * A generation opens only on (a) a startup/resume/fork SessionStart that is ORDERED after the termination or
+//       after the previous start, or (b) discovery listing a live process whose identity (pid, start time) differs
+//       from the closed generation's known process.
+//   "Ordered after" comes only from: a snapshot's interval classification (a hook that landed after the snapshot's
+//   completion), or two hooks of the same environment inside one trusted monotonic clock domain. Wall clocks never
+//   establish order. Everything else is "uncertain", and uncertain stays uncertain.
+//
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 const sortKeys = (v) => Array.isArray(v) ? v.map(sortKeys)
   : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys(v[k])])) : v;
@@ -48,6 +60,7 @@ const CONTENT = {
   StopFailure: (p) => ({ error: p.error, details: p.error_details, msg: p.last_assistant_message }),
 };
 
+const NEW_PROCESS_SOURCES = new Set(['startup', 'resume', 'fork']); // clear and compact happen inside a live process
 const sessionKey = (env, sid) => (!env || env === 'local' ? sid : `${env}|${sid}`);
 const procMatch = (a, b) => Boolean(a && b && a.pid === b.pid && a.startedAt === b.startedAt);
 
@@ -61,8 +74,10 @@ export class Reducer {
     this.candidates = new Map();
     this.derived = [];
     this.unattributed = 0;
-    this.ordering_ambiguous = 0;
+    this.ordering_ambiguous = 0;   // hooks withheld from state because their order is not established
     this.stale_listings = 0;
+    this.discovery_errors = 0;
+    this.snapshots = new Map();    // raw seq -> {interval: bool, uncertain: Set<transport id>}
   }
 
   // ---- sessions and generations ----
@@ -73,9 +88,9 @@ export class Reducer {
       s = {
         key, session_id: sid, env: env ?? 'local', cwd: null, project: null, project_reason: 'no_cwd',
         state: 'unknown', evidence: 'none', current_prompt_id: null, hook_seen: false, weak_identity: false,
-        occ: new Map(), tasks: new Map(), observed: null, in_prev_snapshot: false, last_prompt_mono: null,
-        gen: { n: 0, phase: 'none', proc: null, start_seen: false, term: null },
-        generations: [],
+        occ: new Map(), tasks: new Map(), observed: null, in_prev_snapshot: false, last_prompt_mark: null,
+        gen: { n: 0, phase: 'none', proc: null, start: null, open: null, term: null },
+        generations: [], unresolved: [],
       };
       this.sessions.set(key, s);
     }
@@ -87,10 +102,11 @@ export class Reducer {
     return s;
   }
 
-  #openGeneration(s, cause, why, proc = null) {
-    if (s.gen.n > 0 && s.gen.phase === 'live') s.generations.push({ ...s.gen, phase: 'superseded' });
-    else if (s.gen.n > 0) s.generations.push(s.gen);
-    s.gen = { n: s.gen.n + 1, phase: 'live', proc, start_seen: false, term: null };
+  // `open` records the evidence that justified this generation: {kind:'hook', marker} or {kind:'discovery', snapshot_seq}.
+  #openGeneration(s, cause, why, proc = null, open = null) {
+    if (s.gen.n > 0) s.generations.push({ ...s.gen, phase: s.gen.phase === 'live' ? 'superseded' : s.gen.phase, unresolved: s.unresolved });
+    s.unresolved = [];
+    s.gen = { n: s.gen.n + 1, phase: 'live', proc, start: null, open, term: null };
     if (s.gen.n > 1) this.#emit('generation', s, { cause_key: cause.key, raw_seq: cause.seq, generation: s.gen.n, why });
   }
 
@@ -99,16 +115,27 @@ export class Reducer {
     s.gen.term = { ...term, seq: cause.seq };
   }
 
-  // Is this hook older than the termination that closed the current generation?
-  #stale(s, t, entry) {
+  // How does a hook receipt relate to a snapshot interval? 'after' only if it landed after the snapshot completed.
+  #relationToSnapshot(snapshotSeq, mk) {
+    const snap = this.snapshots.get(snapshotSeq);
+    if (!snap || !snap.interval) return 'uncertain';              // no interval metadata: nothing can be claimed
+    if (!mk.tid || snap.uncertain.has(mk.tid)) return 'uncertain'; // in flight while the call ran
+    return 'after';                                                // landed after the call had returned
+  }
+
+  // Relation of a hook receipt to the event that closed the current generation.
+  #relationToTermination(s, mk) {
     const term = s.gen.term;
-    if (!term) return false;
-    const sameEnvMono = term.end_mono != null && t.monotonic_ns != null;
-    if (sameEnvMono) return BigInt(t.monotonic_ns) < BigInt(term.end_mono);       // hook vs hook, same host clock
-    if (term.ordering === 'barrier') return false;                                 // log order is causal
-    if (term.at_ms != null && t.wall_ms != null) return t.wall_ms <= term.at_ms;   // fallback: wall clock
-    this.ordering_ambiguous++;
-    return true;                                                                   // unknown order: do not revive
+    if (!term) return 'uncertain';
+    if (term.kind === 'hook_session_end') return compareMarkers(term.marker, mk);
+    return this.#relationToSnapshot(term.snapshot_seq, mk);
+  }
+
+  // Relation of a hook receipt to the evidence that opened the current generation.
+  #relationToOpening(s, mk) {
+    const o = s.gen.open;
+    if (!o) return 'uncertain';
+    return o.kind === 'hook' ? compareMarkers(o.marker, mk) : this.#relationToSnapshot(o.snapshot_seq, mk);
   }
 
   #emit(kind, s, extra) {
@@ -135,6 +162,7 @@ export class Reducer {
   }
 
   apply(entry) {
+    if (entry.kind === 'discovery_error') { this.discovery_errors++; return; } // observed nothing: infers nothing
     return entry.kind === 'discovery' ? this.#discovery(entry) : this.#hook(entry);
   }
 
@@ -165,16 +193,34 @@ export class Reducer {
     const cause = { key, seq: entry.seq, evidence: `hook:${ev}` };
 
     // generation handling
-    let stale = false;
-    if (s.gen.n === 0) this.#openGeneration(s, cause, 'first sight');
+    const mk = markerOf(t);
+    const NEW_PROCESS = ev === 'SessionStart' && NEW_PROCESS_SOURCES.has(p.source ?? 'startup');
+    let stale = false; let unresolved = null;
+    if (s.gen.n === 0) this.#openGeneration(s, cause, 'first sight', null, { kind: 'hook', marker: mk });
     else if (s.gen.phase !== 'live') {
-      // A SessionEnd for a generation that is already closed is redundant history, never a new incarnation.
-      if (ev === 'SessionEnd' || this.#stale(s, t, entry)) stale = true;
-      else this.#openGeneration(s, cause, `resumed (${ev})`);
-    } else if (ev === 'SessionStart' && ['startup', 'resume', 'fork', undefined].includes(p.source) && s.gen.start_seen) {
-      this.#openGeneration(s, cause, 'new process announced itself with a second startup/resume');
+      if (ev === 'SessionEnd') stale = true;                              // redundant history, never a new incarnation
+      else {
+        const rel = this.#relationToTermination(s, mk);
+        if (NEW_PROCESS && rel === 'after') this.#openGeneration(s, cause, 'startup/resume ordered after the termination', null, { kind: 'hook', marker: mk });
+        else {
+          stale = true;
+          unresolved = { relation: rel, why: NEW_PROCESS ? 'startup/resume SessionStart whose order relative to the termination is not established'
+            : 'a generic hook after termination is activity, not evidence of a new process' };
+        }
+      }
+    } else if (NEW_PROCESS && s.gen.start) {                              // a second startup/resume inside a live generation
+      const rel = compareMarkers(s.gen.start, mk);
+      if (rel === 'after') this.#openGeneration(s, cause, 'second startup/resume ordered after the first', null, { kind: 'hook', marker: mk });
+      else { stale = true; unresolved = { relation: rel, why: rel === 'before' ? 'SessionStart of an older process delivered late' : 'second startup/resume whose order is not established' }; }
+    } else if (ev === 'SessionEnd' && s.gen.n > 1) {                      // may belong to an earlier generation
+      const rel = this.#relationToOpening(s, mk);
+      if (rel !== 'after') { stale = true; unresolved = { relation: rel, why: 'SessionEnd not shown to belong to the current generation' }; }
     }
-    if (ev === 'SessionStart' && !stale) s.gen.start_seen = true;
+    if (NEW_PROCESS && !stale) s.gen.start = s.gen.start ?? mk;
+    if (unresolved) {
+      if (unresolved.relation === 'uncertain') { this.ordering_ambiguous++; s.unresolved.push({ seq: entry.seq, hook_event: ev, relation: 'uncertain', why: unresolved.why });
+        this.#emit('unresolved_ordering', s, { cause_key: key, hook_event: ev, relation: 'uncertain', why: unresolved.why, raw_seq: entry.seq }); }
+    }
 
     const late = stale || Boolean(p.prompt_id && s.current_prompt_id && p.prompt_id !== s.current_prompt_id
       && !['SessionStart', 'SessionEnd', 'UserPromptSubmit'].includes(ev));
@@ -186,12 +232,11 @@ export class Reducer {
         break;
       case 'UserPromptSubmit': {
         if (stale) break;
-        const mono = t.monotonic_ns ? BigInt(t.monotonic_ns) : null;
-        if (mono !== null && s.last_prompt_mono !== null && mono < s.last_prompt_mono) {
+        if (s.last_prompt_mark && compareMarkers(s.last_prompt_mark, mk) === 'before') {
           this.#emit('late_event', s, { cause_key: key, hook_event: ev, prompt_id: p.prompt_id, raw_seq: entry.seq });
-          break; // an older prompt arriving late must not become the current one
+          break; // a prompt known to be older, delivered late, must not become the current one
         }
-        if (mono !== null) s.last_prompt_mono = mono;
+        if (mk.domain) s.last_prompt_mark = mk;
         s.current_prompt_id = p.prompt_id ?? null;
         const tk = `${s.key}:${p.prompt_id ?? 'none'}`;
         if (!s.tasks.has(tk)) s.tasks.set(tk, { prompt_id: p.prompt_id ?? null, started_seq: entry.seq });
@@ -218,8 +263,7 @@ export class Reducer {
       case 'SessionEnd': {
         if (stale) break;
         const abnormal = ['working', 'needs_permission', 'needs_input'].includes(s.state);
-        this.#terminate(s, cause, 'ended_observed', { kind: 'hook_session_end', end_mono: t.monotonic_ns ?? null,
-          at_ms: t.wall_ms ?? null, ordering: 'hook' });
+        this.#terminate(s, cause, 'ended_observed', { kind: 'hook_session_end', marker: mk });
         this.#transition(s, 'ended', cause, abnormal
           ? { text: `Session ended while ${LABELS[s.state].toLowerCase()}, no Stop seen (${p.reason ?? 'unknown'})`, abnormal: true, notify: true }
           : { text: `Session ended (${p.reason ?? 'unknown'})` });
@@ -272,8 +316,9 @@ export class Reducer {
     const snap = entry.payload; const t = entry.transport ?? {};
     const env = t.env_id ?? 'local';
     const full = !snap.scope?.cwd;
-    const ordering = snap.barrier ? 'barrier' : (t.wall_ms != null || t.received_at ? 'clock' : 'arrival');
-    const at_ms = t.wall_ms ?? (Date.parse(t.received_at) || null);
+    // Remember how this snapshot's interval classified hook receipts (see snapshot.mjs). Without interval metadata
+    // (a legacy or hand-made snapshot) every later hook is "uncertain" relative to it.
+    this.snapshots.set(entry.seq, { interval: Boolean(snap.interval?.complete), uncertain: new Set(snap.interval?.uncertain ?? []) });
     const present = new Set();
 
     for (const o of snap.sessions) {
@@ -287,21 +332,30 @@ export class Reducer {
 
       if (o.pid_alive === false) { // listed, but its process is gone on this host: observed exit
         if (s.gen.phase === 'live' && (!s.gen.proc || procMatch(s.gen.proc, proc))) {
-          this.#terminate(s, cause, 'ended_observed', { kind: 'process_exit', ordering, at_ms });
+          this.#terminate(s, cause, 'ended_observed', { kind: 'process_exit', snapshot_seq: entry.seq });
           this.#transition(s, 'ended', cause, { text: `Process exited (observed, pid ${o.pid})`, notify: s.state === 'working' || s.state === 'needs_permission' });
         } else this.stale_listings++;
         continue;
       }
-      if (s.gen.n === 0) this.#openGeneration(s, cause, 'discovered', proc);
+      if (s.gen.n === 0) this.#openGeneration(s, cause, 'discovered', proc, { kind: 'discovery', snapshot_seq: entry.seq });
       else if (s.gen.phase === 'live') {
-        if (s.gen.proc && !procMatch(s.gen.proc, proc)) this.#openGeneration(s, cause, 'different process now serves this session id', proc);
+        if (s.gen.proc && !procMatch(s.gen.proc, proc)) this.#openGeneration(s, cause, 'different process now serves this session id', proc, { kind: 'discovery', snapshot_seq: entry.seq });
         else if (!s.gen.proc) s.gen.proc = proc;
       } else { // terminated generation
         const same = procMatch(s.gen.proc, proc);
-        if (same && s.gen.phase === 'ended_observed') { this.stale_listings++; continue; }              // lingering entry
-        if (same && s.gen.phase === 'lost_suspected') { s.gen.phase = 'live'; s.gen.term = null; s.state = 'unknown'; } // listing flapped
-        else if (!same && !s.gen.proc && ordering !== 'barrier' && s.gen.term?.at_ms != null && at_ms != null && at_ms <= s.gen.term.at_ms) { this.stale_listings++; continue; }
-        else this.#openGeneration(s, cause, 'listed alive after the previous generation ended', proc);
+        if (same && s.gen.phase === 'ended_observed') { this.stale_listings++; continue; }   // lingering entry of a process known to be dead
+        if (same && s.gen.phase === 'lost_suspected') { s.gen.phase = 'live'; s.gen.term = null; s.state = 'unknown'; } // the SAME process reappeared: revise
+        else if (s.gen.proc && !same) {                                                     // a distinguishable live process identity
+          this.#openGeneration(s, cause, 'discovery lists a different live process for this session id', proc, { kind: 'discovery', snapshot_seq: entry.seq });
+        } else {
+          // The closed generation never had a known process, so this listing cannot be told apart from the dying tail of
+          // the old process. Keep it as visible, unresolved evidence; do not invent an incarnation.
+          this.ordering_ambiguous++;
+          s.unresolved.push({ seq: entry.seq, hook_event: 'discovery_listing', relation: 'uncertain', why: 'live listing but the closed generation has no known process identity' });
+          this.#emit('unresolved_ordering', s, { cause_key: cause.key, hook_event: 'discovery_listing', relation: 'uncertain',
+            why: 'live listing but the closed generation has no known process identity', raw_seq: entry.seq });
+          continue;
+        }
       }
       s.observed = { status: o.status ?? null, waitingFor: o.waitingFor ?? null, kind: o.kind, pid: o.pid ?? null };
       s.in_prev_snapshot = true;
@@ -324,7 +378,7 @@ export class Reducer {
         if (s.env !== env || present.has(s.key)) continue;
         if (s.in_prev_snapshot && s.gen.phase === 'live') {
           const cause = { key: `lost:${entry.seq}:${s.key}`, seq: entry.seq, evidence: 'discovery:absent' };
-          this.#terminate(s, cause, 'lost_suspected', { kind: 'absent_from_snapshot', ordering, at_ms });
+          this.#terminate(s, cause, 'lost_suspected', { kind: 'absent_from_snapshot', snapshot_seq: entry.seq });
           this.#transition(s, 'presence_lost', cause);
         }
       }

@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { redactDeep, limitStrings } from '../lib/redact.mjs';
 import { loadRegistry, detectEnv } from '../lib/registry.mjs';
+import { clockDomain } from '../lib/clock.mjs';
 import { REPORT_INSTRUCTION } from '../lib/protocol.mjs';
 
 const CAPTURE_VERSION = 1;
@@ -79,6 +80,8 @@ function main() {
       // that is what lets the ingestor tell a duplicate delivery from two real identical events.
       handler_id: args.handler ?? null,
       env_id: args.env ?? detectEnv(),
+      // monotonic_ns is comparable only within one clock domain (same environment and boot); null = not comparable
+      clock_domain: clockDomain(args.env ?? detectEnv()),
       pid: process.pid,
       ppid: process.ppid,
       platform: process.platform,

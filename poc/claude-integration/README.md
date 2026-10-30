@@ -10,9 +10,10 @@ application. Requires Node 22 or newer and the Claude Code CLI.
 | Hooks deliver SessionStart, UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, Notification, Stop and SessionEnd | real sessions, payloads in `examples/` | Linux |
 | `claude agents --json` lists a session a human started elsewhere, with the UUID chosen by `--session-id` | `docs/qualification-results/linux-posix.json` Q08, Q09 | Linux |
 | A session maps to the right project from its working directory | Q10 and the registry tests | Linux, plus Windows and WSL path rules by unit test only |
-| A hard kill is detected, and a resume opens a new generation of the same session | Q11, Q13 | Linux |
+| A hard kill is detected as **suspected** presence loss (absent from the listing, no pid evidence), and a resume opens a new generation of the same session | Q11, Q13 | Linux |
 | Duplicate hook registrations collapse without losing real events | Q12, `test/identity.test.mjs` | Linux |
-| A marker-declared final report is captured byte for byte | Q14, `test/reports.test.mjs` | Linux, one run |
+| A hook that lands while discovery is in flight, or arrives late, cannot fabricate a session generation; genuine resumes still open one | `test/ordering.test.mjs`, Q11 | Linux, synthetic and one real resume |
+| A marker-declared final report is captured byte for byte. This shows the capture mechanism works, **not** that the protocol is reliable | Q14, `test/reports.test.mjs` | Linux, one run |
 | Restarting the ingestor never repeats or loses events | Q15, `test/store.test.mjs` | Linux |
 | No normal Claude setting or repository was modified | Q16 | Linux |
 
@@ -21,9 +22,16 @@ application. Requires Node 22 or newer and the Claude Code CLI.
 - **Report-protocol reliability.** One real run and a handful of earlier trivial ones show the mechanism works. They say nothing about long tasks, other models or adversarial text. The marker is a model-written declaration, never proof that work or tests succeeded.
 - StopFailure, background sessions, subagents, compaction, worktrees, hot reload of hooks into a running session, and a full machine reboot.
 
+## Linux qualification evidence
+Two real runs, both **16 PASS, 2 NOT TESTED** (Q05 and Q18 need Windows and WSL2):
+- `docs/qualification-results/linux-posix.json`: the run reviewed in the first pull request (code before the ordering fix).
+- `docs/qualification-results/linux-posix-after-ordering-fix.json`: the same sequence rerun against the corrected ordering code.
+
+Q13 records **suspected** presence loss, not confirmed termination. Q14 captured one real report: it demonstrates the mechanism only.
+
 ## Run the tests
 ```
-npm test        # 106 automated tests, no network, no Claude calls
+npm test        # 122 automated tests, no network, no Claude calls
 ```
 Qualification on a real machine (hooks, discovery, resume, kill) is separate: `docs/QUALIFICATION.md`.
 
@@ -33,7 +41,8 @@ src/hook/capture.mjs      hook script: always exits 0, never decides, atomic spo
 src/lib/registry.mjs      project registry across Windows, WSL and POSIX path namespaces
 src/lib/reducer.mjs       raw log -> derived events: identities, generations, state machine, reports
 src/lib/store.mjs         durable raw log, spool ingestion, reports, candidates
-src/lib/snapshot.mjs      discovery snapshot with an ordering barrier
+src/lib/snapshot.mjs      discovery snapshot that records the call interval
+src/lib/clock.mjs         clock domains: when two monotonic timestamps may be compared
 src/lib/discovery.mjs     claude agents --json runner and validator (native and wsl.exe)
 src/lib/marker.mjs, protocol.mjs   report protocol parser and the text injected at SessionStart
 src/lib/setup.mjs         pure builders for hook commands and the isolated layout

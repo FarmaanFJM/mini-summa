@@ -342,7 +342,7 @@ async function liveFlow() {
     const { s: s2 } = sessionState(U);
     const endHook = mainStore.raw.some((e) => e.kind === 'hook' && e.payload.session_id === U && e.payload.hook_event_name === 'SessionEnd');
     const how = s2?.gen.term?.kind;
-    rec('Q13', ['ended', 'presence_lost'].includes(s2?.state) && !endHook ? 'PASS' : 'FAIL', [`state ${s2?.state}, evidence ${how}, ordering ${s2?.gen.term?.ordering}, SessionEnd hook seen: ${endHook}`,
+    rec('Q13', ['ended', 'presence_lost'].includes(s2?.state) && !endHook ? 'PASS' : 'FAIL', [`state ${s2?.state}, evidence ${how}, closed by snapshot #${s2?.gen.term?.snapshot_seq}, unresolved hooks ${s2?.unresolved.length}, SessionEnd hook seen: ${endHook}`,
       how === 'process_exit' ? 'observed process exit (pid dead on this host)' : 'suspected presence loss: absent from the listing, no pid evidence']);
   }
   // Q11 resume

@@ -23,3 +23,9 @@ The original unredacted artifacts stay in the author's scratch location and are 
 ## Report capture in practice
 Three of three task prompts carried a valid marker with an accurate status, one of them `blocked` after a permission denial; none of four non-task
 prompts did, and no marker appeared in a directory outside the registry. This shows the mechanism works. It is far too little to claim reliability.
+
+## Defect found in review of the first pull request
+7. The barrier only recorded which hook files existed *before* `claude agents --json` started. A hook written *during* the call was ingested after the snapshot and treated as newer than the observation, so a generic tool hook from a process the snapshot reported gone reopened a fresh generation and showed the old session as active. The reducer also let any hook reopen a closed generation and used wall-clock time as a fallback. Fixed by classifying hooks against the whole call interval, requiring affirmative evidence to open a generation, and removing wall-clock ordering. Details in `DESIGN.md`; regression tests in `test/ordering.test.mjs`.
+
+## Linux qualification record
+`linux-posix.json` and `linux-posix-after-ordering-fix.json` each hold 16 PASS and 2 NOT TESTED. Q13 is suspected presence loss. Q14 is a single capture and says nothing about reliability.

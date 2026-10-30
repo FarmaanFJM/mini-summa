@@ -77,8 +77,7 @@ export class Store {
   }
 
   // Ingest spool files. `only` restricts to a set of file names (the barrier set).
-  // Order: per environment by monotonic clock (comparable only on one host), then by file name.
-  // Different environments (Windows, each WSL distro) are never ordered against each other by clock.
+  // Order: by monotonic clock inside one clock domain, otherwise by file name (no causal meaning).
   ingestSpool(spoolDir, { only } = {}) {
     const res = { ingested: 0, already_ingested: 0, quarantined: 0 };
     const files = this.pendingSpool(spoolDir).filter((f) => !only || only.has(f));
@@ -96,10 +95,15 @@ export class Store {
       }
     }
     parsed.sort((a, b) => {
-      const ea = a.rec.transport.env_id ?? ''; const eb = b.rec.transport.env_id ?? '';
-      if (ea !== eb) return ea < eb ? -1 : 1;
-      const x = BigInt(a.rec.transport.monotonic_ns ?? 0); const y = BigInt(b.rec.transport.monotonic_ns ?? 0);
-      return x < y ? -1 : x > y ? 1 : a.f < b.f ? -1 : 1;
+      // Monotonic values order receipts only inside one clock domain. Otherwise fall back to the file name, which is
+      // deterministic but implies no causal order; the reducer never derives certainty from this ingestion order.
+      const da = a.rec.transport.clock_domain ?? ''; const db = b.rec.transport.clock_domain ?? '';
+      if (da !== db) return da < db ? -1 : 1;
+      if (da) {
+        const x = BigInt(a.rec.transport.monotonic_ns ?? 0); const y = BigInt(b.rec.transport.monotonic_ns ?? 0);
+        if (x !== y) return x < y ? -1 : 1;
+      }
+      return a.f < b.f ? -1 : a.f > b.f ? 1 : 0;
     });
     for (const { f, full, rec } of parsed) {
       const stored = this.appendRaw({ kind: 'hook', transport: rec.transport, payload: rec.payload });
