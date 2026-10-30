@@ -30,12 +30,33 @@ export interface ProjectRoot {
   position: number;
 }
 
+/**
+ * An existing ChatGPT Project that the person linked to a project of Mini-Summa. Only the address is stored: Mini-Summa cannot list
+ * ChatGPT Projects, read their files or instructions, or import their conversations, so nothing of the project's content is
+ * copied or kept in sync. The link says where the project is and what to call it.
+ */
+export interface ChatGptProjectLink {
+  /** The project page: https://chatgpt.com/g/<scopeId>/project. Opening uses this value. */
+  url: string;
+  /**
+   * The `g-p-...` segment of the address, when the address has the form Mini-Summa recognises. It names the project inside the
+   * address; it is not a verified identity. Null for an address of another form: ChatGPT does not document its addresses, so an
+   * unrecognised one is kept and opened as the person pasted it.
+   */
+  scopeId: string | null;
+  /** What the person calls it. Typed, or read from the words in the address, or "ChatGPT Project". */
+  title: string;
+}
+
 export interface Project {
   id: string;
   name: string;
   description: string | null;
-  /** `owner/repo` on GitHub, if the user entered one. Display only. */
+  /** `owner/repo` on GitHub, if the user entered one. Where a cloud session works, and shown with the project. */
   githubRepo: string | null;
+  /** The existing ChatGPT Project the person linked, if any. Independent of the GitHub repository and of the folders. */
+  chatgptProject: ChatGptProjectLink | null;
+  /** Local folders where Claude can run on this computer. Optional: a project may have none. */
   roots: ProjectRoot[];
   /** Environment used for new managed sessions unless a root says otherwise. */
   defaultEnv: EnvId;
@@ -614,6 +635,13 @@ export interface Settings {
     mode: 'embedded' | 'external';
     /** How external mode finds the browser: the default browser, or the optional extension that can focus a tab. */
     externalBrowser: 'default' | 'extension';
+    /**
+     * Size of the ChatGPT page inside its pane, as the browser's own page zoom. `auto` keeps ChatGPT in its wide layout in a narrow
+     * pane by zooming out just enough (never below 70 percent); the others are fixed percentages. ChatGPT lays itself out by the width
+     * it is given in CSS pixels, and a pane that is only a few hundred pixels wide gets its narrow layout, where its floating
+     * controls can sit on top of the conversation.
+     */
+    pageScale: 'auto' | '100' | '90' | '80' | '70';
   };
   layout: LayoutPrefs;
   notifications: {

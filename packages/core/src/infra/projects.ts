@@ -9,8 +9,9 @@
 //   would answer: roots, archive/restore, rename, create, delete. `onRootsChanged` fires on the same occasions.
 // * Events are emitted after the transaction committed, conversation events before the project event they imply.
 import { createRegistry, detectEnv } from '@minisumma/claude-integration';
+import type { FolderCheck } from './folders.ts';
 import {
-  isEnvId, isSessionKey, isWslEnv, normalizeRootInput, parseChatGptUrl, rootKey, suggestConversationTitle,
+  isEnvId, isSessionKey, isWslEnv, normalizeRootInput, parseChatGptProjectLink, parseChatGptUrl, rootKey, suggestConversationTitle,
 } from '@minisumma/shared';
 import type { ChatGptUrlInfo, Conversation, ConversationVerification, EnvId, Project, ProjectNotificationPrefs, SessionKey } from '@minisumma/shared';
 import { newId } from '@minisumma/storage';
@@ -28,6 +29,8 @@ export interface ProjectsDeps {
   hostPlatform?: 'win32' | 'linux' | 'darwin';
   /** Environment of the machine running Mini-Summa (CoreOptions.overrides.hostEnv). Default: detected from the process. */
   hostEnv?: EnvId;
+  /** Refuses a folder that cannot be a project folder (it does not exist, it is a file). Absent: any readable path is accepted. */
+  folderCheck?: FolderCheck;
 }
 
 const VERIFICATIONS: readonly ConversationVerification[] = ['unverified', 'verified', 'mismatch', 'unreachable', 'login_required'];
@@ -59,6 +62,21 @@ function cleanRepo(v: unknown): string | null {
   const s = cleanText(v, 200, 'GitHub repository');
   if (s !== null && !GITHUB_REPO.test(s)) throw badRequest('The GitHub repository must look like owner/repo. Fix it and save again.', { field: 'githubRepo' }, 'invalid_repo');
   return s;
+}
+
+interface ChatGptProjectColumns { url: string; scope: string | null; title: string }
+
+/** The three columns for a linked ChatGPT Project, from what the person pasted (a project page, or a conversation inside the project). */
+function cleanChatGptProject(v: unknown): ChatGptProjectColumns | null {
+  if (v === null || v === undefined) return null;
+  const input = typeof v === 'object' ? (v as { url?: unknown; title?: unknown }) : null;
+  if (!input || typeof input.url !== 'string') {
+    throw badRequest('The ChatGPT Project needs an address. Paste the address of the project from ChatGPT.', { field: 'chatgptProject' }, 'invalid_chatgpt_project');
+  }
+  const parsed = parseChatGptProjectLink(input.url);
+  if (!parsed.ok) throw badRequest(parsed.message, { field: 'chatgptProject' }, 'invalid_chatgpt_project');
+  const title = cleanText(input.title, 120, 'ChatGPT Project title') ?? parsed.link.title;
+  return { url: parsed.link.url, scope: parsed.link.scopeId, title };
 }
 
 function cleanEnv(v: unknown): EnvId {
@@ -146,6 +164,8 @@ export function createProjectsService(deps: ProjectsDeps): ProjectsService {
         ? badRequest(r.message, { needsEnv: true }, 'needs_env')
         : badRequest(r.message, undefined, 'invalid_root');
     }
+    const problem = deps.folderCheck?.(r.env, r.path);
+    if (problem) throw badRequest(problem.message, { field: 'path' }, problem.code);
     return { env: r.env, path: r.path, label: cleanText(input.label, 120, 'folder label'), key: rootKey(r.env, r.path) };
   }
 
@@ -180,6 +200,7 @@ export function createProjectsService(deps: ProjectsDeps): ProjectsService {
     const name = cleanName(input.name);
     const description = cleanText(input.description, 2000, 'description');
     const githubRepo = cleanRepo(input.githubRepo);
+    const chatgpt = cleanChatGptProject(input.chatgptProject);
     const roots = (input.roots ?? []).map(prepareRoot);
     const seen = new Set<string>();
     for (const r of roots) {
@@ -195,10 +216,11 @@ export function createProjectsService(deps: ProjectsDeps): ProjectsService {
       for (const r of roots) assertRootFree(null, r.key);
       const order = db.get<{ n: number | null }>('SELECT MAX(sort_order) AS n FROM projects')?.n;
       db.run(
-        `INSERT INTO projects (id, name, description, github_repo, default_env, preferred_conversation_id, default_session_key,
+        `INSERT INTO projects (id, name, description, github_repo, chatgpt_project_url, chatgpt_project_scope, chatgpt_project_title,
+                               default_env, preferred_conversation_id, default_session_key,
                                notification_prefs_json, sort_order, archived_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?, ?)`,
-        [id, name, description, githubRepo, defaultEnv, prefs, (order ?? -1) + 1, at, at],
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?, ?)`,
+        [id, name, description, githubRepo, chatgpt?.url ?? null, chatgpt?.scope ?? null, chatgpt?.title ?? null, defaultEnv, prefs, (order ?? -1) + 1, at, at],
       );
       roots.forEach((r, i) => insertRoot(id, r, i));
     });
@@ -237,6 +259,12 @@ export function createProjectsService(deps: ProjectsDeps): ProjectsService {
     if (patch.githubRepo !== undefined) {
       const g = cleanRepo(patch.githubRepo);
       if (g !== row.github_repo) set('github_repo', g);
+    }
+    if (patch.chatgptProject !== undefined) {
+      const c = cleanChatGptProject(patch.chatgptProject);
+      if ((c?.url ?? null) !== row.chatgpt_project_url) set('chatgpt_project_url', c?.url ?? null);
+      if ((c?.scope ?? null) !== row.chatgpt_project_scope) set('chatgpt_project_scope', c?.scope ?? null);
+      if ((c?.title ?? null) !== row.chatgpt_project_title) set('chatgpt_project_title', c?.title ?? null);
     }
     if (patch.defaultEnv !== undefined) {
       const e = cleanEnv(patch.defaultEnv);

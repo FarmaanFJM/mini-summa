@@ -17,6 +17,8 @@ import { createHttpServer } from './http/server.ts';
 import { HttpListenError } from './http/types.ts';
 import type { HttpServer } from './http/types.ts';
 import { createDataService, createDevicesService, createFcmProvider, createProjectsService, createSettingsService, createTailscaleService } from './infra/index.ts';
+import { hostFolderCheck } from './infra/folders.ts';
+import { detectEnv } from '@minisumma/claude-integration';
 import { createHooksService } from './infra/hooks.ts';
 import { createOrchestrator } from './orchestrator.ts';
 import type { Orchestrator } from './orchestrator.ts';
@@ -151,7 +153,10 @@ export async function createCore(options: CoreOptions): Promise<Core> {
   const startedAt = clock.now().toISOString();
 
   const settings = createSettingsService({ base });
-  const projects = createProjectsService({ base, settings, hostEnv: overrides.hostEnv });
+  const projects = createProjectsService({
+    base, settings, hostEnv: overrides.hostEnv,
+    folderCheck: options.checkFolders ? hostFolderCheck(overrides.hostEnv ?? detectEnv()) : undefined,
+  });
   const environments = createEnvironmentsService({ base, settings, overrides });
   const managed = createManagedManager({ base, environments, overrides });
   const sessions = createSessionsService({ base, settings, projects, environments, managed, overrides });

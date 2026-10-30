@@ -1,6 +1,7 @@
 export * from './env.ts';
 export * from './entities.ts';
 export * from './chatgpt.ts';
+export * from './github.ts';
 export * from './paths.ts';
 export * from './report-message.ts';
 export * from './pairing.ts';

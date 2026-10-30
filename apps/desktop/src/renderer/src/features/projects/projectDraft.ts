@@ -1,7 +1,7 @@
 // The project dialog edits a draft. Nothing reaches the core until Save, and Save sends only what differs. All of the
 // rules (exactly one preferred conversation, the first one becomes preferred, what a save has to send) live here, pure.
-import { suggestConversationTitle } from '@minisumma/shared';
-import type { ChatGptUrlInfo, ChatGptUrlKind, Conversation, EnvId, Project } from '@minisumma/shared';
+import { normalizeGithubRepo, suggestConversationTitle } from '@minisumma/shared';
+import type { ChatGptUrlInfo, ChatGptUrlKind, Conversation, EnvId, Project, RepoResult } from '@minisumma/shared';
 
 export interface DraftRoot { key: string; id: string | null; env: EnvId; path: string }
 export interface DraftConversation { key: string; id: string | null; url: string; title: string; kind: ChatGptUrlKind }
@@ -38,23 +38,10 @@ export function draftFromProject(project: Project, conversations: readonly Conve
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// GitHub repository
+// GitHub repository (the reading of what was pasted lives in @minisumma/shared, where the core and the cloud entry point use it too)
 
-const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
-
-export type RepoResult = { ok: true; value: string | null; changed: boolean } | { ok: false; message: string };
-
-/** Accepts owner/repo and the common ways of pasting a repository (https URL, .git suffix, SSH form). */
-export function normalizeGithubRepo(input: string): RepoResult {
-  const raw = input.trim();
-  if (raw === '') return { ok: true, value: null, changed: false };
-  let value = raw;
-  const pasted = /^(git@github\.com:|(https?:\/\/)?(www\.)?github\.com\/)/i.test(value);
-  value = value.replace(/^git@github\.com:/i, '').replace(/^(https?:\/\/)?(www\.)?github\.com\//i, '').replace(/[?#].*$/, '').replace(/\/+$/, '').replace(/\.git$/i, '');
-  if (pasted) value = value.split('/').slice(0, 2).join('/');
-  if (!REPO.test(value)) return { ok: false, message: 'Use the form owner/repo, for example acme/git-manager.' };
-  return { ok: true, value, changed: value !== raw };
-}
+export { normalizeGithubRepo };
+export type { RepoResult };
 
 export function validateDraft(draft: ProjectDraft): { name?: string; githubRepo?: string } {
   const errors: { name?: string; githubRepo?: string } = {};

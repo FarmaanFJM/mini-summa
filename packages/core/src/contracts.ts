@@ -70,6 +70,8 @@ export interface ProjectCreateInput {
   name: string;
   description?: string | null;
   githubRepo?: string | null;
+  /** The address of an existing ChatGPT Project (or of a conversation inside it) and, optionally, a title for it. */
+  chatgptProject?: { url: string; title?: string } | null;
   defaultEnv?: EnvId;
   roots?: { path: string; env?: EnvId; label?: string | null }[];
 }
@@ -80,7 +82,7 @@ export interface ProjectsService {
   /** Throws CoreError(404) when missing. */
   require(id: string): Project;
   create(input: ProjectCreateInput): Project;
-  update(id: string, patch: { name?: string; description?: string | null; githubRepo?: string | null; defaultEnv?: EnvId; notificationPrefs?: Partial<ProjectNotificationPrefs>; archived?: boolean }): Project;
+  update(id: string, patch: { name?: string; description?: string | null; githubRepo?: string | null; chatgptProject?: { url: string; title?: string } | null; defaultEnv?: EnvId; notificationPrefs?: Partial<ProjectNotificationPrefs>; archived?: boolean }): Project;
   /** archive keeps all history; delete removes the project and everything attached to it, in one transaction. */
   remove(id: string, mode: 'archive' | 'delete'): void;
   reorder(ids: string[]): void;
@@ -569,6 +571,11 @@ export interface CoreOptions {
   dataDir: string;
   mode: 'embedded' | 'headless';
   version: string;
+  /**
+   * Refuse a project folder that does not exist on this computer (or is a file) when it is added, with a message that says what
+   * to do. The desktop app and the headless runner turn it on; the tests that register made-up paths leave it off.
+   */
+  checkFolders?: boolean;
   /** Host capabilities. Default: everything unavailable (headless). */
   native?: NativeBridge;
   /** 127.0.0.1 port. 0 picks a free one. */

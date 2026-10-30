@@ -335,8 +335,17 @@ CREATE TABLE hook_installs (
 );
 `;
 
+// A project can link an existing ChatGPT Project. Only its address and a title are stored; nothing of its content is.
+// Existing projects get NULLs: they have no link, and nothing else about them changes.
+const V2 = `
+ALTER TABLE projects ADD COLUMN chatgpt_project_url   TEXT;
+ALTER TABLE projects ADD COLUMN chatgpt_project_scope TEXT;
+ALTER TABLE projects ADD COLUMN chatgpt_project_title TEXT;
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: 'initial schema', sql: V1 },
+  { version: 2, name: 'chatgpt project link', sql: V2 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

@@ -8,6 +8,9 @@ export interface ProjectRow {
   name: string;
   description: string | null;
   github_repo: string | null;
+  chatgpt_project_url: string | null;
+  chatgpt_project_scope: string | null;
+  chatgpt_project_title: string | null;
   default_env: string;
   preferred_conversation_id: string | null;
   default_session_key: string | null;
@@ -81,6 +84,9 @@ export const projectOf = (p: ProjectRow, roots: RootRow[]): Project => ({
   name: p.name,
   description: p.description,
   githubRepo: p.github_repo,
+  chatgptProject: p.chatgpt_project_url
+    ? { url: p.chatgpt_project_url, scopeId: p.chatgpt_project_scope, title: p.chatgpt_project_title ?? 'ChatGPT Project' }
+    : null,
   roots: roots.map(rootOf),
   defaultEnv: p.default_env as EnvId,
   preferredConversationId: p.preferred_conversation_id,

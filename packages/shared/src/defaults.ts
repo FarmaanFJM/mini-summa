@@ -9,7 +9,7 @@ export function defaultNotificationPrefs(): ProjectNotificationPrefs {
 
 export function defaultSettings(): Settings {
   return {
-    chatgpt: { mode: 'embedded', externalBrowser: 'default' },
+    chatgpt: { mode: 'embedded', externalBrowser: 'default', pageScale: 'auto' },
     layout: { orientation: 'auto', landscapeRatio: 0.5, portraitRatio: 0.5, maximized: null, sidebarWidth: 260, sidebarCollapsed: false },
     notifications: {
       native: true,

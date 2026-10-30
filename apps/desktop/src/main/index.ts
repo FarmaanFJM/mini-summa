@@ -182,6 +182,7 @@ function coreOptions(): CoreOptions {
   return {
     dataDir,
     mode: 'embedded',
+    checkFolders: true,
     version: app.getVersion(),
     native: bridge,
     // No `port`: the core prefers 47811 and only falls back to a free port when that one is taken. A stable address matters

@@ -71,7 +71,7 @@ export function createFakeProjects(opts: { bus: EventBus; defaultEnv?: EnvId; db
 
     add(input) {
       const p: Project = {
-        id: input.id, name: input.name, description: null, githubRepo: null, roots: [], defaultEnv: input.defaultEnv ?? defaultEnv,
+        id: input.id, name: input.name, description: null, githubRepo: null, chatgptProject: null, roots: [], defaultEnv: input.defaultEnv ?? defaultEnv,
         preferredConversationId: null, defaultSessionKey: null, notificationPrefs: defaultNotificationPrefs(), sortOrder: store.size,
         archivedAt: input.archived ? now : null, createdAt: now, updatedAt: now,
       };

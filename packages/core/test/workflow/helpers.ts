@@ -155,7 +155,7 @@ export class FakeProjects {
     const r = this.db.get<ProjectRow>('SELECT * FROM projects WHERE id = ?', [id]);
     if (!r) return null;
     return {
-      id: r.id, name: r.name, description: r.description, githubRepo: r.github_repo, roots: [], defaultEnv: r.default_env,
+      id: r.id, name: r.name, description: r.description, githubRepo: r.github_repo, chatgptProject: null, roots: [], defaultEnv: r.default_env,
       preferredConversationId: r.preferred_conversation_id, defaultSessionKey: r.default_session_key,
       notificationPrefs: fromJson<ProjectNotificationPrefs>(r.notification_prefs_json, defaultNotificationPrefs()), sortOrder: r.sort_order,
       archivedAt: r.archived_at, createdAt: r.created_at, updatedAt: r.updated_at,

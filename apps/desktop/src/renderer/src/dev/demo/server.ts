@@ -1,7 +1,7 @@
 // An in-memory Mini-Summa core. It answers the same routes with the same shapes (validating bodies with the real zod
 // schemas), mutates its data plausibly and publishes numbered events, so the renderer cannot tell it from the real thing.
 import {
-  ApiError, buildReportMessage, encodePairingPayload, mergeSettings, parseChatGptUrl, routes, splitMessage, suggestConversationTitle,
+  ApiError, buildReportMessage, encodePairingPayload, mergeSettings, parseChatGptProjectLink, parseChatGptUrl, routes, splitMessage, suggestConversationTitle,
 } from '@minisumma/shared';
 import type {
   ActivityEvent, ChatGptOpenResult, Conversation, Counts, Delivery, DeliveryDetail, DeliveryState, EnvId, Project, ProjectRoot, Report,
@@ -268,6 +268,14 @@ export class DemoServer {
     return d;
   }
 
+  /** As the real core: the address of a project (or of a conversation inside one) becomes the project page, titled from the address unless the person typed a title. */
+  private linkChatGptProject(input: { url: string; title?: string } | null | undefined): Project['chatgptProject'] {
+    if (!input) return null;
+    const parsed = parseChatGptProjectLink(input.url);
+    if (!parsed.ok) throw new ApiError(400, 'invalid_chatgpt_project', parsed.message);
+    return { url: parsed.link.url, scopeId: parsed.link.scopeId, title: input.title?.trim() || parsed.link.title };
+  }
+
   private newRoot(projectId: string, position: number, input: { path: string; env?: EnvId; label?: string | null }, fallback: EnvId): ProjectRoot {
     return { id: uid(`${projectId}_root`), projectId, env: input.env ?? inferEnv(input.path, fallback), path: input.path, label: input.label ?? null, position };
   }
@@ -287,12 +295,12 @@ export class DemoServer {
     'projects.list': (i) => this.data.projects.filter((p) => i.query?.includeArchived === true || i.query?.includeArchived === 'true' || p.archivedAt === null),
     'projects.get': (i) => this.project(i.params.id),
     'projects.create': (i) => {
-      const body = parseBody('projects.create', i.body) as { name: string; description?: string | null; githubRepo?: string | null; defaultEnv?: EnvId; roots: { path: string; env?: EnvId; label?: string | null }[] };
+      const body = parseBody('projects.create', i.body) as { name: string; description?: string | null; githubRepo?: string | null; chatgptProject?: { url: string; title?: string } | null; defaultEnv?: EnvId; roots: { path: string; env?: EnvId; label?: string | null }[] };
       const id = uid('prj');
       const fallback: EnvId = body.defaultEnv ?? 'win';
       const roots = body.roots.map((r, n) => this.newRoot(id, n, r, fallback));
       const project: Project = {
-        id, name: body.name, description: body.description ?? null, githubRepo: body.githubRepo ?? null, roots,
+        id, name: body.name, description: body.description ?? null, githubRepo: body.githubRepo ?? null, chatgptProject: this.linkChatGptProject(body.chatgptProject), roots,
         defaultEnv: body.defaultEnv ?? roots[0]?.env ?? 'win', preferredConversationId: null, defaultSessionKey: null,
         notificationPrefs: structuredClone(this.data.settings.notifications.defaults), sortOrder: this.data.projects.length, archivedAt: null, createdAt: nowIso(), updatedAt: nowIso(),
       };
@@ -300,11 +308,12 @@ export class DemoServer {
       return this.touchProject(project);
     },
     'projects.update': (i) => {
-      const body = parseBody('projects.update', i.body) as { name?: string; description?: string | null; githubRepo?: string | null; defaultEnv?: EnvId; notificationPrefs?: Partial<Project['notificationPrefs']>; archived?: boolean };
+      const body = parseBody('projects.update', i.body) as { name?: string; description?: string | null; githubRepo?: string | null; chatgptProject?: { url: string; title?: string } | null; defaultEnv?: EnvId; notificationPrefs?: Partial<Project['notificationPrefs']>; archived?: boolean };
       const p = this.project(i.params.id);
       if (body.name !== undefined) p.name = body.name;
       if (body.description !== undefined) p.description = body.description;
       if (body.githubRepo !== undefined) p.githubRepo = body.githubRepo;
+      if (body.chatgptProject !== undefined) p.chatgptProject = this.linkChatGptProject(body.chatgptProject);
       if (body.defaultEnv !== undefined) p.defaultEnv = body.defaultEnv;
       if (body.notificationPrefs) p.notificationPrefs = { ...p.notificationPrefs, ...body.notificationPrefs };
       if (body.archived !== undefined) p.archivedAt = body.archived ? nowIso() : null;

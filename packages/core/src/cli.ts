@@ -51,6 +51,7 @@ async function main(): Promise<void> {
   const core = await createCore({
     dataDir: args.dataDir,
     mode: 'headless',
+    checkFolders: true,
     version: process.env.npm_package_version ?? '0.1.0',
     port: args.port,
     uiDir: args.uiDir,

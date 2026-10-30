@@ -6,6 +6,27 @@ import { Db, MIGRATIONS, SCHEMA_VERSION, journalPragmaFor, migrate, newId, openD
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ms-storage-'));
 
+describe('upgrading a database made by the first release', () => {
+  it('keeps every project and root, and gives existing projects no ChatGPT Project link', () => {
+    const file = path.join(tmp(), 'v1.db');
+    const old = new Db(file);
+    expect(migrate(old, MIGRATIONS.filter((m) => m.version === 1))).toMatchObject({ from: 0, to: 1 });
+    old.run(`INSERT INTO projects (id, name, description, github_repo, default_env, notification_prefs_json, sort_order, created_at, updated_at)
+             VALUES ('prj_a', 'GitManager', 'd', 'acme/git-manager', 'win', '{}', 0, 't', 't')`);
+    old.run("INSERT INTO project_roots (id, project_id, env, path, position, root_key) VALUES ('rot_a', 'prj_a', 'win', 'C:\\Dev\\GitManager', 0, 'win|c:\\dev\\gitmanager')");
+    old.close();
+
+    const { db, migration } = openDatabase(file); // the second release opens it
+    expect(migration).toMatchObject({ from: 1, to: SCHEMA_VERSION });
+    expect(migration.applied.map((m) => m.version)).toEqual(MIGRATIONS.filter((m) => m.version > 1).map((m) => m.version));
+    const project = db.get<Record<string, unknown>>("SELECT * FROM projects WHERE id = 'prj_a'");
+    expect(project).toMatchObject({ name: 'GitManager', github_repo: 'acme/git-manager', chatgpt_project_url: null, chatgpt_project_scope: null, chatgpt_project_title: null });
+    expect(db.get<{ path: string }>("SELECT path FROM project_roots WHERE project_id = 'prj_a'")?.path).toBe('C:\\Dev\\GitManager');
+    db.run("UPDATE projects SET chatgpt_project_url = 'https://chatgpt.com/g/g-p-1/project' WHERE id = 'prj_a'"); // the new columns are writable
+    db.close();
+  });
+});
+
 describe('openDatabase', () => {
   it('creates the schema, uses WAL and enforces foreign keys', () => {
     const dir = tmp();

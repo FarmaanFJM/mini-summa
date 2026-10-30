@@ -42,7 +42,7 @@ describe('loading', () => {
     const s = createSettingsService({ base });
     expect(s.get()).not.toHaveProperty('futureSection');
     expect(s.get().layout).not.toHaveProperty('hologram');
-    expect(s.get().chatgpt).toEqual({ mode: 'external', externalBrowser: 'default' });
+    expect(s.get().chatgpt).toEqual({ mode: 'external', externalBrowser: 'default', pageScale: 'auto' });
     s.update({ layout: { sidebarWidth: 301 } });
     expect(Object.keys(storedJson() as object).sort()).toEqual(Object.keys(defaultSettings()).sort());
     expect(JSON.stringify(storedJson())).not.toContain('hologram');

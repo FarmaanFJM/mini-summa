@@ -75,6 +75,62 @@ export function sameChatGptPage(a: string, b: string): boolean {
   return x.ok && y.ok && x.info.url === y.info.url;
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Linking an existing ChatGPT Project. OpenAI offers no way to list a person's ChatGPT Projects and does not document the form of
+// their addresses, so a project is linked by an address that the person copies from their own signed-in ChatGPT. The form used today
+// (https://chatgpt.com/g/g-p-<id>-<words>/project, and /c/<uuid> after it for a conversation inside the project) is only observed.
+// It is recognised to give the link a title and to turn a pasted conversation into the project's page, never relied on: an address
+// of another form on chatgpt.com is accepted as pasted and opened as it is, so a change on OpenAI's side cannot make linking fail.
+
+export interface ChatGptProjectLinkInfo {
+  /** The project page (https://chatgpt.com/g/<scopeId>/project) for a recognised address; otherwise the address as pasted, without query or fragment. */
+  url: string;
+  /** The `g-p-...` segment, or null when the address is of a form that is not recognised. */
+  scopeId: string | null;
+  title: string;
+  /** The person pasted a conversation inside the project; the project page was derived from it. */
+  derivedFromConversation: boolean;
+}
+
+export type ChatGptProjectLinkResult = { ok: true; link: ChatGptProjectLinkInfo } | { ok: false; message: string };
+
+/** The page of a ChatGPT Project, from its `g-p-...` segment. */
+export const chatGptProjectUrl = (scopeId: string): string => `https://chatgpt.com/g/${scopeId}/project`;
+
+/**
+ * Words from the end of a project's address segment (`g-p-<id>-<words>`), capitalised, or null when the address carries none.
+ * "g-p-0123456789abcdef0123456789abcdef-caissa-trainer" gives "Caissa trainer".
+ */
+export function titleFromProjectScope(scopeId: string): string | null {
+  const rest = scopeId.replace(/^g-p-/i, '');
+  const words = rest.split('-').slice(1).filter(Boolean).join(' ').trim();
+  return words === '' ? null : words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+export function parseChatGptProjectLink(input: string): ChatGptProjectLinkResult {
+  const r = parseChatGptUrl(input);
+  if (!r.ok) {
+    const message = r.reason === 'empty' ? 'Paste the address of the ChatGPT Project.'
+      : r.reason === 'host_not_allowed' ? 'Only chatgpt.com addresses are accepted.'
+        : r.message;
+    return { ok: false, message };
+  }
+  const { info } = r;
+  if ((info.kind === 'project' || info.kind === 'project_chat') && info.scopeId) {
+    return {
+      ok: true,
+      link: { url: chatGptProjectUrl(info.scopeId), scopeId: info.scopeId, title: titleFromProjectScope(info.scopeId) ?? 'ChatGPT Project', derivedFromConversation: info.kind === 'project_chat' },
+    };
+  }
+  if (info.kind === 'gpt_chat') return { ok: false, message: 'That is a conversation with a custom GPT, not a ChatGPT Project.' };
+  if (info.kind === 'chat') return { ok: false, message: 'That is a single conversation outside any project. Open the project in ChatGPT and copy the address of its project page.' };
+  const path = new URL(info.url).pathname;
+  if (path === '/') return { ok: false, message: 'That is the ChatGPT home page. Open the project in ChatGPT and copy its address.' };
+  // A share link is a snapshot of one chat or an invitation to join something: not a project address, and not something to keep.
+  if (/^\/(share|s)(\/|$)/i.test(path)) return { ok: false, message: 'That is a share link. Open the project in ChatGPT and copy the address of the project itself.' };
+  return { ok: true, link: { url: info.url, scopeId: null, title: 'ChatGPT Project', derivedFromConversation: false } };
+}
+
 export function suggestConversationTitle(info: Pick<ChatGptUrlInfo, 'kind' | 'chatgptConversationId'>): string {
   const id = info.chatgptConversationId ? info.chatgptConversationId.slice(0, 8) : '';
   if (info.kind === 'project') return 'ChatGPT project';

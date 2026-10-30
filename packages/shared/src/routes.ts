@@ -54,10 +54,14 @@ const grantableScope = z.enum(['read', 'notify', 'prompt', 'approve']);
 const reviewState = z.enum(['none', 'requested', 'received', 'follow_up_drafted', 'follow_up_sent', 'closed']);
 const noteBody = z.object({ note: text(1000).optional() });
 
+/** The address of an existing ChatGPT Project (or of a conversation inside it) and, optionally, what to call it. Null unlinks. */
+const chatgptProjectInput = z.object({ url: z.string().min(1).max(2048), title: text(120).optional() }).nullable();
+
 export const projectCreateSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: text(2000).nullable().optional(),
   githubRepo: z.string().trim().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Use the form owner/repo').nullable().optional(),
+  chatgptProject: chatgptProjectInput.optional(),
   defaultEnv: envId.optional(),
   roots: z.array(z.object({ path: z.string().min(1).max(1024), env: envId.optional(), label: text(120).nullable().optional() })).max(10).default([]),
 });
@@ -66,6 +70,7 @@ export const projectUpdateSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   description: text(2000).nullable().optional(),
   githubRepo: z.string().trim().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Use the form owner/repo').nullable().optional(),
+  chatgptProject: chatgptProjectInput.optional(),
   defaultEnv: envId.optional(),
   notificationPrefs: notificationPrefsSchema.partial().optional(),
   /** true hides the project (history is kept), false restores it. */
@@ -96,7 +101,7 @@ const uiPatchSchema = z.strictObject({
 }).partial();
 
 const settingsPatchSchema = z.object({
-  chatgpt: z.object({ mode: z.enum(['embedded', 'external']), externalBrowser: z.enum(['default', 'extension']) }).partial(),
+  chatgpt: z.object({ mode: z.enum(['embedded', 'external']), externalBrowser: z.enum(['default', 'extension']), pageScale: z.enum(['auto', '100', '90', '80', '70']) }).partial(),
   layout: z.object({
     orientation: z.enum(['auto', 'landscape', 'portrait']), landscapeRatio: z.number().min(0.15).max(0.85),
     portraitRatio: z.number().min(0.15).max(0.85), maximized: z.enum(['chatgpt', 'claude']).nullable(),

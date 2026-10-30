@@ -105,7 +105,7 @@ function delivery(now: Date, r: Report, conv: Conversation | null): Delivery | n
 export function createSeed(now: Date = new Date()): DemoData {
   const prefs = defaultNotificationPrefs();
   const base = (id: string, name: string, order: number, over: Partial<Project>): Project => ({
-    id, name, description: null, githubRepo: null, roots: [], defaultEnv: 'win', preferredConversationId: null, defaultSessionKey: null,
+    id, name, description: null, githubRepo: null, chatgptProject: null, roots: [], defaultEnv: 'win', preferredConversationId: null, defaultSessionKey: null,
     notificationPrefs: prefs, sortOrder: order, archivedAt: null, createdAt: iso(now, 60 * 24 * 30), updatedAt: iso(now, 60 * 5), ...over,
   });
 
