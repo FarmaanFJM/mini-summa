@@ -110,7 +110,8 @@ describe('a managed session, from start to report to stop, through real terminal
     // the terminal exists at once; the hooks (from --settings, run by the fake CLI through the real capture script) tell the rest
     const idle = await s.waitState(key, 'idle');
     expect(idle).toMatchObject({ origin: 'managed', availability: 'live', generation: 1, stateEvidence: 'hook:SessionStart', cwd: s.work });
-    expect(readContext(s.stateDir, sessionId)).toContain('mini-summa:report'); // the registry file I wrote is what made the hook inject the protocol
+    // (the fake records the context when its hook process has exited, which can be a moment after the hook's file was read)
+    expect(await waitFor(() => readContext(s.stateDir, sessionId), 'the protocol context')).toContain('mini-summa:report'); // the registry file I wrote is what made the hook inject the protocol
 
     // type a prompt that makes the fake ask for a permission
     const prompt = `Run it ${directive.permission('bash', 'echo hello-from-fake')}`;

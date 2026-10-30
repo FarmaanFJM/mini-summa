@@ -83,8 +83,8 @@ cd android && ./gradlew assembleRelease
 A release APK must be signed before Android installs it. Unless you provide a key, the script creates a **throwaway local
 key** under `~/.android-build-keys/` with a random password that only exists in the script's memory, signs, verifies, and
 deletes the key. That APK is for sideloading on your own phone only. Because the key is gone, a later build has a different
-signature: uninstall the old app first (you will pair again). This signing step has **not been run yet**, because no build got far
-enough to produce an APK (see "Build outcome" below). To keep one identity so updates install over the old app:
+signature: uninstall the old app first (you will pair again). The script's signing and `apksigner verify` steps have run once, on
+the APK described under "Build outcome" below. To keep one identity so updates install over the old app:
 
 ```bash
 MINISUMMA_KEYSTORE=/path/to/your.jks MINISUMMA_KEYSTORE_PASSWORD=... MINISUMMA_KEY_ALIAS=yourAlias npm run build:apk
@@ -130,7 +130,10 @@ Keep that keystore out of the repository. Do not add a `google-services.json` un
      plugin, buildscript and project repositories and removes or disables nothing, so every other file still comes from the normal
      repositories with the checks they have. Gradle takes a library from the repository that supplied its POM, which is why the tool
      installs the `.pom` (and `.module`) next to each file. Usage: `node scripts/android/prefetch-maven.mjs --signatures --log
-     <gradle output> [<url>...]`.
+     <gradle output> [<url>...]`; `--gav group:artifact:version` names a module directly. To list what is still missing without
+     touching the network, run `./gradlew assembleRelease --offline --continue` in `apps/android/android`, save its output and pass
+     it to `--log`; Gradle then downloads the rest itself. The signature check needs `gpg`; a public key that keys.openpgp.org lists
+     without a verified user ID cannot be imported, and the tool then says "not verifiable here" for that file.
   3. **Another network, or a repository manager you trust** (a home or office connection, or Nexus/Artifactory/another caching proxy
      configured as a Gradle init script in `~/.gradle/init.d/`). This repository does not configure one for you.
 * R8 shrinking is switched off (`expo-build-properties`), so an APK that could not be run on a device while it was built does
@@ -143,6 +146,9 @@ Keep that keystore out of the repository. Do not add a `google-services.json` un
    the install only.
 3. Play Protect may warn that the app is from an unknown developer. That is expected for a self-signed APK.
 4. Check the SHA-256 the build printed against `sha256sum` of the file you installed.
+
+These steps describe what Android normally does with a sideloaded APK. They have **not** been tried with the APK built in the sandbox (see
+"Build outcome").
 
 ## Pair
 
@@ -212,9 +218,20 @@ If the PC is asleep, off or not on the tailnet, nothing can be pushed (the PC is
 
 ## Privacy and permissions
 
-Permissions: network, camera (QR scan), notifications (and vibration for the alert pattern). Storage, overlay, microphone and
-start-at-boot permissions are blocked. Android cloud
-backup is off so the token cannot leave the phone that way. The phone never caches report bodies, and no source file imports a
+**Permissions.** The app asks Android at run time for two things only: the **camera** (to read the pairing QR code) and
+**notifications**. The built APK declares 27 permissions in its merged manifest (`aapt2 dump badging`); the other 25 need no
+prompt. The app itself asks for `INTERNET` and `VIBRATE` (the alert pattern). The remaining 23 are not features of this app: the
+manifest merger report names the libraries that add them. `ACCESS_NETWORK_STATE` (androidx.media3), `USE_BIOMETRIC` and
+`USE_FINGERPRINT` (androidx.biometric; the app never asks for a fingerprint), `WAKE_LOCK` and
+`com.google.android.c2dm.permission.RECEIVE` (Firebase Messaging, the push receiver), `BIND_GET_INSTALL_REFERRER_SERVICE` (the Play
+install-referrer library), `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (AndroidX, named after the app's own package), and 16
+launcher badge-count permissions (Samsung, HTC, Sony, Huawei, OPPO and other launchers) from ShortcutBadger 1.1.22. They can be
+removed by listing them in `android.blockedPermissions` in `app.config.ts`; that has **not** been done or tested. Storage,
+overlay, microphone and start-at-boot permissions are blocked, and none of `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`,
+`SYSTEM_ALERT_WINDOW`, `RECORD_AUDIO` or `RECEIVE_BOOT_COMPLETED` is in the APK (checked with `aapt2 dump permissions`).
+
+Android cloud backup is off (`allowBackup=false`, read back from the built APK) so the token cannot leave the phone that way,
+and cleartext HTTP is off (`usesCleartextTraffic=false`). The phone never caches report bodies, and no source file imports a
 storage library other than the secure credential store (a test enforces that). Two things leave the app on your request: **Copy**
 puts the report on the Android clipboard (other apps may be able to read the clipboard, so copy something else afterwards if the
 report is sensitive) and **Share** hands the text to the app you pick.
@@ -231,9 +248,17 @@ Verified here (Linux, Node 22.22; commands run from `apps/android` unless noted)
 | `npx expo-doctor` | 20 of 20 checks pass |
 | `npx expo install --check` | dependencies match Expo SDK 58 |
 | `npx expo export --platform android` (Metro with the shared source and zod, Hermes bytecode) | bundles 1,408 modules into a 3.5 MB `.hbc` |
-| `npx expo prebuild --platform android` | generates the project; the manifest has CAMERA, INTERNET, VIBRATE and POST_NOTIFICATIONS, removes storage, overlay, audio and boot permissions, `allowBackup=false`, `usesCleartextTraffic=false`, the `minisumma` link scheme and FCM default channel `needs-you` |
+| `npx expo prebuild --platform android` | generates the project; the app's own manifest declares CAMERA, INTERNET and VIBRATE (POST_NOTIFICATIONS comes from the notifications library), removes storage, overlay, audio and boot permissions, `allowBackup=false`, `usesCleartextTraffic=false`, the `minisumma` link scheme and FCM default channel `needs-you`. Permissions that libraries add are merged later by Gradle: see the APK rows below |
 | Android SDK packages from the table above installed with `sdkmanager` | done |
 | Gradle wrapper (9.4.1) downloads and starts | done |
+| `node scripts/build-apk.mjs --gradle-arg --info --retries 3 --wait 30` (the real script, JDK 21, the SDK packages above) | Gradle `BUILD SUCCESSFUL in 8m 35s` (565 tasks), then the script's own signing and `apksigner verify`; it printed the APK path, size and SHA-256 given below |
+| `apksigner verify --verbose --print-certs` on the APK (by the script, and again by hand) | `Verifies`; APK Signature Scheme v2 and v3 true; one signer, the throwaway local key (RSA 2048) |
+| `aapt2 dump badging` and `aapt2 dump permissions` on the APK | package `app.minisumma.companion`, versionName 0.1.0, versionCode 1, minSdk 24, targetSdk 36, launchable activity `app.minisumma.companion.MainActivity`, native code `arm64-v8a` only, 27 permissions (see "Privacy and permissions"), none of the blocked ones |
+| `aapt2 dump xmltree` of the APK's manifest | `allowBackup=false`, `usesCleartextTraffic=false`, link scheme `minisumma` |
+| `unzip -l` and the first bytes of `assets/index.android.bundle` | the JS bundle is embedded (2.9 MB) and is Hermes bytecode (starts `c61fbc03c103191f`); `libhermesvm.so`, `libreactnative.so`, four `classes*.dex` files and the camera barcode models are in the APK |
+| a SHA-1 audit of 19 of the downloaded libraries against what Maven Central publishes next to each file | 19 of 19 match: the 12 `com.facebook.fresco:*:3.7.0` AARs that blocked the earlier runs and 7 Kotlin 2.2.10 jars (see "Build outcome") |
+| `node --test scripts/gradle-network.test.mjs` (build script's reading of refused downloads) | 10 of 10 pass |
+| the build script's retry loop against a fake `gradlew` that prints real Gradle 429 messages | 4 cases behave as designed: refused every time (lists servers, status and files; stops after the last run), refused once then fine (continues to signing), a compile error (not retried), retry properties you set yourself (not overridden). A fake Gradle, not a real build |
 
 What `check:core` covers against the real core: pairing from the core's own QR link, the answers for a used, wrong, unknown and
 cancelled code and for the 10-per-minute pairing limit, the snapshot reload and scopes, a live event from the desktop, the
@@ -241,43 +266,82 @@ refusal of a prompt for an unknown session, a 403 for a missing scope that does 
 (close 4003) and while away (refused at connect, close 4401), and a PC that stops answering (reconnecting, then
 `desktop_unreachable`, with the honest wording and the last update time).
 
-### Build outcome: no APK was produced here
+### Build outcome: an APK was built; it has NOT been run on any device
 
-`npm run build:apk` passes its prerequisite check (Java 21 and the SDK packages above) and `expo prebuild`, then fails in
-`./gradlew assembleRelease` because Maven Central (`repo.maven.apache.org`) answers Gradle with **HTTP 429, Too Many Requests**
-from this sandbox's network address. Nothing in the app or the generated project is known to be wrong.
+`npm run build:apk` finished in the Linux sandbox this document was written in (Node 22, JDK 21, no phone, no emulator):
 
-Over about 1 hour 40 minutes (15 runs on the sandbox clock between 15:18 and 18:15) the build got steadily further, because Gradle
-keeps what it already downloaded and every retry started with a bigger cache. Gradle was set to resolve one file at a time and to
-retry each request with a growing wait (in `~/.gradle/gradle.properties`, outside the repository), and runs were spaced 6 to 8
-minutes apart:
+| | |
+| --- | --- |
+| File | `Mini-Summa-0.1.0-release-sideload.apk` (written to `~/minisumma-apk/` by the script) |
+| Size | 46,206,686 bytes (44.1 MiB) |
+| SHA-256 | `406b6cdc84b56d7dc0ce04b6afb9b01bfa12d337d675787b58782911a500cc08` |
+| Signed with | a **throwaway local key** (`CN=Mini-Summa sideload (throwaway local key), O=local`, certificate SHA-256 `0506f6add0d964c3fc979a504d71579795b53dc2310e48c748f773e57cafe688`) that the script deleted right after signing. For sideloading on your own phone only; it cannot be updated by a later build (uninstall it first, or build with your own keystore) |
+| Contents | package `app.minisumma.companion`, versionName 0.1.0, minSdk 24, targetSdk 36, `arm64-v8a` only, the Hermes JS bundle embedded, no debug flag |
 
-| Runs | How far Gradle got | Stopped by |
-| --- | --- | --- |
-| first runs | the Expo plugin builds (5 tasks) | `kotlin-*` POM files, 429 |
-| runs 2 to 6 | 17, then 54 tasks: all plugin builds done, project configuration started | `slf4j`, `zipflinger`, `apksig` POM files, 429 |
-| run 7 | 94 tasks; about 1.1 GB downloaded; native build configuration of `react-native-worklets` | `fresco-3.7.0.aar`, 429 |
-| runs 8 to 10 | the same 94 tasks, nothing new cached | the same `com.facebook.fresco:*:3.7.0` AAR files, 429 every time |
+Everything under "Verified" above was run on this file. **Nothing was run on a device**: the app has not been installed, started,
+paired, or shown a notification. The APK is a build product, not a tested product.
 
-Three runs in a row that added nothing to the cache ended the retries. During the same period a plain `curl` of a Maven Central
-POM answered 200, so the limit looks specific to how Gradle's requests reach the registry from here; I did not find out why. I did
-not try to get around it: no mirror, no changed request headers, no files fetched by another tool into the Gradle cache. (One
-diagnostic with a spoofed `User-Agent` was refused by the sandbox's policy and not repeated.)
+**Why the first 15 attempts failed.** Maven Central answers the sandbox's requests with `429`, from Cloudflare, with the body "Your ip has
+exceeded rate limits. Find out more here https://central.sonatype.org/faq/429-error/" and no `Retry-After` header. Sonatype's page says Central
+now enforces consumption limits per network address, groups traffic that shares an address (hosted CI, cloud infrastructure), lifts
+short blocks by itself, and that retrying harder usually makes things worse; it recommends caching and a repository manager. From here,
+plain `curl` with its default User-Agent got a 429 for 11 of 24 requests sent 2.5 s apart, and HTTP/2 and HTTP/1.1 behaved alike (5 and 6 of 10
+answered). The same URL answered 429 and then 200 a moment later, so it is not tied to a file. Nothing is wrong with the app.
 
-What you need to do: run `npm run build:apk` from a network where Maven Central answers Gradle (a home or office connection), with the
-Android SDK packages from the table above. Everything else is already in place and checked by the script's prerequisite step. If
-the throttling is only occasional, running the command again can get further, as it did here. If your network throttles Maven
-Central too, use a mirror you trust (see Build notes).
+The retry settings that were meant to cope with this **never took effect**. The file `~/.gradle/gradle.properties` used the name
+`org.gradle.internal.repository.max.retries`, which Gradle 9.4.1 does not read (its classes read `...repository.max.tentatives` for POM and
+module files and `org.gradle.internal.network.retry.max.attempts` for library downloads, each with an initial wait that doubles), and nothing was set for
+library downloads at all. Every file therefore got Gradle's defaults: 3 tries, 1 s and 2 s apart, and after 3 failed POM lookups Gradle
+switches the whole repository off for the build ("Repository MavenRepo is disabled due to earlier error"). Progress between runs came only from
+what Gradle had cached by then, and the last three runs stalled on `com.facebook.fresco:*:3.7.0` AARs that each had only 3 tries.
 
-No APK exists, so no APK path, size or signature is claimed. The signing step in `scripts/build-apk.mjs` (throwaway local key,
-`apksigner sign`, `apksigner verify`) has therefore **not been run either**.
+**What produced the APK**, in this order (times are the sandbox clock):
+
+1. The settings were corrected to 10 tries per file and a wait that starts at 1.5 s and doubles, so the last try comes about 12 minutes
+   after the first. This is ordinary patience, not a way around the limit. The first run with them downloaded the Fresco AARs on the first
+   try and went past the old stall for the first time; the first 194 downloads of that run had no 429 at all.
+2. Then three streaks of refusals. Gradle's own backoff outlasted two: a POM (3 min 11 s, success on try 8) and the 57 KB
+   `kotlin-build-tools-impl-2.2.10.jar` (6 min 23 s, success on try 9). A third file, `pika-compiler-1.1.0-2.2.10.jar`, was still refused after 9 tries over
+   6.4 minutes (the 10th and last was due 6 minutes later), and a fourth (`kotlin-stdlib-jdk7-1.8.22.jar`) after 8 refused requests over 3 minutes.
+3. For those, the **local verified repository** from "Build notes" was used: `scripts/android/prefetch-maven.mjs` downloaded each file
+   with plain `curl` (default User-Agent, one request at a time, waiting after every 429), and the init script
+   `scripts/android/local-maven.init.gradle` (copied to `~/.gradle/init.d/`) put `~/ms-maven` in front of the normal repositories,
+   removing nothing. Eleven files in five modules went in this way (`kotlin-build-tools-impl` and `kotlin-stdlib-jdk7` of the Kotlin toolchain,
+   `io.github.expo.pika:pika-compiler`, `org.codehaus.groovy:groovy:3.0.22`, `org.apache.httpcomponents:httpclient:4.5.6`). The jars of `pika-compiler`, `kotlin-stdlib-jdk7`,
+   `groovy` and `httpclient` are not in Gradle's own cache, so the finished build can only have taken them from there.
+   Two of the five modules were found by an `--offline --continue` run, which lists what is missing without touching the network.
+4. The script (`node scripts/build-apk.mjs`) then ran from start to end: prebuild, Gradle (`BUILD SUCCESSFUL in 8m 35s`, no 429 in that run, eight
+   Google Maven downloads for the lint tooling), signing, `apksigner verify`.
+
+**How the dependencies were checked, and what that does not prove.**
+
+* Nothing was loosened. TLS verification was never turned off (the sandbox's CA bundle was used as provided). No User-Agent or other
+  header was changed (an earlier attempt, before this work, to send a different User-Agent was refused by the sandbox's policy and was not
+  repeated), no unofficial mirror and no proxy trick was used, no credentials were used, and the app was not changed. The generated project
+  has no `gradle/verification-metadata.xml`, so there is no Gradle dependency verification to bypass; this is the default for an Expo project.
+  Google's mirror of Maven Central was not tried (it was not needed). The sandbox policy refused nothing during this work.
+* Each of the 11 local files was compared with the SHA-1 that Maven Central publishes next to it (and with the SHA-256 where one is published: 2
+  of the 11); all matched, and a file without a published checksum would have been refused. The PGP signature was verified for 4 of the 11
+  (the `kotlin-build-tools-impl` and `kotlin-stdlib-jdk7` jars and POMs, one key); for the other 7 it could not be, because the signers' public
+  keys are listed on keys.openpgp.org without a verified user ID, which gpg will not import. Where a signature verified, it proves "signed by that key", not who owns the key.
+* A checksum fetched from the same server as the file protects against a damaged or truncated download, not against a compromised
+  registry; the signature is the stronger check and exists for only part of the local files.
+* Of the about 230 files Gradle downloaded itself in the last three Gradle runs (as it does in any build; counted from its `Downloading` log lines), **19 were
+  audited**: the 12 Fresco AARs that had blocked the earlier runs and 7 Kotlin 2.2.10 jars, each against the SHA-1 Central publishes; 19 of 19
+  matched. The rest were not audited individually. For the four files that both Gradle and the prefetch tool had downloaded independently
+  (the `kotlin-build-tools-impl` jar and POM, the `pika-compiler` POM and module), the SHA-1 values were identical.
+
+**What you need to do.** On a network where Maven Central answers normally, run the same `npm run build:apk` (about 9 minutes with a warm Gradle cache;
+a first build downloads far more). On a throttled network, follow "Build notes" ("HTTP 429 from Maven Central"). If you want a fresh APK of the
+same sources signed with a key you keep, set `MINISUMMA_KEYSTORE` as described under "Signing".
 
 ### Not tested
 
 There is no phone, emulator, Firebase project or Tailscale network here, so none of this was exercised:
 
-* installing and starting the app on a real device or emulator, and how it looks and feels (layout, fonts, touch targets, the
-  keyboard over the compose screen with edge to edge insets, the bottom tab bar, sheets and the toast position)
+* installing the built APK and starting the app on a real device or emulator (it has had static checks only: signature, manifest,
+  contents), and how it looks and feels (layout, fonts, touch targets, the keyboard over the compose screen with edge to edge insets,
+  the bottom tab bar, sheets and the toast position)
 * scanning a QR code with the camera, and the Android permission prompts
 * push delivery, FCM token registration, notification channel behavior, and what a tap on a notification does on a cold start
 * a real Tailscale connection, a real `tailscale serve` address and its certificate, and the TLS error wording on a real device

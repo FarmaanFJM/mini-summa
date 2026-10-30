@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createNodePtySpawner } from '../../src/claude/ptyHost.ts';
 import type { PtyExitInfo, PtyProcess } from '../../src/claude/ptyHost.ts';
 import {
-  FAKE_CLAUDE_VERSION, directive, fakeClaudeCommand, fakeClaudeEnv, readContext, readHookRuns, readLiveFiles, readReceived, writeExternals,
+  FAKE_CLAUDE_VERSION, directive, fakeClaudeCommand, fakeClaudeEnv, readContext, readEnvReport, readHookRuns, readLiveFiles, readReceived, writeExternals,
 } from '../../src/testing/fake-claude/index.ts';
 import { stripAnsi, waitFor } from './managed-harness.ts';
 
@@ -20,7 +20,8 @@ const roots: string[] = [];
 const ptys: PtyProcess[] = [];
 afterEach(() => {
   for (const p of ptys.splice(0)) { try { p.kill('SIGKILL'); } catch { /* gone */ } }
-  for (const r of roots.splice(0)) fs.rmSync(r, { recursive: true, force: true });
+  // a hook process of the killed fake may still be writing into the spool: retry when the folder is not empty yet
+  for (const r of roots.splice(0)) fs.rmSync(r, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 interface Fake {
@@ -253,6 +254,69 @@ describe('the fake CLI: input', () => {
     await waitFor(() => readReceived(s.state, SESSION).length === 1, 'the prompt');
     expect(readReceived(s.state, SESSION).map((r) => r.text)).toEqual(['hi']);
     expect(fake.plain()).toContain('Unknown command: /help');
+  });
+
+  it('/clear replaces the conversation inside the same process: SessionEnd(clear), SessionStart(clear, no model), and agents lists the new id with the same pid', async () => {
+    const s = setup();
+    const fake = launch([], {}, s);
+    await fake.text('? for shortcuts');
+    await waitFor(() => fake.names().includes('SessionStart'), 'SessionStart');
+    const [before] = await agents(s.state);
+    expect(before.sessionId).toBe(SESSION);
+    fake.write('/clear\r');
+    await waitFor(() => fake.names().filter((n) => n === 'SessionStart').length === 2, 'the second SessionStart');
+    expect(fake.events().map((e) => `${e.event}:${e.source ?? e.reason ?? ''}`)).toEqual(['SessionStart:startup', 'SessionEnd:clear', 'SessionStart:clear']);
+    const [after] = await agents(s.state);
+    expect(after.pid).toBe(before.pid);
+    expect(after.startedAt).toBe(before.startedAt);
+    expect(after.sessionId).not.toBe(SESSION);
+    expect(fs.existsSync(path.join(s.state, `hooks-${after.sessionId}.jsonl`))).toBe(true);   // later hooks belong to the new id
+    expect(readEnvReport(s.state, String(after.sessionId))).not.toBeNull();
+    fake.write('typed after the clear\r');
+    await waitFor(() => readReceived(s.state, String(after.sessionId)).length === 1, 'the prompt in the new session');
+    expect(readReceived(s.state, SESSION)).toEqual([]);
+    await fake.text('Conversation cleared');
+  });
+
+  it('/resume <id> returns to an older session that has a transcript (with model, like the real CLI) and refuses one that has none', async () => {
+    const s = setup();
+    const fake = launch([], {}, s);
+    await fake.text('? for shortcuts');
+    fake.write('first conversation\r');
+    await waitFor(() => readReceived(s.state, SESSION).length === 1, 'the first prompt');
+    await fake.text('Echo: first conversation');
+    fake.write('/clear\r');
+    await waitFor(() => fake.names().includes('SessionEnd'), 'SessionEnd');
+    const [cleared] = await agents(s.state);
+    fake.write('/resume 99999999-9999-4999-8999-999999999999\r');
+    await fake.text('No conversation found with session ID: 99999999-9999-4999-8999-999999999999');
+    expect(fake.names().filter((n) => n === 'SessionStart')).toHaveLength(2);
+    fake.write(`/resume ${SESSION}\r`);
+    await waitFor(() => fake.names().filter((n) => n === 'SessionStart').length === 3, 'the SessionStart of the resume');
+    expect(fake.events().map((e) => `${e.event}:${e.source ?? e.reason ?? ''}`).slice(-2)).toEqual(['SessionEnd:resume', 'SessionStart:resume']);
+    const [back] = await agents(s.state);
+    expect(back.sessionId).toBe(SESSION);
+    expect(back.pid).toBe(cleared.pid);
+  });
+
+  it('a [[fake:clear]] directive does the same in the middle of a turn, and that turn ends with no Stop', async () => {
+    const s = setup();
+    const fake = launch([], {}, s);
+    await fake.text('? for shortcuts');
+    fake.write('please clear the context [[fake:clear]]\r');
+    await waitFor(() => fake.names().filter((n) => n === 'SessionStart').length === 2, 'the SessionStart after the directive');
+    await new Promise((r) => setTimeout(r, 400));
+    expect(fake.names()).toEqual(['SessionStart', 'UserPromptSubmit', 'SessionEnd', 'SessionStart']);   // no Stop for the turn of the old session
+  });
+
+  it('FAKE_CLAUDE_REGISTRY_LAG_MS keeps the old id in agents --json for a while after the hooks announced the new one', async () => {
+    const s = setup();
+    const fake = launch([], { env: { FAKE_CLAUDE_REGISTRY_LAG_MS: '1200' } }, s);
+    await fake.text('? for shortcuts');
+    fake.write('/clear\r');
+    await waitFor(() => fake.names().filter((n) => n === 'SessionStart').length === 2, 'the new SessionStart');
+    expect((await agents(s.state))[0].sessionId).toBe(SESSION);          // the hooks are out, the registry is not
+    await waitFor(async () => (await agents(s.state))[0].sessionId !== SESSION, 'the registry to catch up', 5000);
   });
 
   it('Ctrl-C once only warns; twice (or /exit) ends the session with SessionEnd(prompt_input_exit) and exit 0', async () => {

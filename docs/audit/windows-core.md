@@ -154,16 +154,15 @@ posix
 
 ## Open items in files that are not mine
 
-* `packages/core/src/claude/sessions.ts:701` (`start`: `(await environments.list()).find((e) => e.id === env)`): the comparison is exact, so
+* (Being handled by another worker.) `packages/core/src/claude/sessions.ts:701` (`start`: `(await environments.list()).find((e) => e.id === env)`): the comparison is exact, so
   a project root typed as `\\wsl$\ubuntu\...` (env `wsl:ubuntu`) answers "not available" although `environments.layout()` matches the name
   without case. Either canonicalize the distribution against the listing when a root is created (`infra/projects.ts` `prepareRoot`) or
   compare without case in `start` and use `info.id`.
-* `apps/desktop/src/main/windowState.ts:77` and `log.ts:44` rename without a retry; `infra/push.ts:307` too.
+* `apps/desktop/src/main/windowState.ts:77` and `log.ts:44` rename without a retry. (`infra/push.ts:307` was done by the lead.)
 * `docs/LIMITATIONS.md` section 3, the bullet "After a graceful Stop session the notice says ... exited with code 0", is fixed and can go.
-* `packages/claude-integration/docs/CHANGES-FROM-POC.md` should list the library changes below as 12 to 15.
 * `docs/WINDOWS_VERIFICATION.md` can take the checks of the last section.
 
-## Library changes for `CHANGES-FROM-POC.md`
+## Library changes (now entries 12 to 15 of `packages/claude-integration/docs/CHANGES-FROM-POC.md`, with their tests and what was checked)
 
 | # | File | Change | Tests (titles start with `CHANGE n:`) |
 | --- | --- | --- | --- |

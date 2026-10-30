@@ -8,7 +8,7 @@ import { execWithDeadline, runAgentsJson } from '../src/lib/discovery.mjs';
 import { S1, root } from './helpers.mjs';
 import { tmpDir } from './tmp-helpers.mjs';
 
-// Differences from the proof of concept that matter on Windows (see the section "Library changes" of docs/audit/windows-core.md):
+// Differences from the proof of concept that matter on Windows (docs/CHANGES-FROM-POC.md, changes 12 to 14):
 //   change 12  a spool file that another program has open for a moment (EBUSY, EPERM) is not quarantined, and a move that meets
 //              the same is retried briefly
 //   change 13  the hook retries the rename of its record, so a scanner holding the new file does not lose the event

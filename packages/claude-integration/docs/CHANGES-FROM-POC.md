@@ -22,6 +22,10 @@ behaviour that did **not** change still pass.
 | 9 | `src/lib/redact.mjs` | The hook hides the ways a secret is typed (tokens of other providers, a password in a URL or after `curl -u`, `--password=...`, `DB_PASSWORD=...`, private keys), not only six token shapes |
 | 10 | `src/hook/capture.mjs`, `src/lib/spool.mjs` | The spool directory is created `0700` (files stay `0600`); a directory of the earlier version is tightened |
 | 11 | `src/lib/setup.mjs` | A Windows hook path with a typographic double quote (U+201C to U+201E) is refused |
+| 12 | `src/lib/spool.mjs` | A spool file that is busy for a moment (EBUSY, EPERM) is not quarantined, and a move that meets the same is retried |
+| 13 | `src/hook/capture.mjs` | The hook retries the rename of its record, so a scanner holding the new file does not lose the event |
+| 14 | `src/lib/discovery.mjs` | The deadline of `claude agents --json` also ends the children of a Windows `.cmd` launcher, and the command's input is closed |
+| 15 | `src/lib/registry.mjs` | `\\?\` and `\\.\` paths are read as the path they name; the name of a WSL distribution is compared without case |
 
 ## 1. A spool record that cannot be ordered no longer wedges ingestion
 
@@ -121,7 +125,7 @@ behaviour that did **not** change still pass.
   skipped, and the pass carries on`; `... a file that vanishes between the listing and the read is skipped`; `... a garbage file
   that another ingestor already quarantined is skipped`; `... an ENOENT caused by a vanished destination folder is retried once;
   the same error twice, and every other error, still propagates`; `... Store.ingestSpool has the same tolerance`.
-- **Limit.** Other races, such as a sharing violation (EBUSY, EPERM) on Windows while a file is open, are not handled.
+- **Limit.** A sharing violation (EBUSY, EPERM) on Windows while a file is open is handled by change 12; other races are not.
 
 ## 6. A Windows `claude.cmd` / `.bat` shim is started through a correctly quoted `cmd.exe`
 
@@ -133,7 +137,7 @@ behaviour that did **not** change still pass.
   with nothing special in it is not quoted, trailing backslashes in a quoted part are doubled, and a part containing a double
   quote, `%`, `!` or a control character is refused with an error (the promise rejects, so `takeSnapshot` records a
   `discovery_error`). Everything else is started as before: `.exe`, `wsl.exe`, any other platform. `runAgentsJson` still reports the
-  command as the caller wrote it (`file`, `args`).
+  command as the caller wrote it (`file`, `args`). The deadline of that call is change 14.
 - **Tests** (`test/agents-command.test.mjs`): the nine `CHANGE 6` tests build the command for `win32` on any machine and assert the
   exact file and argument list, the quoting of metacharacters, the refusals, and that nothing else changed; two of them run a real
   POSIX executable through `runAgentsJson` to show the unchanged path (arguments with spaces arrive intact, failures reject the
@@ -318,6 +322,113 @@ behaviour that did **not** change still pass.
   With the first version's wider range (U+2018 to U+201E) restored, 2 of the 5 fail: they pin that a typographic apostrophe in a
   profile folder is accepted.
 
+## 12. A spool file that is busy for a moment is not taken for a damaged one
+
+- **Proof of concept.** Any error while a pending file was read counted as "this file is damaged": the `catch` moved it to
+  `quarantine/` (ENOENT apart, change 5). On Windows another program can have a file open for a moment (an antivirus scan of a file
+  written a moment ago, the search indexer, a backup), and Windows reports that as EBUSY (sharing violation) or EPERM (access
+  denied). A hook event that was merely busy therefore went to `quarantine/` for good. The move into `done/` had the same exposure:
+  the rename threw at once, the pass was aborted, and every file after it waited. (By inspection of the code, and with injected
+  errors; not seen on Windows.)
+- **Now.** EBUSY or EPERM while reading: the file is skipped (not quarantined, not counted) and read on the next pass; the other files
+  of the pass are ingested. EBUSY or EPERM on the move into `done/` or `quarantine/`: retried up to 6 times, pausing 10, 20, 40, 80,
+  160 and 320 ms (about 0.6 s), then the error propagates as before; the file stays pending, and because the append is idempotent
+  the next pass moves it without ingesting it twice. A file that really is damaged is still quarantined, and every other error
+  (EACCES, ENOSPC, ...) still propagates at once.
+- **Why.** libuv gives ERROR_SHARING_VIOLATION as EBUSY and ERROR_ACCESS_DENIED as EPERM. Both pass within a moment and say nothing
+  about the file. Losing a permission request or a report to quarantine because a scanner was looking at the file is the one
+  place not to be careless: the spool file is the only copy.
+- **Tests** (`test/windows-robustness.test.mjs`): `CHANGE 12 (simulated Windows): a pending file that is EBUSY when it is read is
+  skipped, not quarantined, and read on the next pass` (and the same for EPERM); `... a file that really is damaged is still
+  quarantined, busy files around it or not`; `... a move into done/ that is EPERM or EBUSY a few times is retried and then
+  succeeds`; `... a file that stays busy is reported after the retries, stays pending, and is not ingested twice later`; `CHANGE
+  12: any other error still propagates at once, without a pause`. The errors are injected on Linux (`t.mock.method` on
+  `fs.readFileSync` and `fs.renameSync`) with the codes libuv gives the Windows errors.
+- **Checked.** With the busy-file skip and the retries removed, 4 of the 6 tests fail (the two reads, the retried move, the file that
+  stays busy); the other 2 pin what did not change (a damaged file is quarantined, other errors propagate at once).
+- **Windows: NOT TESTED.** The tests inject the error codes. No sharing violation was ever produced by a real scanner.
+- **Limit.** A file that stays busy for longer than the retries is reported by every pass and stays pending until the other program
+  lets go; the pass does not go on past it, so the files after it wait. The pause blocks the thread for at most 0.6 s per file.
+
+## 13. The hook retries the rename of its record
+
+- **Proof of concept.** `capture.mjs` wrote the record to `.tmp-<id>` and renamed it to its final name with one `fs.renameSync`. On
+  Windows the rename of a file written a moment ago fails with EPERM or EBUSY while a scanner or the indexer holds it. The error was
+  caught, appended to `capture-errors.log` and swallowed (the hook must exit 0), so that hook event never reached the spool, and
+  the temp file stayed behind. (By inspection; reproduced with injected errors.)
+- **Now.** When the rename fails with EPERM, EBUSY or EACCES it is tried again, up to 8 attempts in all, pausing 10, 20, 40, 80, 160, 320
+  and 640 ms between them (about 1.3 s of the hook's 5). Any other error, and a lock that does not let go, end as before: the error
+  is logged to `capture-errors.log`, the hook exits 0 and prints nothing. The pause is a synchronous `Atomics.wait`. Nothing is
+  written outside the spool.
+- **Why.** A lost hook event is a lost report, permission request or lifecycle fact, and nothing can recover it: the hook is the only
+  place the event exists.
+- **Tests** (`test/windows-robustness.test.mjs`): `CHANGE 13 (simulated Windows): the hook retries a rename that fails with EPERM,
+  so the record still reaches the spool` (and the same for EBUSY and EACCES; the real `capture.mjs` in a child process, with a
+  preload that makes the first 3 renames of the temp file fail; the record is in the spool, no temp file is left, nothing is
+  logged); `... a lock that never
+  lets go still exits 0, logs the error, and takes about a second and a quarter at most`; `CHANGE 13: a rename that works at once
+  costs nothing extra, and another error is not retried`.
+- **Checked.** With the single rename restored, the 3 retry tests fail (no record in the spool); the other 2 pin what did not change.
+  `npm run build:hook` bundles the same code.
+- **Windows: NOT TESTED.** The failures are injected. No scanner was involved.
+
+## 14. The deadline of `claude agents --json` reaches the children of a Windows launcher
+
+- **Proof of concept.** `runAgentsJson` relied on the `timeout` of `execFile`, which kills the direct child with SIGTERM. For an npm
+  install on Windows the direct child is `cmd.exe /d /s /c "claude.cmd ..."` (change 6). Killing cmd.exe leaves the node.exe behind
+  it running with the pipes open, and `execFile` calls back only when the pipes are closed, so `runAgentsJson` never settled. A
+  caller that awaits it, such as the core's discovery pass, which shares a queue with spool ingestion, waited for ever. The
+  command's input was also left open, so a program that stops to read from it (a prompt) waited for ever too. (By inspection of how a
+  process tree is ended on Windows; not seen on Windows.)
+- **Now.** `runAgentsJson` runs the command through `execWithDeadline` (exported from `src/lib/discovery.mjs`, not part of the package
+  API). The command's input is closed at once, on every platform. On Windows the function keeps the deadline itself: when it passes,
+  `taskkill.exe /pid N /T /F` (by its full path under `%SystemRoot%\System32`, the variable accepted only when it names a local
+  drive) ends the process and everything it started, and only then is the process killed, so the callback comes and the promise
+  rejects with `... failed: timed out after N seconds`. taskkill runs first because the tree is found through the parent links, which
+  are gone once the parent has died. A tree killer that fails or throws does not stop the kill. Everywhere else `execFile`'s own
+  `timeout` is used as before, and a failed call rejects with the message it always had.
+- **Why.** A call that cannot be ended is worse than a call that failed: nothing queued behind it can happen.
+- **Tests** (`test/windows-robustness.test.mjs`, 6): `CHANGE 14 (simulated Windows): the deadline ends the process tree first and
+  then the process, and says it timed out`; `... a tree killer that fails or throws still ends the process`; `... a command that
+  finishes in time is untouched, and the deadline timer does not keep the process alive`; `CHANGE 14: elsewhere execFile's own
+  deadline is used, and no tree killer runs`; `CHANGE 14: the command's input is closed at once, so a program waiting for input ends
+  with end-of-file`; `CHANGE 14: runAgentsJson on a hung command rejects with the failure as before (the message names the
+  command)`. The platform and the tree killer are injected, and a real sleeping process stands in for node.exe.
+- **Checked.** With the tree kill and the closing of the input removed, the first test fails and the input test waits until its
+  deadline; the tests of what did not change (finishing in time, the other platforms, the message) pass either way.
+- **Windows: NOT TESTED.** taskkill was never started and no cmd.exe is in the tests. The core applies the same rule to its own
+  helper commands (`packages/core/src/claude/commandRunner.ts`).
+
+## 15. `\\?\` paths are read as the path they name, and WSL distribution names compare without case
+
+- **Proof of concept.** `canonicalize(p, 'win')` turned `\\?\C:\Dev\App` (the long-path spelling some Windows tools report) into
+  `\\?\c:\dev\app`, which is not `c:\dev\app`, so a working directory in that form never matched the folder it names;
+  `\\?\UNC\wsl$\Ubuntu\home\u\proj` was not recognised as a path inside WSL either. And `within()` compared the file-system names
+  exactly: a root typed `\\wsl$\ubuntu\home\u\proj` (file system `wsl:ubuntu`) did not contain the `/home/u/proj` that a session of
+  `wsl:Ubuntu` reported, although Windows treats the two spellings as one share, and two projects claiming the same folder as
+  `ubuntu` and `Ubuntu` were not reported as ambiguous. (Reproduced as strings.)
+- **Now.** For the `win` namespace a `\\?\` or `\\.\` prefix (also written `//?/`) in front of a drive path (`\\?\C:\x`) or of `UNC\`
+  (`\\?\UNC\server\share\x`) is removed before the path is canonicalised: `\\?\C:\Dev\App\` is `c:\dev\app`, and
+  `\\?\UNC\wsl$\Ubuntu\home\u` is the same WSL folder as `\\wsl$\Ubuntu\home\u`. Any other use of the prefix (`\\?\Volume{...}`,
+  `\\?\GLOBALROOT`) is left as it is. File systems of the form `wsl:<Distro>` compare without case; everything else (Linux paths
+  inside a distribution, `win`, `posix`, another distribution) compares exactly as before, and `canonicalize` still returns the
+  name as it was written.
+- **Why.** A working directory that matches no root silently loses its project: no report protocol is injected and the session
+  is unassigned. And the share name is not case-sensitive for Windows.
+- **Tests** (`test/windows-paths.test.mjs`): `CHANGE 15 (simulated Windows): the long-path prefix (...) names the same folder`;
+  `CHANGE 15 (simulated WSL): a root registered as \\wsl$\Distro\... or \\wsl.localhost\Distro\... is the Linux folder a WSL session
+  reports`; `CHANGE 15 (simulated WSL): the distribution name is not case-sensitive (...), nothing else is`; `CHANGE 15 (simulated):
+  two projects claiming one folder through different spellings are reported as ambiguous, never guessed`. Six more tests in the
+  file pin behaviour that was already right and did not change (case, slashes and trailing separators of drive paths, the
+  `/mnt/<drive>` mapping, distribution names with dots, folders with spaces and non-ASCII letters, Windows and WSL file systems
+  staying different).
+- **Checked.** Against the registry of the proof of concept (the earlier file restored), the 4 `CHANGE 15` tests fail and the 6 others
+  pass.
+- **Windows: NOT TESTED.** Pure string logic (`path.win32` on any machine, `{ real: false }`). Whether Windows ever hands a hook a
+  `\\?\` working directory is not known; the change makes it harmless if it does. Junctions, 8.3 short names and symbolic links
+  are resolved by `realpath` in the hook only (when `real` is true, which is the default there); the core builds its registry with
+  `{ real: false }` and compares strings.
+
 ## Additions that change no existing behaviour
 
 - `src/lib/spool.mjs`: the spool algorithm extracted from `Store.ingestSpool` as `ingestSpoolFiles(spoolDir, { only }, appendRaw)`
@@ -336,3 +447,6 @@ behaviour that did **not** change still pass.
 - `Store.promote` copies `promoted: false` from the candidate into the promoted report file.
 - `normalizeAgents` throws a `TypeError` on a `null` entry (the snapshot path now rejects such output before reaching it).
 - The `capture.mjs` argument parser reads an event that starts with `--` as an option.
+- `Store.writeAtomic` (used by `persist` and by `promote`, which rewrites an existing candidate file) renames without a retry, so on
+  Windows it can meet EPERM while the old file is open. The store is the research tooling's durable log; the Mini-Summa core keeps
+  its log in SQLite and never calls it.

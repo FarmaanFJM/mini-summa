@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { canonicalize, createRegistry } from '../src/lib/registry.mjs';
 
 // Which project a session's working directory belongs to, for the spellings Windows and WSL2 really produce.
+// Deliberate difference from the proof of concept, see docs/CHANGES-FROM-POC.md:
+//   change 15  \\?\ and \\.\ paths are read as the path they name, and the name of a WSL distribution is compared without case
+// The tests without a CHANGE prefix pin behaviour that was already right and did not change.
 // EVERYTHING HERE IS SIMULATED: pure string logic (path.win32 on any machine, no file system access: { real: false }). Nothing ran on Windows or WSL2.
 // Session identity is a different matter and is not decided here: a session is (environment, session id), never merged (docs/ARCHITECTURE.md).
 
@@ -17,7 +20,7 @@ test('SIMULATED Windows: a drive path matches whatever the case of the drive let
   for (const cwd of ['C:\\Dev\\Application', 'C:\\Dev', 'D:\\Dev\\App', 'C:\\Dev\\App2\\x']) assert.equal(projectOf(reg, cwd, 'win'), null, cwd);
 });
 
-test('SIMULATED Windows: the long-path prefix (\\\\?\\C:\\..., //?/c:/...) names the same folder', () => {
+test('CHANGE 15 (simulated Windows): the long-path prefix (\\\\?\\C:\\..., //?/c:/...) names the same folder', () => {
   const reg = registry([{ path: 'C:\\Dev\\App', env: 'win' }]);
   for (const cwd of ['\\\\?\\C:\\Dev\\App', '\\\\?\\c:\\dev\\app\\src', '//?/C:/Dev/App/src', '\\\\.\\C:\\Dev\\App']) assert.equal(projectOf(reg, cwd, 'win'), 'p1', cwd);
   assert.deepEqual(canonicalize('\\\\?\\C:\\Dev\\App\\', 'win'), canonicalize('c:/dev/app', 'win'));
@@ -39,7 +42,7 @@ test('SIMULATED Windows: a network share is its own namespace of folders, compar
   assert.equal(projectOf(reg, 'C:\\server\\share\\code', 'win'), null);
 });
 
-test('SIMULATED WSL: a root registered as \\\\wsl$\\Distro\\... or \\\\wsl.localhost\\Distro\\... is the Linux folder a WSL session reports', () => {
+test('CHANGE 15 (simulated WSL): a root registered as \\\\wsl$\\Distro\\... or \\\\wsl.localhost\\Distro\\... is the Linux folder a WSL session reports', () => {
   for (const root of ['\\\\wsl$\\Ubuntu\\home\\u\\proj', '\\\\wsl.localhost\\Ubuntu\\home\\u\\proj\\', '//wsl.localhost/Ubuntu/home/u/proj', '\\\\?\\UNC\\wsl$\\Ubuntu\\home\\u\\proj']) {
     const reg = registry([{ path: root, env: 'win' }]);
     assert.equal(projectOf(reg, '/home/u/proj', 'wsl:Ubuntu'), 'p1', root);
@@ -48,7 +51,7 @@ test('SIMULATED WSL: a root registered as \\\\wsl$\\Distro\\... or \\\\wsl.local
   }
 });
 
-test('SIMULATED WSL: the distribution name is not case-sensitive (Windows treats \\\\wsl$\\ubuntu and \\\\wsl$\\Ubuntu as the same share), nothing else is', () => {
+test('CHANGE 15 (simulated WSL): the distribution name is not case-sensitive (Windows treats \\\\wsl$\\ubuntu and \\\\wsl$\\Ubuntu as the same share), nothing else is', () => {
   const typedLower = registry([{ path: '\\\\wsl$\\ubuntu\\home\\u\\proj', env: 'win' }]);
   assert.equal(projectOf(typedLower, '/home/u/proj', 'wsl:Ubuntu'), 'p1');
   const asRoot = registry([{ path: '/home/u/proj', env: 'wsl:ubuntu' }]);
@@ -88,7 +91,7 @@ test('SIMULATED: a Windows session and a WSL session in the same folder resolve 
   assert.notEqual(canonicalize('/home/u/x', 'wsl:Ubuntu').fs, canonicalize('/home/u/x', 'wsl:Debian').fs);
 });
 
-test('SIMULATED: two projects claiming one folder through different spellings are reported as ambiguous, never guessed', () => {
+test('CHANGE 15 (simulated): two projects claiming one folder through different spellings are reported as ambiguous, never guessed', () => {
   const reg = createRegistry({
     defaultEnv: 'win',
     projects: [
