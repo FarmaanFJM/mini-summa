@@ -83,7 +83,7 @@ export function createNodePtySpawner(load: () => NodePtyModule = loadNodePty, pl
         rows: req.rows,
         cwd: req.cwd,
         env: req.env,
-        encoding: 'utf8',
+        ...(platform === 'win32' ? {} : { encoding: 'utf8' }),
       }));
     },
   };

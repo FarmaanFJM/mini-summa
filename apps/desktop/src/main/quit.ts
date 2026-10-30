@@ -12,6 +12,12 @@ export interface QuitDeps {
   /** Persist cookies and storage of the embedded ChatGPT session. */
   flushStorage(): Promise<void>;
   exit(code: number): void;
+  /**
+   * Called once the decision to quit is final (after any confirmation) and before the slow part. Stopping the core takes a
+   * moment (and longer with terminals to end), and a window that stays on screen meanwhile looks frozen or shows a lost
+   * connection. Hiding it first makes closing the window look like closing it.
+   */
+  hideWindow?(): void;
   log: Logger;
   stopTimeoutMs?: number;
 }
@@ -19,6 +25,12 @@ export interface QuitDeps {
 export interface QuitFlow {
   /** Window close, tray Quit, Ctrl+Q, a second app.quit(): all come here. Safe to call repeatedly. */
   request(): Promise<void>;
+  /**
+   * The operating system is ending the session (Windows shutdown, log-off, or an installer asking the app to close). There is
+   * nobody to ask and no time to wait: no dialog, a short stop, then exit. Electron does not emit `before-quit` for this on
+   * Windows, so this is the only path that runs.
+   */
+  endSession(): Promise<void>;
   readonly quitting: boolean;
 }
 
@@ -43,10 +55,17 @@ const withTimeout = async (work: Promise<unknown>, ms: number, onTimeout: () => 
   try { await Promise.race([work.then(() => undefined), timeout]); } finally { clearTimeout(timer); }
 };
 
+/** Windows ends a process a few seconds after it has agreed to the end of the session, so the work there is cut short. */
+const SESSION_END_STOP_MS = 3000;
+const SESSION_END_FLUSH_MS = 1000;
+
 export function createQuitFlow(deps: QuitDeps): QuitFlow {
   let quitting = false;
   let asking = false;
   const stopTimeoutMs = deps.stopTimeoutMs ?? 10_000;
+  const hide = (): void => {
+    try { deps.hideWindow?.(); } catch (err) { deps.log.warn('hiding the window failed', { error: err }); }
+  };
 
   return {
     get quitting() { return quitting; },
@@ -58,9 +77,12 @@ export function createQuitFlow(deps: QuitDeps): QuitFlow {
         try {
           if (!(await deps.confirm(terminals))) return;
         } finally { asking = false; }
+        // The system may have ended the session while the question was open; that path has already taken over.
+        if (quitting) return;
       }
       quitting = true;
       deps.log.info('quitting', { terminals });
+      hide();
       try {
         await withTimeout(deps.stopCore(), stopTimeoutMs, () => deps.log.warn('core did not stop in time; exiting anyway'));
       } catch (err) {
@@ -68,6 +90,22 @@ export function createQuitFlow(deps: QuitDeps): QuitFlow {
       }
       try { await withTimeout(deps.flushStorage(), 3000, () => deps.log.warn('storage flush timed out')); } catch (err) {
         deps.log.warn('storage flush failed', { error: err });
+      }
+      deps.exit(0);
+    },
+
+    async endSession() {
+      if (quitting) return;
+      quitting = true;
+      deps.log.info('the system is ending the session; stopping without asking');
+      hide();
+      try {
+        await withTimeout(deps.stopCore(), Math.min(stopTimeoutMs, SESSION_END_STOP_MS), () => deps.log.warn('core did not stop in time at session end'));
+      } catch (err) {
+        deps.log.error('core stop failed at session end', { error: err });
+      }
+      try { await withTimeout(deps.flushStorage(), SESSION_END_FLUSH_MS, () => deps.log.warn('storage flush timed out at session end')); } catch (err) {
+        deps.log.warn('storage flush failed at session end', { error: err });
       }
       deps.exit(0);
     },

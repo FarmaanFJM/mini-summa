@@ -28,7 +28,10 @@ function geometry(g: Geometry = {}) {
 
 const split = () => document.querySelector('.ms-split') as HTMLElement;
 const divider = () => screen.getByRole('separator', { name: 'Resize the ChatGPT and Claude panes' });
-const settingsUpdates = (spy: ReturnType<typeof vi.spyOn>) => (spy.mock.calls as unknown[][]).filter((c) => c[0] === 'settings.update').map((c) => (c[1] as { body: unknown }).body);
+// The layout tests look at the layout writes. What the window remembers about itself (the displayed session tab, the selected project)
+// is written to the same route, as `ui`, and has its own tests (ui-sync.test.tsx).
+const settingsUpdates = (spy: ReturnType<typeof vi.spyOn>) => (spy.mock.calls as unknown[][])
+  .filter((c) => c[0] === 'settings.update').map((c) => (c[1] as { body: Record<string, unknown> }).body).filter((body) => !('ui' in body));
 
 describe('orientation', () => {
   it('puts the panes side by side in a wide area and stacks them in a tall one', async () => {

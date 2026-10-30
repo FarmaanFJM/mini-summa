@@ -27,10 +27,14 @@ export function redact(value: unknown, depth = 0): unknown {
   return value;
 }
 
+/** After a rotation that failed, the next attempt waits until the file has grown by this much. */
+const ROTATE_RETRY_BYTES = 256 * 1024;
+
 export function createFileLogger(dir: string, opts: { name?: string; maxBytes?: number; echo?: boolean } = {}): FileLogger {
   const file = path.join(dir, opts.name ?? 'main.log');
   const maxBytes = opts.maxBytes ?? 2 * 1024 * 1024;
   let written = 0;
+  let rotateAt = maxBytes;
   try {
     fs.mkdirSync(dir, { recursive: true });
     written = fs.existsSync(file) ? fs.statSync(file).size : 0;
@@ -40,9 +44,18 @@ export function createFileLogger(dir: string, opts: { name?: string; maxBytes?: 
     const line = `${new Date().toISOString()} ${level.padEnd(5)} ${msg}${data ? ` ${JSON.stringify(redact(data))}` : ''}\n`;
     if (opts.echo) (level === 'error' || level === 'warn' ? process.stderr : process.stdout).write(line);
     try {
-      if (written + line.length > maxBytes) {
-        fs.renameSync(file, file.replace(/\.log$/, '.1.log'));
-        written = 0;
+      if (written + line.length > rotateAt) {
+        // Rotating is a rename, and on Windows a rename fails (EBUSY, EPERM) while any other program has the file open without
+        // sharing it for delete: a log viewer, `Get-Content -Wait`, a virus scanner. Dropping this line and every later one
+        // until that program lets go would blind the one file a user is asked to send in. A log that grows a little past its
+        // limit is better, so the line is appended anyway and the rotation is tried again after some more output.
+        try {
+          fs.renameSync(file, file.replace(/\.log$/, '.1.log'));
+          written = 0;
+          rotateAt = maxBytes;
+        } catch {
+          rotateAt = written + line.length + ROTATE_RETRY_BYTES;
+        }
       }
       fs.appendFileSync(file, line, 'utf8');
       written += line.length;

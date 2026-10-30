@@ -377,6 +377,23 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
     return { names, notes };
   }
 
+  // How a program is started inside a distribution. `wsl.exe --exec claude` runs it WITHOUT a shell, so it sees only the PATH
+  // the distribution starts with: what a terminal builds in ~/.profile or ~/.bashrc (the native installer's ~/.local/bin, nvm,
+  // a global npm prefix) is not on it. A terminal is a login shell, so a login shell is the fallback, tried only when the plain
+  // lookup does not find both Claude and Node.js. The script is fixed text; every variable part is an argument of the shell.
+  //   plain      wsl.exe -d D --exec claude <args>
+  //   sh -lc     wsl.exe -d D --exec sh -lc 'exec claude "$@"' claude <args>        (/etc/profile and ~/.profile)
+  //   bash -lic  wsl.exe -d D --exec bash -lic 'exec claude "$@"' claude <args>     (and ~/.bashrc, where nvm puts itself)
+  interface WslLauncher { label: string; argv(program: string): string[]; script(text: string): string[] }
+  const PLAIN_LAUNCHER: WslLauncher = { label: 'plain', argv: (program) => [program], script: (text) => ['sh', '-c', text] };
+  const loginLauncher = (shell: string, flags: string): WslLauncher => ({
+    label: `${shell} ${flags}`, argv: (program) => [shell, flags, `exec ${program} "$@"`, program], script: (text) => [shell, flags, text],
+  });
+  const LOGIN_LAUNCHERS: WslLauncher[] = [loginLauncher('sh', '-lc'), loginLauncher('bash', '-lic')];
+  // With interop, WSL appends the Windows PATH, so `claude` may be the npm launcher of a WINDOWS install (a /mnt/c/... script
+  // that would run the Windows package under the distribution's node). That is not Claude Code for this distribution.
+  const WINDOWS_MOUNT = /^\/mnt\/[a-z]\//i;
+
   async function probeWsl(distro: string): Promise<Probe> {
     const env = `wsl:${distro}` as EnvId;
     const wsl = (args: string[]) => safeRun(systemProgram('wsl.exe'), ['-d', distro, '--exec', ...args], WSL_TIMEOUT_MS);
@@ -387,30 +404,61 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
       wsl(['sh', '-c', 'printf %s "$HOME"']),
     ]);
     const notes: string[] = [];
+    const unreachable = ver.code === null && where.code === null;
 
-    const claudePath = where.code === 0 && firstLine(where.stdout).startsWith('/') ? firstLine(where.stdout) : null;
-    const claudeVersion = ver.code === 0 ? parseVersion(ver.stdout) ?? parseVersion(ver.stderr) : null;
-    let claudeError: string | null = null;
-    if (!claudeVersion) {
-      if (ver.code === null && where.code === null) {
-        claudeError = describeFailure(ver);
-        notes.push(`Mini-Summa could not start ${distro}: ${claudeError} Open it once from the Start menu, then press Refresh.`);
-      } else if (claudePath) {
-        claudeError = describeFailure(ver);
-        notes.push(`Claude Code was found at ${claudePath} inside ${distro} but did not start: ${claudeError} Run claude there to see why, then press Refresh.`);
-      } else {
-        claudeError = 'Claude Code was not found.';
-        const login = await wsl(['sh', '-lc', 'command -v claude']);
-        const loginPath = login.code === 0 && firstLine(login.stdout).startsWith('/') ? firstLine(login.stdout) : null;
-        notes.push(loginPath
-          ? `Claude Code is installed at ${loginPath} inside ${distro}, but it is not on the PATH Mini-Summa starts it with. Make it available in /usr/local/bin (sudo ln -s ${loginPath} /usr/local/bin/claude), then press Refresh.`
-          : `Claude Code was not found inside ${distro}. Install it there from ${CLAUDE_INSTALL_URL}, then press Refresh.`);
+    interface Lookup { launcher: WslLauncher; claudeVersion: string | null; claudePath: string | null; nodeVersion: string | null; failure: CommandResult }
+    const pathOf = (r: CommandResult): string | null => (r.code === 0 && firstLine(r.stdout).startsWith('/') ? firstLine(r.stdout) : null);
+    const lookups: Lookup[] = [{
+      launcher: PLAIN_LAUNCHER, failure: ver, claudePath: pathOf(where),
+      claudeVersion: ver.code === 0 ? parseVersion(ver.stdout) ?? parseVersion(ver.stderr) : null,
+      nodeVersion: nodeVer.code === 0 ? parseVersion(nodeVer.stdout) : null,
+    }];
+    const startsClaude = (l: Lookup): boolean => l.claudeVersion !== null && !(l.claudePath !== null && WINDOWS_MOUNT.test(l.claudePath));
+
+    let best: Lookup | null = startsClaude(lookups[0]) && lookups[0].nodeVersion !== null ? lookups[0] : null;
+    if (!best && !unreachable) {
+      for (const launcher of LOGIN_LAUNCHERS) {
+        const [v, p, n] = await Promise.all([
+          wsl([...launcher.argv('claude'), '--version']), wsl(launcher.script('command -v claude')), wsl([...launcher.argv('node'), '--version']),
+        ]);
+        const found: Lookup = {
+          launcher, failure: v, claudePath: pathOf(p),
+          claudeVersion: v.code === 0 ? parseVersion(v.stdout) ?? parseVersion(v.stderr) : null,
+          nodeVersion: n.code === 0 ? parseVersion(n.stdout) : null,
+        };
+        lookups.push(found);
+        if (startsClaude(found) && found.nodeVersion !== null) { best = found; break; }
       }
     }
+    // Claude and Node.js from the same launcher if any has both (the hooks run with Claude's PATH); else the first that starts Claude.
+    best ??= lookups.find(startsClaude) ?? null;
 
-    const nodeVersion = nodeVer.code === 0 ? parseVersion(nodeVer.stdout) : null;
+    const plain = lookups[0];
+    const windowsOne = best ? undefined : lookups.find((l) => l.claudeVersion !== null && l.claudePath !== null && WINDOWS_MOUNT.test(l.claudePath));
+    const claudePath = best ? best.claudePath : windowsOne ? null : plain.claudePath;
+    const claudeVersion = best ? best.claudeVersion : null;
+    let claudeError: string | null = null;
+    if (!best) {
+      if (unreachable) {
+        claudeError = describeFailure(ver);
+        notes.push(`Mini-Summa could not start ${distro}: ${claudeError} Open it once from the Start menu, then press Refresh.`);
+      } else if (windowsOne) {
+        claudeError = 'Claude Code was not found.';
+        notes.push(`The claude that ${distro} finds (${windowsOne.claudePath}) is the one installed in Windows, which does not run inside ${distro}. Install Claude Code inside ${distro} from ${CLAUDE_INSTALL_URL}, then press Refresh.`);
+      } else if (plain.claudePath) {
+        claudeError = describeFailure(ver);
+        notes.push(`Claude Code was found at ${plain.claudePath} inside ${distro} but did not start: ${claudeError} Run claude there to see why, then press Refresh.`);
+      } else {
+        claudeError = 'Claude Code was not found.';
+        notes.push(`Claude Code was not found inside ${distro}. Install it there from ${CLAUDE_INSTALL_URL}, then press Refresh.`);
+      }
+    } else if (best.launcher !== PLAIN_LAUNCHER) {
+      notes.push(`Claude Code${best.claudePath ? ` (${best.claudePath})` : ''} is not on the default PATH of ${distro}, so Mini-Summa starts it through a login shell (${best.launcher.label}), the way a terminal does.`);
+    }
+
+    const nodeVersion = best ? best.nodeVersion : plain.nodeVersion;
     const runtime: Runtime | null = nodeVersion ? { command: 'node', runAsNode: false, version: nodeVersion } : null;
-    if (!runtime && !(ver.code === null && where.code === null)) {
+    if (!runtime && !unreachable) {
       notes.push(`Node.js was not found inside ${distro}, so hooks cannot run there. Install Node.js in that distribution.`);
     }
 
@@ -449,9 +497,9 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
         configDir: configDirHost, hooks: null, notes,
       },
       layout, layoutProblem,
-      // `file` is the command to run INSIDE the distribution (the same `claude` that was just asked for its version);
-      // the terminal host builds `wsl.exe -d <distro> --cd <cwd> --exec claude ...` around it.
-      command: claudeVersion !== null ? { file: 'claude', prefixArgs: [], wslDistro: distro } : null,
+      // `file` and `prefixArgs` are the command to run INSIDE the distribution, exactly as it was just asked for its version
+      // (`claude`, or a login shell that runs it); the terminal host builds `wsl.exe -d <distro> --cd <cwd> --exec ...` around it.
+      command: best ? ((argv) => ({ file: argv[0], prefixArgs: argv.slice(1), wslDistro: distro }))(best.launcher.argv('claude')) : null,
     };
   }
 

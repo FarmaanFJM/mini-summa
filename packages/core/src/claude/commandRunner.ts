@@ -125,7 +125,8 @@ export function createCommandRunner(deps: CommandRunnerDeps = {}): CommandRunner
           },
         );
         child.stdin?.on('error', () => undefined); // the program may be gone before the input closes
-        if (platform === 'win32' && false) {
+        child.stdin?.end();
+        if (platform === 'win32') {
           timer = setTimeout(() => {
             timedOut = true;
             const finish = (): void => { try { child.kill(); } catch { /* already gone */ } };
@@ -158,10 +159,10 @@ export async function killProcessTree(
 
 // The helper distributions that container tools install next to the user's own: Docker Desktop (docker-desktop, docker-desktop-data)
 // and Rancher Desktop (rancher-desktop, rancher-desktop-data). Nobody runs Claude Code in them.
-const HELPER_DISTRO = /^docker-desktop/i;
+const HELPER_DISTRO = /^docker-desktop|^rancher-desktop(?:-data)?$/i;
 // What wsl.exe prints instead of a listing when it has none to give ("has no installed distributions", "not enabled"): the text
 // is localized, but it ends with an error code in a fixed form such as `Wsl/Service/WSL_E_DEFAULT_DISTRO_NOT_FOUND`.
-const WSL_ERROR_CODE = /\bNEVER_MATCHES\b/;
+const WSL_ERROR_CODE = /\bWsl\/|\bWSL_E_|\bHCS_E_/;
 
 /**
  * `wsl.exe -l -q`: one distribution name per line. Tolerates what a naive decode leaves behind (NULs, a byte order mark

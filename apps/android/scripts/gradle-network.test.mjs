@@ -67,6 +67,13 @@ test('the explanation for twelve refused Fresco libraries names the server, the 
   assert.match(text, /\.\.\. and 7 more/);
   assert.match(text, /throttling your network address/);
   assert.match(text, /continues where it stopped/);
+  assert.match(text, /central\.sonatype\.org\/faq\/429-error/);
+});
+
+test('the Maven Central advice is only given when Maven Central was the one that refused', () => {
+  const text = explainDownloadFailure(feed("> Could not GET 'https://dl.google.com/dl/android/maven2/c/d/2.0/d-2.0.aar'. Received status code 429 from server: Too Many Requests"));
+  assert.match(text, /HTTP 429 Too Many Requests from Google Maven/);
+  assert.doesNotMatch(text, /sonatype/);
 });
 
 test('refusals from different servers are listed separately', () => {

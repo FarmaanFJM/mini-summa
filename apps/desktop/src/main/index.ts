@@ -27,7 +27,7 @@ import { countRunningTerminals, createQuitFlow, quitDialogText } from './quit.ts
 import { hardenMainSession, hardenWebContentsCreation } from './security.ts';
 import { applyHostRules, installCertificateTrust, readTestSeams, resolveDataDir, resolveUserDataDir } from './testSeams.ts';
 import type { TestSeams } from './testSeams.ts';
-import { createAppTray } from './tray.ts';
+import { createAppTray, firstUsableImage } from './tray.ts';
 import { createWindowRouter, trackRendererReadiness } from './windowRouter.ts';
 
 // ---- before ready: identity and paths --------------------------------------------------------------------------------
@@ -132,6 +132,7 @@ const quit = createQuitFlow({
     await ses.cookies.flushStore();
     ses.flushStorageData();
   },
+  hideWindow: () => { windowAlive()?.hide(); },
   exit: (code) => app.exit(code),
   log,
 });
@@ -228,7 +229,10 @@ async function start(launchLink: string | null): Promise<void> {
     event.preventDefault();
     void quit.request();
   });
-  win.on('session-end', () => { void running.stop().catch((error) => log.error('core stop at session end failed', { error })); });
+  // Windows shutdown, log-off, or an installer asking the app to close. Electron does not emit `before-quit` for any of these on
+  // Windows, so without this the quit flow (and its question) would never run, and the close handler above could still pop up
+  // the terminal dialog while the system is shutting down. No question, a short stop, then exit.
+  win.on('session-end', () => { void quit.endSession(); });
 
   registerIpc({
     ipcMain,
@@ -267,9 +271,10 @@ async function start(launchLink: string | null): Promise<void> {
 
 function startTray(running: Core): void {
   try {
-    if (!fs.existsSync(locations.trayIconPath)) { log.warn('tray icon missing; no tray'); return; }
+    const icon = firstUsableImage(locations.trayIcons, (file) => nativeImage.createFromPath(file), (file) => fs.existsSync(file));
+    if (!icon) { log.warn('tray icon missing or unreadable; no tray', { tried: locations.trayIcons }); return; }
     trayHandle = createAppTray({
-      createTray: () => new Tray(nativeImage.createFromPath(locations.trayIconPath)),
+      createTray: () => new Tray(icon.image),
       buildMenu: (template) => Menu.buildFromTemplate(template as MenuItemConstructorOptions[]),
       source: {
         counts: () => running.counts(),
@@ -305,7 +310,9 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   hardenWebContentsCreation(app);
-  if (app.isPackaged) app.setAsDefaultProtocolClient(PROTOCOL_SCHEME);
+  // The installer does not register the scheme (electron-builder's `protocols` setting is not used by its NSIS target); the
+  // installer's own include script does, and this repeats it on every start so a moved or restored install heals itself.
+  if (app.isPackaged && !app.setAsDefaultProtocolClient(PROTOCOL_SCHEME)) log.warn('could not register the minisumma:// link handler');
   app.on('second-instance', (_event, argv) => {
     const link = findProtocolUrl(argv);
     if (link) handleLink(link);

@@ -102,8 +102,8 @@ class FirstRunDriver {
       const flat = this.text.replace(/\s+/g, '');
       if (/Selectloginmethod|Pastecodehere|Browserdidn'topen|Pleaserunclaudeandlogin|Invalidapikey/i.test(flat)) this.loginRequired = true;
       if (Date.now() - this.lastAction < 1500) return;
-      const act = (keys: () => void) => { keys(); this.lastAction = Date.now(); this.text = ''; };
-      if (/trustthisfolder|Doyoutrust|Yes,Itrust/i.test(flat)) act(() => { this.input('\x1b[B'); setTimeout(() => this.input('\r'), 500); });
+      const act = (keys: () => void, quiet = 0) => { keys(); this.lastAction = Date.now() + quiet; this.text = ''; };
+      if (/trustthisfolder|Doyoutrust|Yes,Itrust/i.test(flat)) act(() => { setTimeout(() => this.input('\x1b[B'), 900); setTimeout(() => this.input('\r'), 1800); }, 3000);
       else if (/PressEntertocontinue|Entertoconfirm/i.test(flat)) act(() => this.input('\r'));
       else if (/Choosethetextstyle|Syntaxtheme/i.test(flat)) act(() => this.input('\r'));
     }, 400);

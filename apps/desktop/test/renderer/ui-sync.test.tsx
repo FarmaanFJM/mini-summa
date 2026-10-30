@@ -156,11 +156,10 @@ describe('writing back', () => {
       'minisumma.onboarding.v1': JSON.stringify({ seenEmpty: true, dismissed: true }),
     });
     const app = await renderApp({ seed: seedWith(undefined), storage, uiSync: FAST });
-    await waitFor(() => expect(app.runtime.store.getState().settings?.ui).toEqual({
-      route: { projectId: IDS.atlas, view: 'workspace' },
-      perProject: { [IDS.gitManager]: { sessionKey: IDS.s.gmPermission, conversationId: IDS.c.gmReview } },
-      setup: { dismissed: true, seenEmpty: true },
-    }));
+    await waitFor(() => expect(app.runtime.store.getState().settings?.ui?.perProject?.[IDS.gitManager]).toEqual({ sessionKey: IDS.s.gmPermission, conversationId: IDS.c.gmReview }));
+    const ui = app.runtime.store.getState().settings?.ui;
+    expect(ui?.route).toEqual({ projectId: IDS.atlas, view: 'workspace' });
+    expect(ui?.setup).toEqual({ dismissed: true, seenEmpty: true });
     // ...and the window shows what it had
     expect(heading()).toBe('Atlas API');
   });

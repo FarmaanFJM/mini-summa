@@ -95,13 +95,21 @@ async function runAgentsWithPrefix(cmd: { file: string; prefixArgs: string[] }, 
   return { raw: await exec(cmd.file, [...cmd.prefixArgs, ...agentsArgs(opts)], { timeoutMs: opts.timeoutMs ?? LOCAL_TIMEOUT_MS, env }) };
 }
 
-/** The command line that asks a WSL distribution for its sessions: the same arguments the library builds, started by `wslExe`. */
-export function wslAgentsInvocation(wslExe: string, distro: string, opts: RunAgentsJsonOptions): { file: string; args: string[] } {
-  return { file: wslExe, args: ['-d', distro, '--exec', 'claude', ...agentsArgs(opts)] };
+/** How Claude is started inside a distribution: `claude`, or a login shell that runs it (environments.ts decides which). */
+export interface WslClaudeCommand { file: string; prefixArgs: string[] }
+
+/**
+ * The command line that asks a WSL distribution for its sessions: the same arguments the library builds, started by `wslExe`.
+ * It starts Claude the way the terminal will (`command`), so a Claude that only a login shell can find is found here too.
+ */
+export function wslAgentsInvocation(
+  wslExe: string, distro: string, opts: RunAgentsJsonOptions, command: WslClaudeCommand = { file: 'claude', prefixArgs: [] },
+): { file: string; args: string[] } {
+  return { file: wslExe, args: ['-d', distro, '--exec', command.file, ...command.prefixArgs, ...agentsArgs(opts)] };
 }
 
-async function runAgentsInWsl(wslExe: string, distro: string, opts: RunAgentsJsonOptions, exec: ExecJson): Promise<{ raw: unknown }> {
-  const { file, args } = wslAgentsInvocation(wslExe, distro, opts);
+async function runAgentsInWsl(wslExe: string, distro: string, command: WslClaudeCommand, opts: RunAgentsJsonOptions, exec: ExecJson): Promise<{ raw: unknown }> {
+  const { file, args } = wslAgentsInvocation(wslExe, distro, opts, command);
   return { raw: await exec(file, args, { timeoutMs: opts.timeoutMs ?? WSL_TIMEOUT_MS, env: { ...process.env } }) };
 }
 
@@ -150,7 +158,7 @@ export function createDiscovery(deps: DiscoveryDeps): Discovery {
       const throughWslExe = distro !== null && platform === 'win32';
       let runner: AgentsRunner | undefined = deps.run;
       if (!runner && prefixed) runner = (o) => runAgentsWithPrefix(command, o, exec);
-      else if (!runner && throughWslExe) runner = (o) => runAgentsInWsl(systemProgramPath('wsl.exe', env), distro, o, exec);
+      else if (!runner && throughWslExe) runner = (o) => runAgentsInWsl(systemProgramPath('wsl.exe', env), distro, command, o, exec);
       await takeSnapshot({
         store: deps.rawStore,
         spools: [layout.spoolDirHost],

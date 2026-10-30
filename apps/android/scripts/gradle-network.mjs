@@ -68,10 +68,16 @@ export function explainDownloadFailure(evidence) {
     lines.push('  A TLS certificate was not trusted (PKIX). If your network inspects HTTPS, give Java the certificate it uses (a truststore); do not turn verification off.');
   }
   if ([...evidence.refused.values()].some((r) => r.status === 429)) {
+    const central = [...evidence.refused.values()].some((r) => r.status === 429 && describeUrl(r.url).registry === 'Maven Central');
     lines.push('', 'HTTP 429 means the download server is throttling your network address (common on shared or cloud addresses). It is not a problem in',
       'the app or the build, and nothing is being skipped or weakened. Gradle keeps every file it already has, so running the same command again',
-      'continues where it stopped. If it keeps happening: run it again later, build from another network (home or office), or send Gradle',
-      'through a Maven mirror you trust with an init script in ~/.gradle/init.d/ (docs/ANDROID.md, "Build notes").');
+      'continues where it stopped. Waiting helps; asking faster does not.');
+    if (central) {
+      lines.push('Maven Central says its limits are per network address, that blocks start short and are lifted automatically, and that retrying harder',
+        'usually makes it worse; its advice is to cache artifacts and use a repository manager (https://central.sonatype.org/faq/429-error/).');
+    }
+    lines.push('If it keeps happening: run it again later, build from another network (home or office), or send Gradle through a repository manager or',
+      'mirror you trust with an init script in ~/.gradle/init.d/ (docs/ANDROID.md, "Build notes").');
   }
   return lines.join('\n');
 }

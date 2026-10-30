@@ -36,6 +36,21 @@ export interface TrayDeps {
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
+/**
+ * The first icon file that loads to a non-empty image. A tray without an icon is invisible, so a file that is missing or that
+ * the platform cannot decode must fall through to the next candidate instead of leaving the user with no tray at all.
+ */
+export function firstUsableImage<T extends { isEmpty(): boolean }>(files: readonly string[], load: (file: string) => T, exists: (file: string) => boolean): { image: T; file: string } | null {
+  for (const file of files) {
+    if (!exists(file)) continue;
+    try {
+      const image = load(file);
+      if (!image.isEmpty()) return { image, file };
+    } catch { /* try the next one */ }
+  }
+  return null;
+}
+
 /** Windows truncates tooltips at 127 characters; this stays well inside. */
 export function trayTooltip(c: Pick<Counts, 'unreadActivity' | 'actionsNeeded' | 'liveSessions'>, quiet = false): string {
   const parts = [`${c.unreadActivity} unread`];
