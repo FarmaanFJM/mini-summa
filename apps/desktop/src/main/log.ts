@@ -1,6 +1,7 @@
 // A small file logger for the main process (a packaged Windows app has no console). It also satisfies the core's Logger.
 import fs from 'node:fs';
 import path from 'node:path';
+import { renameSyncWithRetry } from './fsRetry.ts';
 
 export interface Logger {
   debug(msg: string, data?: Record<string, unknown>): void;
@@ -30,7 +31,10 @@ export function redact(value: unknown, depth = 0): unknown {
 /** After a rotation that failed, the next attempt waits until the file has grown by this much. */
 const ROTATE_RETRY_BYTES = 256 * 1024;
 
-export function createFileLogger(dir: string, opts: { name?: string; maxBytes?: number; echo?: boolean } = {}): FileLogger {
+/** Rotation retries only briefly: a pause inside a log call is felt wherever the log call is made. */
+const ROTATE_RENAME_RETRIES = 3;
+
+export function createFileLogger(dir: string, opts: { name?: string; maxBytes?: number; echo?: boolean; rename?: (from: string, to: string) => void; pause?: (ms: number) => void } = {}): FileLogger {
   const file = path.join(dir, opts.name ?? 'main.log');
   const maxBytes = opts.maxBytes ?? 2 * 1024 * 1024;
   let written = 0;
@@ -50,7 +54,7 @@ export function createFileLogger(dir: string, opts: { name?: string; maxBytes?: 
         // until that program lets go would blind the one file a user is asked to send in. A log that grows a little past its
         // limit is better, so the line is appended anyway and the rotation is tried again after some more output.
         try {
-          fs.renameSync(file, file.replace(/\.log$/, '.1.log'));
+          renameSyncWithRetry(file, file.replace(/\.log$/, '.1.log'), { retries: ROTATE_RENAME_RETRIES, ...(opts.rename ? { rename: opts.rename } : {}), ...(opts.pause ? { pause: opts.pause } : {}) });
           written = 0;
           rotateAt = maxBytes;
         } catch {

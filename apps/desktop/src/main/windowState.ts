@@ -6,6 +6,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Rect } from '@minisumma/shared';
+import { renameSyncWithRetry } from './fsRetry.ts';
+import type { RenameRetryOptions } from './fsRetry.ts';
 
 export interface SavedWindowState { x: number | null; y: number | null; width: number; height: number; maximized: boolean }
 
@@ -68,13 +70,20 @@ export function loadWindowState(file: string): SavedWindowState | null {
   try { return sanitizeSavedState(JSON.parse(fs.readFileSync(file, 'utf8'))); } catch { return null; }
 }
 
-/** Atomic: write a sibling file, then rename over the target. A failed save is never worth interrupting the user for. */
-export function saveWindowState(file: string, state: SavedWindowState): boolean {
+/**
+ * Atomic: write a sibling file, then rename over the target. A failed save is never worth interrupting the user for.
+ * On Windows the rename can be refused for a moment (an antivirus scan or the indexer holds the old file), so it is retried a few
+ * times; if it still fails the temporary file is removed instead of being left beside the state.
+ */
+export function saveWindowState(file: string, state: SavedWindowState, rename: RenameRetryOptions = {}): boolean {
+  const tmp = `${file}.${process.pid}.tmp`;
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
     fs.writeFileSync(tmp, `${JSON.stringify(state)}\n`, 'utf8');
-    fs.renameSync(tmp, file);
+    renameSyncWithRetry(tmp, file, rename);
     return true;
-  } catch { return false; }
+  } catch {
+    try { fs.rmSync(tmp, { force: true }); } catch { /* nothing more to do */ }
+    return false;
+  }
 }
