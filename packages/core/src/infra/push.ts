@@ -47,7 +47,9 @@ const isObject = (v: unknown): v is Record<string, unknown> => v !== null && typ
 const b64url = (data: string | Buffer): string => Buffer.from(data).toString('base64url');
 
 /** Validates the text of a service account file. Never echoes its content: parser messages can quote the input. */
-function parseServiceAccount(text: string, allowInsecureTokenUri: boolean): ServiceAccount {
+function parseServiceAccount(input: string, allowInsecureTokenUri: boolean): ServiceAccount {
+  // A file saved by Windows tools may start with a byte order mark; JSON.parse rejects it.
+  const text = typeof input === 'string' ? input.replace(/^\uFEFF/, '') : input;
   if (typeof text !== 'string' || text.trim() === '') throw badRequest(`Paste the service account JSON first. ${GET_KEY_HELP}`, undefined, 'invalid_service_account');
   if (text.length > MAX_JSON_CHARS) throw badRequest(`That text is too long to be a service account key. Paste only the JSON file from Firebase. ${GET_KEY_HELP}`, undefined, 'invalid_service_account');
   let json: unknown;
@@ -58,16 +60,16 @@ function parseServiceAccount(text: string, allowInsecureTokenUri: boolean): Serv
   if (json.type !== 'service_account') {
     throw badRequest(`This file is not a Firebase service account key (its "type" is not "service_account"). ${GET_KEY_HELP}`, undefined, 'invalid_service_account');
   }
-  const field = (name: string): string => {
+  const field = (name: string, opts: { keepExact?: boolean } = {}): string => {
     const v = json[name];
     if (typeof v !== 'string' || v.trim() === '') throw badRequest(`The service account file has no "${name}". ${GET_KEY_HELP}`, { field: name }, 'invalid_service_account');
-    return v.trim();
+    return opts.keepExact ? v : v.trim();
   };
   const projectId = field('project_id');
   if (!/^[A-Za-z0-9][A-Za-z0-9:._-]{2,100}$/.test(projectId)) throw badRequest('The "project_id" in this file does not look like a Firebase project id. Download a fresh key from Firebase and paste it unchanged.', { field: 'project_id' }, 'invalid_service_account');
   const clientEmail = field('client_email');
   if (!/^[^@\s]+@[^@\s]+$/.test(clientEmail)) throw badRequest('The "client_email" in this file is not an email address. Download a fresh key from Firebase and paste it unchanged.', { field: 'client_email' }, 'invalid_service_account');
-  const privateKey = field('private_key');
+  const privateKey = field('private_key', { keepExact: true });
   try {
     if (createPrivateKey(privateKey).asymmetricKeyType !== 'rsa') throw new Error('not rsa');
   } catch (err) {
@@ -199,9 +201,13 @@ export function createFcmProvider(deps: FcmDeps): PushProvider {
 
   function networkReason(err: unknown): string {
     if (err instanceof Error) {
-      const cause = (err as { cause?: { code?: unknown } }).cause;
-      if (typeof cause?.code === 'string') return cause.code;
       if (err.name === 'TimeoutError' || err.name === 'AbortError') return 'timed out';
+      // undici reports the system error one level down, and for a refused connection inside an AggregateError
+      const cause = (err as { cause?: { code?: unknown; errors?: { code?: unknown }[]; message?: unknown } }).cause;
+      if (typeof cause?.code === 'string') return cause.code;
+      const inner = cause?.errors?.find((e) => typeof e?.code === 'string')?.code;
+      if (typeof inner === 'string') return inner;
+      if (typeof cause?.message === 'string' && /bad port/i.test(cause.message)) return 'address not allowed';
       return err.name;
     }
     return 'network error';
@@ -252,7 +258,8 @@ export function createFcmProvider(deps: FcmDeps): PushProvider {
     const e = readError(text);
     // A rejected token is cleared by the caller, so only call it invalid when it is the token that was wrong. An
     // INVALID_ARGUMENT that points at other fields of the message is a bug in the payload, not a dead token.
-    const tokenIsWrong = e.fcmCode === 'INVALID_ARGUMENT' && (e.badFields === null || e.badFields.some((f) => /token/i.test(f)));
+    const invalidArgument = e.fcmCode === 'INVALID_ARGUMENT' || (e.fcmCode === null && e.status === 'INVALID_ARGUMENT');
+    const tokenIsWrong = invalidArgument && (e.badFields === null || e.badFields.some((f) => /token/i.test(f)));
     if (res.status === 404 || res.status === 410 || e.fcmCode === 'UNREGISTERED' || e.status === 'UNREGISTERED' || tokenIsWrong) {
       return { result: 'invalid_token', error: 'The phone is no longer registered for notifications. It will register again the next time the app opens.' };
     }

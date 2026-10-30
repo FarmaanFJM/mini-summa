@@ -1,0 +1,78 @@
+/* Sidebar and shell grid. One level, flat rows, neutral selection. */
+.ms-shell { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--ms-sidebar-w, 260px) minmax(0, 1fr); }
+.ms-shell__side { position: relative; min-width: 0; min-height: 0; }
+.ms-main { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--s0); }
+
+.ms-sidebar { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--s1); border-right: 1px solid var(--line); }
+.ms-sidebar__default { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.ms-sidebar__slot { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+.ms-sidebar__head { flex: none; display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 8px 0 14px; }
+.ms-brand { display: inline-flex; align-items: center; gap: 9px; font-size: var(--fs-md); font-weight: 600; letter-spacing: -0.005em; }
+.ms-brand__mark { width: 10px; height: 10px; border-radius: 3px; background: var(--accent); }
+
+.ms-sidebar__section { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.ms-sidebar__label {
+  flex: none; display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 8px 0 14px;
+  font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3);
+}
+.ms-sidebar__scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 8px 8px; }
+.ms-sidebar__empty { padding: 6px 10px; color: var(--text-2); font-size: var(--fs-sm); }
+
+.ms-projects { display: flex; flex-direction: column; gap: 1px; }
+.ms-project { position: relative; display: flex; align-items: center; border-radius: var(--r-sm); transition: background var(--dur); }
+.ms-project:hover { background: var(--s2); }
+.ms-project[data-selected] { background: var(--s3); }
+.ms-project__main {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 30px 0 10px; border: 0; border-radius: var(--r-sm);
+  background: none; color: var(--text-2); font: 500 var(--fs-md)/1 var(--font); text-align: left; cursor: pointer; transition: color var(--dur);
+}
+.ms-project__main--static { cursor: default; padding-right: 4px; }
+.ms-project:hover .ms-project__main, .ms-project[data-selected] .ms-project__main { color: var(--text); }
+.ms-project[data-selected] .ms-project__main { font-weight: 600; }
+.ms-project__main:focus-visible { outline-offset: -1.5px; }
+.ms-project__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-project__meta { display: flex; align-items: center; gap: 9px; flex: none; }
+.ms-project__more { position: absolute; right: 1px; top: 1px; opacity: 0; transition: opacity var(--dur), background var(--dur), color var(--dur); }
+.ms-project:hover .ms-project__more, .ms-project:has(:focus-visible) .ms-project__more, .ms-project[data-menu-open] .ms-project__more { opacity: 1; }
+.ms-project--archived .ms-project__main { color: var(--text-3); }
+.ms-project--archived .sm-icon-btn { opacity: 0; }
+.ms-project--archived:hover .sm-icon-btn, .ms-project--archived:has(:focus-visible) .sm-icon-btn { opacity: 1; }
+
+.ms-archived { padding: 6px 8px 8px; }
+.ms-archived__toggle {
+  display: flex; align-items: center; gap: 6px; width: 100%; height: 26px; padding: 0 6px; border: 0; border-radius: var(--r-sm); background: none;
+  color: var(--text-3); font: 500 var(--fs-sm)/1 var(--font); cursor: pointer;
+}
+.ms-archived__toggle:hover { color: var(--text-2); background: var(--s2); }
+.ms-archived__count { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.ms-sidebar__foot { flex: none; display: flex; flex-direction: column; gap: 1px; padding: 0 8px 8px; }
+.ms-sidebar__foot::before { content: ""; display: block; height: 1px; margin: 0 2px 8px; background: var(--line); }
+.ms-sidebar .sm-nav-item { height: 30px; padding: 0 10px; border-radius: var(--r-sm); font-size: var(--fs-md); }
+.ms-sidebar .sm-nav-item[aria-current="true"] { background: var(--s3); }
+.ms-nav__label { flex: 1; text-align: left; }
+.ms-nav__count { min-width: 18px; color: var(--text-2); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* The collapsed sidebar: icons only. */
+.ms-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; padding: 8px 0; }
+.ms-rail__foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.ms-rail__item { position: relative; display: inline-flex; }
+.ms-rail__count {
+  position: absolute; top: -3px; right: -4px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--s4); color: var(--text);
+  font-size: 10px; line-height: 15px; text-align: center; font-variant-numeric: tabular-nums; pointer-events: none;
+}
+
+/* A view that replaced the sidebar (settings, for instance): back chevron, title, its own list. */
+.ms-sidebar__replacement { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.ms-sidebar__replacement-head { flex: none; display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 8px; }
+.ms-sidebar__replacement-title { font-size: var(--fs-md); font-weight: 600; }
+.ms-sidebar__replacement-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 8px 8px; }
+.ms-sidebar__sections { display: flex; flex-direction: column; gap: 1px; }
+
+/* Drag handle on the sidebar edge. */
+.ms-sidebar-resizer { position: absolute; z-index: 3; top: 0; bottom: 0; right: -4px; width: 8px; cursor: col-resize; touch-action: none; }
+.ms-sidebar-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3.5px; width: 1px; background: transparent; transition: background var(--dur); }
+.ms-sidebar-resizer:hover::after, .ms-sidebar-resizer.is-dragging::after { background: var(--text-3); }
+.ms-sidebar-resizer:focus-visible { outline: none; }
+.ms-sidebar-resizer:focus-visible::after { left: 3px; width: 2px; background: var(--focus); }

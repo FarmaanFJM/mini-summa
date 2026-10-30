@@ -86,6 +86,7 @@ export function createWsHub(deps: WsHubDeps): WsHub {
   const { base, devices, sessions, tuning } = deps;
   const log = base.log;
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD, perMessageDeflate: false, clientTracking: false });
+  wss.on('error', (err) => log.error('ws.server_error', { message: err.message }));
   const bridgeHub = createBridgeHub({ timeoutMs: tuning.bridgeTimeoutMs });
   const conns = new Set<Conn>();
   let unsubscribeBus: (() => void) | null = null;

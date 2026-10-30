@@ -85,7 +85,7 @@ export async function failureAsync(fn: () => Promise<unknown>): Promise<CoreErro
 
 /** User-visible text must not contain dashes used as punctuation (em dash, en dash). */
 export function expectPlainText(text: string | null | undefined): void {
-  expect(text ?? '').not.toMatch(/[–—]/);
+  expect(text ?? '').not.toMatch(/[\u2013\u2014]/);
 }
 
 /** Polls until `check` returns a truthy value or the time runs out. */

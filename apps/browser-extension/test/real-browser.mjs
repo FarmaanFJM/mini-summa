@@ -391,6 +391,12 @@ async function main() {
       assert.equal(stored.coreUrl, core.url);
     });
 
+    await step('the heartbeat alarm exists while paired (30 s, the shortest period Chrome honours)', async () => {
+      const alarm = await inWorker(() => chrome.alarms.get('minisumma-heartbeat'));
+      assert.ok(alarm, 'an alarm named minisumma-heartbeat');
+      assert.equal(alarm.periodInMinutes, 0.5);
+    });
+
     // ---- the actual job: focus or open -----------------------------------------------------------------------------
     const pageA = await context.newPage();
     await pageA.goto(convUrl(1));
@@ -629,8 +635,9 @@ async function main() {
       core.revokeCurrent();
       await waitFor(async () => (await status()) === 'This browser was unpaired in Mini-Summa', { what: 'the unpaired message', timeout: 10_000 });
       const stored = await inWorker(() => chrome.storage.local.get(['token', 'deviceId', 'revokedAt']));
-      assert.equal(stored.token, undefined, 'the token was cleared');
+      assert.ok(stored.token == null, 'the token was cleared');
       assert.equal(typeof stored.revokedAt, 'number');
+      await waitFor(async () => (await inWorker(() => chrome.alarms.get('minisumma-heartbeat'))) == null, { what: 'the heartbeat alarm to be removed' });
       assert.equal(await options.isVisible('#pair'), true, 'the pairing form is back');
       await shot(options, '4-unpaired-by-mini-summa');
       await sleep(2500); // the first retry would come after 500 ms
@@ -653,7 +660,8 @@ async function main() {
       await options.click('#unpair');
       await waitFor(async () => (await status()) === 'Not paired', { what: 'Not paired' });
       await waitFor(() => core.current === null, { what: 'the socket to close' });
-      assert.equal((await inWorker(() => chrome.storage.local.get(['token']))).token, undefined);
+      await waitFor(async () => (await inWorker(() => chrome.alarms.get('minisumma-heartbeat'))) == null, { what: 'the heartbeat alarm to be removed' });
+      assert.ok((await inWorker(() => chrome.storage.local.get(['token']))).token == null);
     });
 
     await step('nothing but the stand-in and the fake core was contacted', async () => {

@@ -54,6 +54,22 @@ describe('production build', () => {
     }
   });
 
+  it('the shipped bundles call exactly the chrome.* APIs that bridge.ts documents, and no others', async () => {
+    // esbuild renames the injected `chrome` parameter (chrome2, ...), so accept a numeric suffix.
+    const used = new Set<string>();
+    for (const file of ['background.js', 'options.js']) {
+      for (const m of (await text(prod, file)).matchAll(/\bchrome\d*\.([a-zA-Z]+)\.([a-zA-Z]+)/g)) used.add(`${m[1]}.${m[2]}`);
+    }
+    expect([...used].sort()).toEqual([
+      'action.onClicked',
+      'alarms.clear', 'alarms.create', 'alarms.get', 'alarms.onAlarm',
+      'runtime.id', 'runtime.onMessage', 'runtime.openOptionsPage', 'runtime.sendMessage',
+      'storage.local', 'storage.onChanged',
+      'tabs.create', 'tabs.get', 'tabs.query', 'tabs.update',
+      'windows.update',
+    ]);
+  });
+
   it('options.html loads only its own script and stylesheet', async () => {
     const html = await text(prod, 'options.html');
     expect(html).toContain('<script src="options.js"></script>');

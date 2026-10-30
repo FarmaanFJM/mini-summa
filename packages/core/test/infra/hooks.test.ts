@@ -56,7 +56,7 @@ function setup(opts: { fs?: HooksFs; layouts?: (root: string) => Record<string, 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ms-hooks-'));
   dirs.push(root);
   const dataDir = path.join(root, 'data');
-  const layouts = (opts.layouts ?? ((r) => ({ posix: posixLayout(r) })))(root);
+  const layouts: Record<string, EnvLayout> = (opts.layouts ?? ((r) => ({ posix: posixLayout(r) })))(root);
   const { db } = openDatabase(':memory:');
   dbs.push(db);
   const bus = createEventBus();
@@ -375,7 +375,7 @@ describe('uninstall', () => {
   it('removes only our entries, drops what it emptied, and keeps the user\'s own', async () => {
     const c = setup();
     const built = builtFor(c.layouts.posix);
-    const mixed = userSettings() as ReturnType<typeof userSettings> & { hooks: Record<string, unknown[]> };
+    const mixed = structuredClone(userSettings()) as unknown as Record<string, unknown> & { hooks: Record<string, unknown[]> };
     // the user's Stop hook and ours share one matcher entry; ours also sits alone in other events
     mixed.hooks.Stop = [{ hooks: [{ type: 'command', command: 'echo user-stop' }, built.hooks.Stop[0].hooks[0]] }];
     for (const e of EVENTS.filter((x) => x !== 'Stop')) mixed.hooks[e] = [...(mixed.hooks[e] ?? []), built.hooks[e][0]];

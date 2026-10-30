@@ -14,6 +14,8 @@ export interface UiState extends TabModel {
   focusedPane: PaneId | null;
   /** The project dialog is opened from the sidebar and from empty states, and rendered once by the shell. */
   projectDialog: ProjectDialogState | null;
+  /** A request to put keyboard focus into a terminal (after a tab click, a new session, a resume). Consumed by its slot. */
+  terminalFocus: { key: SessionKey; nonce: number } | null;
 }
 
 export interface UiActions {
@@ -25,6 +27,7 @@ export interface UiActions {
   setFocusedPane(pane: PaneId | null): void;
   openProjectDialog(state: ProjectDialogState): void;
   closeProjectDialog(): void;
+  focusTerminal(key: SessionKey): void;
 }
 
 export type UiStore = StoreApi<UiState & UiActions>;
@@ -34,6 +37,7 @@ export function createUiStore(): UiStore {
     ...emptyTabs(),
     focusedPane: null,
     projectDialog: null,
+    terminalFocus: null,
     noteSessions(sessions) {
       const current = get();
       const next = withAutoTabs({ openTabs: current.openTabs, dismissed: current.dismissed }, sessions);
@@ -45,5 +49,6 @@ export function createUiStore(): UiStore {
     setFocusedPane(pane) { if (get().focusedPane !== pane) set({ focusedPane: pane }); },
     openProjectDialog(state) { set({ projectDialog: state }); },
     closeProjectDialog() { set({ projectDialog: null }); },
+    focusTerminal(key) { set((s) => ({ terminalFocus: { key, nonce: (s.terminalFocus?.nonce ?? 0) + 1 } })); },
   }));
 }

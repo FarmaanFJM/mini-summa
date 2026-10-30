@@ -133,7 +133,6 @@ export class ChatGptView {
     const view = this.ensureView();
     if (this.isShowingPage(parsed.info.url)) return;
     this.obs.loading = true;
-    this.obs.failure = null;
     this.refresh();
     view.contents.loadURL(parsed.info.url).catch(() => { /* failures arrive as did-fail-load */ });
   }
@@ -275,8 +274,22 @@ export class ChatGptView {
     });
   }
 
-  private loadAndWait(view: ViewHandle, url: string): Promise<LoadOutcome> {
+  /**
+   * The tail of an earlier load (a failed page "finishes loading" shortly after the failure, then stops) must not be
+   * mistaken for the outcome of the next one, so a new load starts only once the previous one has stopped.
+   */
+  private async quiesce(c: ViewContents): Promise<void> {
+    if (!c.isLoading()) return;
+    await new Promise<void>((resolve) => {
+      const done = (): void => { clearTimeout(timer); c.removeListener('did-stop-loading', done); resolve(); };
+      const timer = setTimeout(done, 3000);
+      c.on('did-stop-loading', done);
+    });
+  }
+
+  private async loadAndWait(view: ViewHandle, url: string): Promise<LoadOutcome> {
     const c = view.contents;
+    await this.quiesce(c);
     const startedAt = Date.now();
     return new Promise((resolve) => {
       let done = false;
@@ -286,9 +299,16 @@ export class ChatGptView {
         clearTimeout(timer);
         c.removeListener('did-finish-load', onFinish);
         c.removeListener('did-fail-load', onFail);
+        c.removeListener('did-stop-loading', onStop);
         resolve(outcome);
       };
       const onFinish = (): void => end({ kind: 'finished' });
+      // A navigation that our own policy cancelled (a redirect to another site) ends with did-stop-loading and no
+      // failure event at all. A stop with nothing cancelled means the load ended without a page (a download, say).
+      const onStop = (): void => {
+        const cancel = this.lastCancel;
+        end(cancel && cancel.at >= startedAt ? { kind: 'cancelled', url: cancel.url, decision: cancel.decision } : { kind: 'finished' });
+      };
       const onFail = (_e: unknown, code: number, description: string, _url: string, isMainFrame: boolean): void => {
         if (!isMainFrame) return;
         const kind = classifyFailure(code, description);
@@ -304,8 +324,8 @@ export class ChatGptView {
       const timer = setTimeout(() => end({ kind: 'timeout' }), this.timing.loadTimeoutMs);
       c.on('did-finish-load', onFinish);
       c.on('did-fail-load', onFail);
+      c.on('did-stop-loading', onStop);
       this.obs.loading = true;
-      this.obs.failure = null;
       this.refresh();
       c.loadURL(url).catch(() => { /* reported through did-fail-load */ });
     });
@@ -376,10 +396,10 @@ export class ChatGptView {
       else if (cls === 'external') this.openOutside(details.url);
       return { action: 'deny' };
     });
-    c.on('did-start-loading', () => { this.obs.loading = true; this.obs.failure = null; this.refresh(); });
+    c.on('did-start-loading', () => { this.obs.loading = true; this.refresh(); });
     c.on('did-stop-loading', () => { this.obs.loading = false; this.syncFromContents(); this.refresh(); });
     c.on('did-finish-load', () => { this.obs.loading = false; this.syncFromContents(); this.refresh(); });
-    c.on('did-navigate', (_e: unknown, url: string) => { this.obs.url = url; this.refresh(); });
+    c.on('did-navigate', (_e: unknown, url: string) => { this.obs.url = url; this.obs.failure = null; this.refresh(); });
     c.on('did-navigate-in-page', (_e: unknown, url: string, isMainFrame: boolean) => { if (isMainFrame) { this.obs.url = url; this.refresh(); } });
     c.on('page-title-updated', (_e: unknown, title: string) => { this.obs.title = title; this.refresh(); });
     c.on('did-fail-load', (_e: unknown, code: number, description: string, validatedUrl: string, isMainFrame: boolean) => {

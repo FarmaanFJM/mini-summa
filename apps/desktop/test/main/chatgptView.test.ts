@@ -12,7 +12,8 @@ const LOGIN = 'https://auth.openai.com/log-in';
 type Plan =
   | { type: 'ok'; finalUrl?: string; title?: string; later?: { afterMs: number; url: string; title?: string } }
   | { type: 'fail'; code: number; description: string }
-  | { type: 'redirect'; to: string }
+  /** A server redirect. When the policy cancels it, real Electron only emits did-stop-loading; `abortEvent` adds ERR_ABORTED too. */
+  | { type: 'redirect'; to: string; abortEvent?: boolean; delayMs?: number }
   | { type: 'hang' };
 
 interface PolicyEvent { prevented: boolean; preventDefault(): void }
@@ -58,10 +59,17 @@ class FakeContents extends EventEmitter implements ViewContents {
       setTimeout(() => {
         if (plan.type === 'hang') return;
         if (plan.type === 'fail') {
-          this.loading = false;
+          // Observed in Electron 45: the failure comes first; the error page then "finishes loading" and loading stops a
+          // little later, possibly after the next navigation was requested.
+          this.url = url;
+          this.title = url.replace('https://', '');
           this.emit('did-fail-load', {}, plan.code, plan.description, url, true);
-          this.emit('did-stop-loading');
           reject(new Error(plan.description));
+          setTimeout(() => {
+            this.emit('did-finish-load');
+            this.loading = false;
+            this.emit('did-stop-loading');
+          }, 25);
           return;
         }
         if (plan.type === 'redirect') {
@@ -69,7 +77,7 @@ class FakeContents extends EventEmitter implements ViewContents {
           this.emit('will-redirect', event, plan.to);
           if (event.prevented) {
             this.loading = false;
-            this.emit('did-fail-load', {}, -3, 'ERR_ABORTED', url, true);
+            if (plan.abortEvent) this.emit('did-fail-load', {}, -3, 'ERR_ABORTED', url, true);
             this.emit('did-stop-loading');
             reject(new Error('ERR_ABORTED'));
             return;
@@ -88,7 +96,7 @@ class FakeContents extends EventEmitter implements ViewContents {
             setTimeout(() => this.finish(later.url, later.title ?? 'ChatGPT'), 2);
           }, later.afterMs);
         }
-      }, 1);
+      }, plan.type === 'redirect' ? (plan.delayMs ?? 1) : 1);
     });
   }
 
@@ -321,6 +329,46 @@ describe('open(): what it claims', () => {
     expect(deps.openExternal).toHaveBeenCalledWith('https://example.org/landing');
     expect(r).toMatchObject({ ok: false, opened: false, verified: null });
     expect(r.note).toMatch(/another site/);
+  });
+
+  it('also recognizes a cancelled redirect that is announced with ERR_ABORTED', async () => {
+    const { view, deps } = setup({ plan: () => ({ type: 'redirect', to: 'https://example.org/landing', abortEvent: true }) });
+    const r = await view.open(CONV, { focus: false, reason: 'user' });
+    expect(deps.openExternal).toHaveBeenCalledWith('https://example.org/landing');
+    expect(r).toMatchObject({ ok: false, opened: false, verified: null });
+  });
+
+  it('after a cancelled redirect the view still shows what it showed before, and says ready for that page', async () => {
+    let n = 0;
+    const { view } = setup({ plan: () => (n++ === 0 ? { type: 'ok' } : { type: 'redirect', to: 'https://example.org/landing' }) });
+    await view.open(CONV, { focus: false, reason: 'user' });
+    const r = await view.open(`https://chatgpt.com/c/${OTHER}`, { focus: false, reason: 'user' });
+    expect(r.ok).toBe(false);
+    expect(r.finalUrl).toBe(CONV);
+    expect(view.getState()).toMatchObject({ status: 'ready', url: CONV });
+  });
+
+  it('a failure followed at once by another open is not confused by the tail of the failed load', async () => {
+    let n = 0;
+    const { view, contents } = setup({ plan: (url) => (n++ === 0 ? { type: 'fail', code: -324, description: 'ERR_EMPTY_RESPONSE' } : { type: 'redirect', to: 'https://example.org/landing', delayMs: 60 }) });
+    const first = await view.open(CONV, { focus: false, reason: 'user' });
+    expect(first).toMatchObject({ ok: false, opened: false });
+    const second = await view.open(`https://chatgpt.com/c/${OTHER}`, { focus: false, reason: 'user' });
+    expect(second).toMatchObject({ ok: false, opened: false, verified: null });
+    expect(second.note).toMatch(/another site/);
+    expect(contents.loads).toHaveLength(2);
+  });
+
+  it('the error stays on screen after a cancelled retry, and a later open of the same page tries again', async () => {
+    let n = 0;
+    const { view, contents } = setup({ plan: () => (n++ === 0 ? { type: 'fail', code: -105, description: 'ERR_NAME_NOT_RESOLVED' } : n === 2 ? { type: 'redirect', to: 'https://example.org/x' } : { type: 'ok' }) });
+    await view.open(CONV, { focus: false, reason: 'user' });
+    await view.open(CONV, { focus: false, reason: 'user' });
+    expect(view.getState().status).toBe('error');
+    const third = await view.open(CONV, { focus: false, reason: 'user' });
+    expect(contents.loads).toEqual([CONV, CONV, CONV]);
+    expect(third).toMatchObject({ ok: true, verified: true });
+    expect(view.getState().status).toBe('ready');
   });
 
   it('a load that never ends is reported as still loading, unverified', async () => {

@@ -8,6 +8,7 @@
 // Config directory: CLAUDE_CONFIG_DIR is passed to the call only when it is explicitly set in the core's environment.
 // Setting it to the default (~/.claude) is NOT the same as leaving it unset: Claude Code then looks for its global
 // state in <dir>/.claude.json instead of ~/.claude.json.
+import { execFile } from 'node:child_process';
 import { takeSnapshot } from '@minisumma/claude-integration';
 import type { RawStoreLike, RunAgentsJsonOptions } from '@minisumma/claude-integration';
 import { isWslEnv } from '@minisumma/shared';
@@ -58,7 +59,24 @@ const LOCAL_TIMEOUT_MS = 20_000;
 /** The first call into a stopped WSL distribution has to start it. */
 const WSL_TIMEOUT_MS = 30_000;
 
-const binOf = (cmd: { file: string; prefixArgs: string[] }): string => (cmd.prefixArgs.length > 0 ? cmd.prefixArgs[cmd.prefixArgs.length - 1] : cmd.file);
+/**
+ * `claude agents --json` through a command that has leading arguments (a launcher script: `node cli.js ...`). The library's
+ * runAgentsJson takes only an executable, so this does the same thing for the prefixed form: same arguments, same
+ * environment handling, same error shape. A plain executable still goes through the library.
+ */
+function runAgentsWithPrefix(cmd: { file: string; prefixArgs: string[] }, opts: RunAgentsJsonOptions): Promise<{ raw: unknown }> {
+  const args = [...cmd.prefixArgs, 'agents', '--json'];
+  if (opts.all) args.push('--all');
+  if (opts.cwd) args.push('--cwd', opts.cwd);
+  const env = { ...process.env };
+  if (opts.configDir) env.CLAUDE_CONFIG_DIR = opts.configDir;
+  return new Promise((resolve, reject) => {
+    execFile(cmd.file, args, { env, timeout: opts.timeoutMs ?? LOCAL_TIMEOUT_MS, maxBuffer: 8 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+      if (err) { reject(Object.assign(new Error(`${cmd.file} ${args.join(' ')} failed: ${err.message}`), { stderr })); return; }
+      try { resolve({ raw: JSON.parse(stdout) }); } catch { reject(new Error(`unparsable output: ${String(stdout).slice(0, 200)}`)); }
+    });
+  });
+}
 
 function plainError(err: unknown): string {
   const text = (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0].trim();
@@ -94,14 +112,15 @@ export function createDiscovery(deps: DiscoveryDeps): Discovery {
       const runOpts: RunAgentsJsonOptions = { timeoutMs: command.wslDistro ? WSL_TIMEOUT_MS : LOCAL_TIMEOUT_MS };
       if (command.wslDistro) runOpts.wslDistro = command.wslDistro;
       else {
-        runOpts.bin = binOf(command);
+        runOpts.bin = command.file;
         if (env.CLAUDE_CONFIG_DIR) runOpts.configDir = env.CLAUDE_CONFIG_DIR;
       }
+      const prefixed = command.prefixArgs.length > 0 && !command.wslDistro;
       await takeSnapshot({
         store: deps.rawStore,
         spools: [layout.spoolDirHost],
         envId: id,
-        run: deps.run,
+        run: deps.run ?? (prefixed ? (o) => runAgentsWithPrefix(command, o) : undefined),
         runOpts,
         // pid liveness can be checked only for processes on this host: not for a WSL distribution seen from Windows
         remote: isWslEnv(id) && environments.hostEnv() === 'win',

@@ -111,6 +111,8 @@ export function createTailscaleService(deps: TailscaleDeps): TailscaleServiceImp
   }
 
   async function runCli(args: string[]): Promise<CliResult> {
+    // A check that was running when the service shut down must not start another program.
+    if (closed) return { found: true, ok: false, stdout: '', stderr: '', timedOut: false, errno: 'ECANCELED' };
     const order = [...new Set([...(workingBin ? [workingBin] : []), ...candidates()])];
     for (const bin of order) {
       const r = await execOnce(bin, args);
@@ -208,7 +210,14 @@ export function createTailscaleService(deps: TailscaleDeps): TailscaleServiceImp
     }
   }
 
+  /** What a stopped service answers: the last known state if there is one, with the reason it is not being checked. */
+  function stoppedStatus(): TailscaleStatus {
+    const base = last !== null ? structuredClone(last) : { ...emptyStatus(nowIso()), installed: true };
+    return { ...base, problem: 'Mini-Summa is shutting down, so Tailscale was not checked.' };
+  }
+
   function status(opts?: { refresh?: boolean }): Promise<TailscaleStatus> {
+    if (closed) return Promise.resolve(stoppedStatus());
     if (!opts?.refresh && last !== null && nowMs() - lastAtMs < ttlMs) return Promise.resolve(structuredClone(last));
     inflight ??= exclusive(compute).finally(() => { inflight = null; });
     return inflight.then((s) => structuredClone(s));
@@ -279,7 +288,7 @@ export function createTailscaleService(deps: TailscaleDeps): TailscaleServiceImp
     status,
 
     setServe(enabled) {
-      return exclusive(enabled ? enable : disable);
+      return closed ? Promise.resolve(stoppedStatus()) : exclusive(enabled ? enable : disable);
     },
 
     publicUrl() {

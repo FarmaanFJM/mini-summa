@@ -78,7 +78,7 @@ export function createBridgeHub(opts: { timeoutMs: number }): BridgeHub {
           resolve(o);
         }
         pending.set(requestId, { peer, settle });
-        if (!peer.send({ t: 'bridge.request', requestId, action: { kind: 'focus_or_open', url: parsed.info.url } })) settle({ kind: 'closed' });
+        if (!peer.send({ t: 'bridge.request', requestId, action: { kind: 'focus_or_open', url: url.trim() } })) settle({ kind: 'closed' });
       });
       if (outcome.kind === 'reply') return resultOfReply(outcome.reply);
       if (outcome.kind === 'closed') return failure('extension', 'The browser extension disconnected before it answered. Reconnect it, or open the conversation yourself.');

@@ -1,0 +1,70 @@
+/* Application frame, shared status pieces (banner, notice, state dot) and the placeholder views. */
+.ms-app { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--s0); }
+.ms-unconfigured { display: grid; place-items: center; height: 100%; padding: var(--sp-5); }
+
+/* ---------------------------------------------------------------- Connection banner */
+.ms-banner {
+  flex: none; display: flex; align-items: center; gap: var(--sp-3); min-height: 32px; padding: 5px var(--sp-4);
+  background: var(--s3); color: var(--text); font-size: var(--fs-sm);
+}
+.ms-banner__icon { color: var(--warn); }
+.ms-banner__sub { color: var(--text-2); }
+.ms-banner .sm-btn { margin-left: auto; }
+.ms-banner .sm-spinner { margin-left: auto; color: var(--text-2); }
+
+/* Live-looking things dim while the connection is not live, so stale data never reads as current. */
+.ms-app:not([data-connection="live"]) .ms-live { opacity: 0.45; }
+.ms-app:not([data-connection="live"]) .ms-dot { animation: none; }
+
+/* ---------------------------------------------------------------- State dot */
+.ms-dot { display: inline-block; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--text-3); }
+.ms-dot[data-tone="busy"] { background: var(--text); animation: ms-pulse 1.8s ease-in-out infinite; }
+.ms-dot[data-tone="idle"] { background: var(--text-2); }
+.ms-dot[data-tone="attention"], .ms-dot--attention { background: var(--warn); }
+.ms-dot[data-tone="error"] { background: var(--danger); }
+.ms-dot[data-tone="off"] { background: transparent; box-shadow: inset 0 0 0 1.5px var(--text-3); }
+@keyframes ms-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+.ms-meta { display: inline-flex; align-items: center; gap: 3px; color: var(--text-3); font-size: var(--fs-xs); line-height: 1; }
+
+/* ---------------------------------------------------------------- Notice: a calm line, not an alert */
+.ms-notice {
+  flex: none; display: flex; align-items: flex-start; gap: var(--sp-2); padding: 7px var(--sp-3) 7px 12px;
+  background: var(--s2); color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45;
+}
+.ms-notice > .sm-icon, .ms-notice > .sm-spinner { margin-top: 2px; }
+.ms-notice[data-tone="attention"] > .sm-icon { color: var(--warn); }
+.ms-notice[data-tone="error"] > .sm-icon { color: var(--danger); }
+.ms-notice__text { flex: 1; min-width: 0; color: var(--text); }
+.ms-notice__actions { flex: none; display: flex; align-items: center; gap: 4px; margin: -3px 0 -3px auto; }
+
+/* ---------------------------------------------------------------- Rows used in panes and dialogs */
+.ms-rows { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ms-row-item { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 6px 8px 6px 12px; border-radius: var(--r); background: var(--s1); min-width: 0; }
+.ms-row-item > .sm-icon { color: var(--text-3); }
+.ms-row-item__main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.ms-row-item__sub { color: var(--text-2); font-size: var(--fs-xs); line-height: 1.4; }
+.ms-row-item__actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.ms-row-item--conversation { align-items: flex-start; padding-top: 10px; padding-bottom: 10px; }
+.ms-row-item--conversation > .ms-choice { margin-top: 7px; }
+.ms-row-item--conversation .ms-row-item__actions { margin-top: 2px; }
+.sm-dialog .ms-row-item { background: var(--s4); }
+.sm-dialog .ms-row-item .sm-input { background: var(--s5); }
+.sm-dialog .ms-row-item .sm-btn--ghost:hover:not(:disabled) { background: var(--s5); }
+.sm-dialog .ms-row-item .sm-icon-btn:hover:not(:disabled) { background: var(--s5); }
+.ms-break { overflow-wrap: anywhere; }
+.ms-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* ---------------------------------------------------------------- Views that are not the workspace (placeholders) */
+.ms-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.ms-view__head { flex: none; display: flex; align-items: center; gap: var(--sp-3); height: 44px; padding: 0 var(--sp-5); background: var(--s1); border-bottom: 1px solid var(--line); }
+.ms-view__title { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; }
+.ms-view__body { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-4) var(--sp-5); }
+.ms-list { display: flex; flex-direction: column; gap: 2px; max-width: 880px; }
+.ms-list__row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: var(--sp-4); width: 100%; min-height: 36px; padding: 4px 12px; border: 0; border-radius: var(--r); background: none; color: var(--text); font: inherit; text-align: left; }
+button.ms-list__row { cursor: pointer; }
+button.ms-list__row:hover { background: var(--s2); }
+.ms-list__row--static { grid-template-columns: minmax(0, 1fr) auto auto auto; }
+.ms-list__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.ms-list__title[data-unread] { color: var(--text); font-weight: 600; }
+.ms-list__meta { color: var(--text-3); font-size: var(--fs-sm); white-space: nowrap; }

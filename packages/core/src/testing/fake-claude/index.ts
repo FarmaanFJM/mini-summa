@@ -52,6 +52,20 @@ export const directive = {
 } as const;
 
 // ---------------------------------------------------------------------------------------------------------------
+// Pasted prompts. The real CLI (2.1.314) shows a bracketed paste of 4 lines as "[Pasted text #1 +3 lines]" and reports it in
+// UserPromptSubmit.prompt wrapped in <pasted_content> tags; a 2-line paste arrives verbatim. The fake does the same from 3
+// newlines on (set FAKE_CLAUDE_PASTE_WRAP=0 to turn that off). received-*.jsonl always holds the text exactly as typed.
+
+export const PASTE_WRAP_MIN_NEWLINES = 3;
+
+/** true when the fake (like the real CLI) will report this pasted text wrapped. */
+export const isWrappedWhenPasted = (text: string): boolean => (text.replace(/\r\n?/g, '\n').match(/\n/g) ?? []).length >= PASTE_WRAP_MIN_NEWLINES;
+
+/** Turns a UserPromptSubmit prompt back into the text that was pasted. Text without a wrapper is returned unchanged. */
+export const unwrapPastedContent = (prompt: string): string =>
+  prompt.replace(/\n\n<pasted_content id="(\d+)">\n([\s\S]*?)\n<\/pasted_content id="\1">\n/g, (_m, _id, text: string) => text);
+
+// ---------------------------------------------------------------------------------------------------------------
 // Reading what the fake recorded
 
 export interface FakeHookRun { event: string; command: string; code: number | null; timedOut: boolean; ms: number }

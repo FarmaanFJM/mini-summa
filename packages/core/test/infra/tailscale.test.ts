@@ -619,19 +619,48 @@ describe.skipIf(process.platform === 'win32')('polling', () => {
     expect(countTimers()).toBeLessThanOrEqual(before);
   });
 
-  it('kills a command that is still running at shutdown and announces nothing afterwards', async () => {
+  it('kills a command that is still running at shutdown, settles the pending check and announces nothing afterwards', async () => {
     const fake = fakeTs({ hang: true });
-    const { svc } = setup(fake, { commandTimeoutMs: 30_000 }, 'tailscale');
-    svc.init();
+    const { svc } = setup(fake, { commandTimeoutMs: 30_000 });
+    const pending = svc.status({ refresh: true });
     await eventually(() => fake.calls().length >= 1);
     const eventCount = base!.events.length;
     const started = Date.now();
     svc.shutdown();
-    // the pending status() settles now instead of after 30 seconds
-    const settled = await svc.status();
+    const settled = await pending; // the child was killed, so this does not wait for the 30 second limit
     expect(Date.now() - started).toBeLessThan(5000);
     expect(settled.installed).toBe(true);
     expect(base!.events).toHaveLength(eventCount);
+    expect(fake.calls()).toHaveLength(1);
+  });
+
+  it('runs nothing and says so when it is used after shutdown', async () => {
+    const fake = fakeTs();
+    const { svc } = setup(fake);
+    const live = await svc.status({ refresh: true });
+    svc.shutdown();
+    fake.clearCalls();
+    const afterStatus = await svc.status({ refresh: true });
+    const afterServe = await svc.setServe(true);
+    for (const s of [afterStatus, afterServe]) {
+      expect(s).toMatchObject({ installed: true, running: true, dnsName: live.dnsName });
+      expect(s.problem).toMatch(/shutting down/);
+      expectPlainText(s.problem);
+    }
+    expect(fake.calls()).toEqual([]);
+    expect(svc.cachedStatus()).toEqual(live); // the stored state is untouched
+  });
+
+  it('does not start a second program for a check that was cut off in the middle', async () => {
+    const fake = fakeTs();
+    fake.set({ hang: true, hangOn: 'serve status' }); // `status --json` answers, `serve status --json` blocks
+    const { svc } = setup(fake, { commandTimeoutMs: 30_000 });
+    const pending = svc.status({ refresh: true });
+    await eventually(() => fake.callLines().includes('serve status --json'));
+    svc.shutdown();
+    const settled = await pending;
+    expect(settled.installed).toBe(true);
+    expect(fake.callLines()).toEqual(['status --json', 'serve status --json']);
   });
 
   it('keeps polling after a check that failed', async () => {

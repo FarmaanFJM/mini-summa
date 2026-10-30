@@ -189,8 +189,9 @@ describe('how the request reached us (via)', () => {
   it('is tailscale for a forwarded request addressed to the Serve host', async () => {
     expect(await viaOf({ 'x-forwarded-for': '100.64.0.7', host: 'box.tail1234.ts.net' })).toBe('tailscale');
   });
-  it('stays localhost for X-Forwarded-For on a local host name', async () => {
-    expect(await viaOf({ 'x-forwarded-for': '100.64.0.7' })).toBe('localhost');
+  it('is tailscale for any forwarded request, even one that claims a local host name (a tailnet client can forge Host)', async () => {
+    expect(await viaOf({ 'x-forwarded-for': '100.64.0.7' })).toBe('tailscale');
+    expect(await viaOf({ 'x-forwarded-for': '100.64.0.7', host: `127.0.0.1:${h.port}` })).toBe('tailscale');
   });
   it('is localhost for the Serve host name without any Serve headers', async () => {
     expect(await viaOf({ host: 'box.tail1234.ts.net' })).toBe('localhost');

@@ -13,7 +13,8 @@
 // chatgpt.com is never contacted: every host the app could reach is mapped to loopback or is an `.invalid` name.
 //
 // --as <user>  (root only) runs Electron as that user with Chromium's user-namespace sandbox ON. Without it, a root
-//              run has to pass --no-sandbox, and the report says so.
+//              run has to pass --no-sandbox, and the report says so. The other user must be able to reach the X server:
+//              xvfb-run -a -s "-ac" node apps/desktop/scripts/smoke.mjs --as nobody
 import { spawn, spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -54,6 +55,7 @@ const withTimeout = (promise, ms, label) => Promise.race([
   promise,
   new Promise((_, reject) => setTimeout(() => reject(new Error(`timed out after ${ms} ms: ${label}`)), ms)),
 ]);
+let diagnostics = async () => '';
 async function check(name, fn, ms = 40_000) {
   const t0 = Date.now();
   try {
@@ -63,6 +65,8 @@ async function check(name, fn, ms = 40_000) {
   } catch (error) {
     results.push({ name, ok: false, error: error.message });
     console.log(`FAIL  ${name}\n      ${String(error.message).split('\n').join('\n      ')}`);
+    const extra = await diagnostics().catch(() => '');
+    if (extra) console.log(`      recent web contents events: ${extra}`);
   }
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -171,7 +175,9 @@ function appEnv(extra = {}) {
 }
 
 async function launch(extra) {
-  const app = await electron.launch({ executablePath, args: [...sandboxArgs, mainJs], env: appEnv(extra), timeout: 60_000 });
+  // Launched like `electron .`: the app directory, so Electron reads package.json (name, version) as it does for a developer.
+  // Playwright adds --no-sandbox itself unless chromiumSandbox is true.
+  const app = await electron.launch({ executablePath, args: [...sandboxArgs, appRoot], env: appEnv(extra), timeout: 60_000, chromiumSandbox: !!asUser });
   const out = [];
   app.process().stdout?.on('data', (d) => out.push(String(d)));
   app.process().stderr?.on('data', (d) => out.push(String(d)));
@@ -196,7 +202,7 @@ const viewProbe = (app) => app.evaluate(({ BrowserWindow, session }) => {
     id: wc.id, url: wc.getURL(), title: wc.getTitle(), bounds: view.getBounds(), visible: view.getVisible(), focused: wc.isFocused(),
     inChatGptPartition: wc.session === session.fromPartition('persist:chatgpt'), inDefaultSession: wc.session === session.defaultSession,
     storagePath: wc.session.storagePath,
-    prefs: { sandbox: prefs.sandbox, contextIsolation: prefs.contextIsolation, nodeIntegration: prefs.nodeIntegration, webSecurity: prefs.webSecurity, webviewTag: prefs.webviewTag, hasPreload: !!prefs.preload, partition: prefs.partition },
+    prefs: { sandbox: prefs.sandbox, contextIsolation: prefs.contextIsolation, nodeIntegration: prefs.nodeIntegration, webSecurity: prefs.webSecurity, webviewTag: prefs.webviewTag, hasPreload: !!prefs.preload },
     userAgent: wc.getUserAgent(), defaultUserAgent: session.fromPartition('persist:chatgpt').getUserAgent(),
   };
 });
@@ -235,6 +241,16 @@ try {
     dialog.showSaveDialog = async (...a) => { globalThis.__saveDialog = a.at(-1); return { canceled: false, filePath: `${globalThis.__saveDir}/saved-report.md` }; };
   });
   await app.evaluate((_e, dir) => { globalThis.__saveDir = dir; }, run);
+  // Keep a short trail of web contents events, printed when a check fails.
+  await app.evaluate(({ app: a }) => {
+    globalThis.__events = [];
+    a.on('web-contents-created', (_e, wc) => {
+      for (const ev of ['did-start-loading', 'did-stop-loading', 'did-finish-load', 'did-fail-load', 'did-navigate', 'will-redirect', 'will-navigate']) {
+        wc.on(ev, (_x, ...args) => { globalThis.__events.push(`${wc.id}:${ev}${typeof args[0] === 'string' ? ` ${args[0].slice(0, 60)}` : ''}`); if (globalThis.__events.length > 60) globalThis.__events.shift(); });
+      }
+    });
+  });
+  diagnostics = async () => (await app.evaluate(() => globalThis.__events.slice(-25))).join(' | ');
 
   // ---- window, identity, options --------------------------------------------------------------------------------
 
@@ -422,21 +438,24 @@ try {
     assert.equal(saved.path, path.join(run, 'saved-report.md'));
     assert.equal(fs.readFileSync(saved.path, 'utf8'), 'café report');
     const dialogOptions = await app.evaluate(() => globalThis.__saveDialog);
-    assert.ok(!dialogOptions.defaultPath.includes('..'), dialogOptions.defaultPath);
+    const docs = await app.evaluate(({ app: a }) => a.getPath('documents'));
+    assert.equal(path.dirname(dialogOptions.defaultPath), docs, 'the suggested name must not climb out of the documents folder');
+    assert.equal(path.basename(dialogOptions.defaultPath), '_evil_.._report.md');
     await app.evaluate(() => { globalThis.__opened.length = 0; });
   });
 
   // ---- hardening of the main window --------------------------------------------------------------------------------
 
   await check('navigating the main window away from the core origin is blocked (https goes to the browser, the rest is dropped)', async () => {
+    await app.evaluate(() => { globalThis.__opened.length = 0; });
     const before = page.url();
     for (const target of ['https://example.org/away', 'http://127.0.0.1:1/', 'file:///etc/hostname', 'ftp://example.org/']) {
       await page.evaluate((t) => { try { window.location.href = t; } catch { /* blocked is the point */ } }, target).catch(() => undefined);
       await sleep(250);
       assert.equal(page.url(), before, `window moved to ${page.url()} for ${target}`);
     }
-    await page.click('#outside').catch(() => undefined);
-    await sleep(250);
+    await page.evaluate(() => document.getElementById('outside').click());
+    await until(async () => (await opened(app)).includes('https://outside.invalid/page'), 3000);
     assert.equal(page.url(), before);
     const out = await opened(app);
     assert.deepEqual(out, ['https://example.org/away', 'https://outside.invalid/page']);
@@ -444,6 +463,7 @@ try {
   });
 
   await check('window.open is denied: no new window, https goes to the browser', async () => {
+    await app.evaluate(() => { globalThis.__opened.length = 0; });
     const windowsBefore = app.windows().length;
     const r = await page.evaluate(() => ({ a: window.open('https://example.org/popup'), b: window.open('about:blank'), c: window.open(location.href) }));
     assert.deepEqual(r, { a: null, b: null, c: null });
@@ -510,10 +530,9 @@ try {
     assert.equal(v.focused, r.focused, 'focused claim must equal what the web contents reports');
     assert.equal(v.inChatGptPartition, true);
     assert.equal(v.inDefaultSession, false);
-    assert.equal(v.prefs.partition, 'persist:chatgpt');
     assert.match(v.storagePath ?? '', /Partitions\/chatgpt$/);
     assert.ok(v.storagePath.startsWith(profileDir), v.storagePath);
-    assert.deepEqual({ ...v.prefs, partition: undefined }, { sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, webviewTag: false, hasPreload: false, partition: undefined });
+    assert.deepEqual(v.prefs, { sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, webviewTag: false, hasPreload: false });
     assert.equal(hits.get('chatgpt.com/c/' + ID.ok), 1);
     return `focused=${r.focused}`;
   });
@@ -564,7 +583,7 @@ try {
   });
 
   await check('hiding the pane (null) and showing it again never destroys the page: scroll position and typed text survive', async () => {
-    await inView(app, 'window.scrollTo(0, 400); document.getElementById("composer").value = "draft that must survive"; document.getElementById("composer").focus(); 1');
+    await inView(app, 'document.getElementById("composer").value = "draft that must survive"; document.getElementById("composer").focus(); window.scrollTo(0, 400); 1');
     const before = await viewProbe(app);
     await page.evaluate(() => window.miniSumma.chatgpt.setBounds(null));
     assert.equal((await viewProbe(app)).visible, false);
@@ -589,13 +608,18 @@ try {
     await set(RECT);
     assert.deepEqual((await viewProbe(app)).bounds, RECT);
 
-    // Shrink the window so the pane no longer fits: the native view is clamped immediately, before the renderer reacts.
-    await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find((x) => !globalThis.__testWindows.has(x.id)); w.setContentSize(1100, 560); });
-    await until(async () => (await viewProbe(app)).bounds.height === 480);
-    const small = await viewProbe(app);
-    assert.deepEqual(small.bounds, { x: 300, y: 80, width: 700, height: 480 });
-    await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find((x) => !globalThis.__testWindows.has(x.id)); w.setContentSize(1100, 800); });
+    // Shrink the window so the pane no longer fits: the native view is clamped at once, before the renderer reacts.
+    // (The window has a 960x600 minimum, so use a pane that is bigger than that.)
+    const BIG = { x: 300, y: 80, width: 800, height: 700 };
+    await set(BIG);
+    assert.deepEqual((await viewProbe(app)).bounds, BIG);
+    await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find((x) => !globalThis.__testWindows.has(x.id)); w.setContentSize(1000, 600); });
     await until(async () => (await viewProbe(app)).bounds.height === 520);
+    assert.deepEqual((await viewProbe(app)).bounds, { x: 300, y: 80, width: 700, height: 520 });
+    await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find((x) => !globalThis.__testWindows.has(x.id)); w.setContentSize(1280, 900); });
+    await until(async () => (await viewProbe(app)).bounds.height === 700);
+    assert.deepEqual((await viewProbe(app)).bounds, BIG);
+    await set(RECT);
 
     // Fullscreen and back.
     const fs1 = await app.evaluate(async ({ BrowserWindow }) => {
@@ -733,15 +757,17 @@ try {
 
   await check('with no pane and no answer from the renderer, open() waits 2 s and reports that nothing was opened (the page is not touched)', async () => {
     await page.evaluate(() => { window.__placeOnWorkspace = false; return window.miniSumma.chatgpt.setBounds(null); });
+    const urlBefore = (await viewProbe(app)).url;
     const t0 = Date.now();
     const r = await (await fetch(`${core}/__test/open?url=${encodeURIComponent(conv(ID.other))}&focus=0&reason=handoff`)).json();
     const took = Date.now() - t0;
     assert.deepEqual([r.ok, r.opened, r.verified], [false, false, null]);
     assert.match(r.note, /not on screen/);
     assert.ok(took >= 1900 && took < 4500, `waited ${took} ms`);
-    assert.equal((await viewProbe(app)).url, conv(ID.ok));
-    await page.evaluate((x) => window.miniSumma.chatgpt.setBounds(x), RECT);
+    assert.equal((await viewProbe(app)).url, urlBefore);
   });
+
+  await page.evaluate((x) => window.miniSumma.chatgpt.setBounds(x), RECT).catch(() => undefined);
 
   // ---- notifications, links, tray, state -------------------------------------------------------------------------
 
@@ -772,7 +798,7 @@ try {
 
   await check('a second launch exits at once and forwards its link to the first instance (real single-instance lock)', async () => {
     await page.evaluate(() => { window.__nav.length = 0; });
-    const child = spawn(executablePath, [...sandboxArgs, mainJs, 'minisumma://settings?section=hooks'], { env: appEnv(), stdio: 'ignore' });
+    const child = spawn(executablePath, [...sandboxArgs, appRoot, 'minisumma://settings?section=hooks'], { env: appEnv(), stdio: 'ignore' });
     const code = await withTimeout(new Promise((resolve) => child.once('exit', resolve)), 30_000, 'second instance exit');
     assert.equal(code, 0);
     await until(async () => (await page.evaluate(() => window.__nav.length)) > 0, 10_000);

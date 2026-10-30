@@ -181,14 +181,21 @@ describe('extension bridge', () => {
     expect(extension.messages.some((m) => m.t === 'bridge.request')).toBe(false);
   });
 
-  it('sends the canonical address to the extension', async () => {
+  it('sends the address it was given, once it has checked that it is a ChatGPT address', async () => {
     const hh = await boot();
     const extension = await connect(hh, hh.tokens.extension);
-    const pending = hh.server.extensionBridge.openOrFocus('https://chat.openai.com/c/6A1B2C3D-1111-2222-3333-444455556666?model=x#frag');
+    const given = 'https://chatgpt.com/g/g-p-6a1b2c3d4e5f/c/6a1b2c3d-1111-2222-3333-444455556666';
+    const pending = hh.server.extensionBridge.openOrFocus(`  ${given}  `);
     const req = await nextRequest(extension);
-    expect(req.action).toEqual({ kind: 'focus_or_open', url: 'https://chatgpt.com/c/6a1b2c3d-1111-2222-3333-444455556666' });
+    expect(req.action).toEqual({ kind: 'focus_or_open', url: given });
     extension.send({ t: 'bridge.result', requestId: req.requestId, ok: true, data: { opened: true } });
     await pending;
+    // the legacy host name is accepted too
+    const legacy = hh.server.extensionBridge.openOrFocus('https://chat.openai.com/c/6a1b2c3d-1111-2222-3333-444455556666');
+    const req2 = await nextRequest(extension);
+    expect(req2.action).toMatchObject({ url: 'https://chat.openai.com/c/6a1b2c3d-1111-2222-3333-444455556666' });
+    extension.send({ t: 'bridge.result', requestId: req2.requestId, ok: true, data: { focused: true } });
+    await legacy;
   });
 
   it('keeps simultaneous requests apart', async () => {

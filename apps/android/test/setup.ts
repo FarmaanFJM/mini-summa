@@ -41,7 +41,11 @@ jest.mock('expo-notifications', () => ({
 
 jest.mock('expo-constants', () => ({ __esModule: true, default: { expoConfig: { version: '0.1.0' } } }));
 
-afterEach(() => { disposeAll(); });
+afterEach(() => {
+  // A test that fails halfway must not leave fake timers behind for the next one.
+  jest.useRealTimers();
+  disposeAll();
+});
 
 beforeEach(() => {
   setParams({});

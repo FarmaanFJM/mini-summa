@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { TerminalSink } from '../../src/contracts.ts';
-import { directive, readLiveFiles, readReceived, readTerminalSize } from '../../src/testing/fake-claude/index.ts';
+import { directive, isWrappedWhenPasted, readLiveFiles, readReceived, readTerminalSize, unwrapPastedContent } from '../../src/testing/fake-claude/index.ts';
 import { RecordingSink, createHarness, eventsOf, startWithSink, stripAnsi, waitFor, waitForText } from './managed-harness.ts';
 import type { Harness } from './managed-harness.ts';
 
@@ -163,8 +163,45 @@ describe('typeText: what Claude receives is exactly what was meant', () => {
     const received = readReceived(h.stateDir, record.sessionId);
     expect(received).toHaveLength(1);
     expect(received[0].text).toBe(text);
-    const prompt = h.spool().find((r) => r.event === 'UserPromptSubmit')!.payload.prompt;
-    expect(prompt).toBe(text);
+    // like the real CLI, the fake reports a long paste wrapped in <pasted_content> tags; unwrapped it is the typed text
+    const prompt = String(h.spool().find((r) => r.event === 'UserPromptSubmit')!.payload.prompt);
+    expect(unwrapPastedContent(prompt)).toBe(text);
+    expect(prompt === text).toBe(!isWrappedWhenPasted(text));
+    expect(h.spool().filter((r) => r.event === 'UserPromptSubmit')).toHaveLength(1);
+  });
+
+  it('reports a long paste the way the real CLI does: wrapped from 3 line breaks on, verbatim below (observed on 2.1.314)', async () => {
+    h = createHarness();
+    const manager = h.makeManager();
+    const { key, record, sink } = await ready(manager, h);
+    const four = 'Task for this session:\n1. Create a file.\n2. Its content is hi.\nThen finish.';
+    expect(await manager.typeText(key, four, { submit: true })).toBe(true);
+    await waitFor(() => eventsOf(h.spool(), record.sessionId).includes('Stop'), 'Stop');
+    expect(sink.plain).toContain('[Pasted text #1 +3 lines]');
+    const wrapped = String(h.spool().find((r) => r.event === 'UserPromptSubmit')!.payload.prompt);
+    expect(wrapped).toBe(`\n\n<pasted_content id="4098">\n${four}\n</pasted_content id="4098">\n`);
+    expect(readReceived(h.stateDir, record.sessionId)[0].text).toBe(four);
+
+    const two = 'Implement this small change:\nAppend a line.';
+    expect(await manager.typeText(key, two, { submit: true })).toBe(true);
+    await waitFor(() => h.spool().filter((r) => r.event === 'Stop').length === 2, 'second Stop');
+    const verbatim = h.spool().filter((r) => r.event === 'UserPromptSubmit')[1].payload.prompt;
+    expect(verbatim).toBe(two);
+  });
+
+  it('typed text before a pasted block keeps its place, and Backspace removes a collapsed paste as one piece', async () => {
+    h = createHarness();
+    const manager = h.makeManager();
+    const { key, record, sink } = await ready(manager, h);
+    const block = 'a\nb\nc\nd';
+    expect(await manager.typeText(key, 'oops', { submit: false })).toBe(true);
+    manager.write(key, '\x1b[200~' + block + '\x1b[201~');
+    await waitForText(sink, '[Pasted text #1 +3 lines]');
+    manager.write(key, '\x7f');                                  // removes the whole placeholder
+    manager.write(key, '\x7f\x7f');                              // then two letters
+    manager.write(key, '!\r');
+    await waitFor(() => readReceived(h.stateDir, record.sessionId).length === 1, 'the prompt');
+    expect(readReceived(h.stateDir, record.sessionId)[0].text).toBe('oo!');
   });
 
   it('without submit the text waits in the input box until the user presses Enter', async () => {

@@ -48,6 +48,14 @@ const intEnv = (name, fallback) => {
   const n = Number.parseInt(process.env[name] ?? '', 10);
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 };
+// Observed on the real CLI (2.1.314, packages/core/test/claude/REAL-CLAUDE-RUNS.md): a bracketed paste of 4 lines is shown
+// as "[Pasted text #1 +3 lines]" and submitted wrapped as "\n\n<pasted_content id=\"N\">\n...\n</pasted_content id=\"N\">\n";
+// a paste of 2 lines arrives verbatim. The exact threshold is unknown; 3 newlines is the smallest size seen wrapped.
+const PASTE_WRAP = process.env.FAKE_CLAUDE_PASTE_WRAP !== '0';
+const PASTE_WRAP_MIN_NEWLINES = 3;
+const PASTE_ID_BASE = 4097;
+const PASTE_OPEN = '\uE000';     // private-use markers that stand for a collapsed paste inside the input buffer
+const PASTE_CLOSE = '\uE001';
 const THINK_MS = intEnv('FAKE_CLAUDE_THINK_MS', 120);
 const NOTIFY_MS = intEnv('FAKE_CLAUDE_NOTIFY_MS', 6000);
 const IDLE_NOTIFY_MS = intEnv('FAKE_CLAUDE_IDLE_NOTIFY_MS', 0);
@@ -385,7 +393,8 @@ async function runInteractive(parsed) {
     exiting: false,
     turn: null,
     queue: [],
-    buffer: '',
+    buffer: '',                   // typed text; a collapsed paste is PASTE_OPEN <id> PASTE_CLOSE
+    pastes: new Map(),
     inputMode: 'prompt',          // prompt | dialog | question
     dialogResolve: null,
     answer: '',
@@ -425,6 +434,16 @@ async function runInteractive(parsed) {
     const payload = {};
     for (const key of Object.keys(template)) payload[key] = key in known ? known[key] : template[key];
     Object.assign(payload, extra);
+    if (event === 'SessionStart' && S.source === 'resume') {
+      // Observed on the real CLI: a resumed start has no `model`, and carries these numeric fields instead.
+      delete payload.model;
+      let bytes = 0;
+      let idleSeconds = 0;
+      try { const st = fs.statSync(S.transcriptPath); bytes = st.size; idleSeconds = Math.max(0, Math.round((Date.now() - st.mtimeMs) / 1000)); } catch { /* no transcript yet */ }
+      Object.assign(payload, {
+        seconds_since_last_response: idleSeconds, context_tokens: Math.round(bytes / 4), prompt_cache_likely_expired: idleSeconds > 300, estimated_cache_write_usd: 0.0072,
+      });
+    }
     for (const key of Object.keys(payload)) if (payload[key] === undefined) delete payload[key];
     return payload;
   };
@@ -505,7 +524,9 @@ async function runInteractive(parsed) {
   const bold = (s) => `\x1b[1m${s}\x1b[22m`;
   const dim = (s) => `\x1b[2m${s}\x1b[22m`;
   const accent = (s) => `\x1b[38;5;209m${s}\x1b[39m`;
-  const showPrompt = () => out(`\n${accent('>')} ${S.buffer}`);
+  const pasteLabel = (id) => `[Pasted text #${id} +${(S.pastes.get(id).match(/\n/g) ?? []).length} lines]`;
+  const render = (raw) => raw.replace(/\uE000(\d+)\uE001/g, (_, id) => pasteLabel(Number(id)));
+  const showPrompt = () => out(`\n${accent('>')} ${render(S.buffer)}`);
   const say = (text) => out(`\n${accent('●')} ${text.replace(/\n/g, '\n  ')}\n`);
 
   // --- turns
@@ -540,7 +561,8 @@ async function runInteractive(parsed) {
 
   const askPermission = (toolName, input, signal) => {
     const shown = toolName === 'Bash' ? input.command : JSON.stringify(input);
-    out(`\n${dim('────────────────────────────────────────────')}\n ${bold(`${toolName} command`)}\n\n   ${shown}\n\n Do you want to proceed?\n ${accent('❯')} 1. Yes\n   2. Yes, and don't ask again this session\n   3. No, and tell Claude what to do differently (esc)\n`);
+    // Layout and numbering as seen on the real CLI (2.1.314, manual mode).
+    out(`\n${dim('────────────────────────────────────────────')}\n ${bold(toolName === 'Bash' ? 'Bash command' : `${toolName} request`)}\n\n   ${input.description ?? shown}\n   ${dim('╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌')}\n   ${shown}\n   ${dim('╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌')}\n Do you want to proceed?\n ${accent('❯')} 1. Yes\n   2. Yes, and always allow access to ${cwd} from this project\n   3. Yes, and switch to auto mode · auto mode handles these prompts for you\n   4. No\n\n Esc to cancel · Tab to amend\n`);
     // Real CLI: the Notification follows the PermissionRequest by about 6 s, only if the dialog is still open.
     const notifyTimer = setTimeout(() => {
       if (S.inputMode === 'dialog') fireInBackground('Notification', { message: 'Claude needs your permission', notification_type: 'permission_prompt' });
@@ -594,15 +616,16 @@ async function runInteractive(parsed) {
     `<!-- mini-summa:report status=${status} task="${task}" -->`,
   ].join('\n');
 
-  const runTurn = async (text) => {
+  const runTurn = async (entry) => {
+    const text = entry.text;
     const controller = new AbortController();
     const signal = controller.signal;
     S.turn = { controller };
     S.promptId = randomUUID();
     setStatus('busy');
-    transcript({ type: 'user', message: { role: 'user', content: text } });
+    transcript({ type: 'user', message: { role: 'user', content: entry.hookText } });
     try {
-      await fireHook('UserPromptSubmit', { prompt: text });
+      await fireHook('UserPromptSubmit', { prompt: entry.hookText });
       out(`${dim('✻ Thinking… (esc to interrupt)')}\n`);
       await sleepAbortable(THINK_MS, signal);
       let reply = null;
@@ -683,7 +706,7 @@ async function runInteractive(parsed) {
     } finally { pumping = false; }
   };
 
-  const submit = (text) => {
+  const submit = (text, hookText = text) => {
     if (text.trim() === '') return;
     if (/^\/(exit|quit)\s*$/.test(text.trim())) { void requestExit('prompt_input_exit'); return; }
     if (text.startsWith('/') && !text.includes('\n') && !text.includes('[[fake:')) {
@@ -692,7 +715,7 @@ async function runInteractive(parsed) {
       return;
     }
     try { fs.appendFileSync(stateFile(`received-${sessionId}.jsonl`), `${JSON.stringify({ text, at: new Date().toISOString() })}\n`); } catch { /* ignore */ }
-    S.queue.push(text);
+    S.queue.push({ text, hookText });
     void pump();
   };
 
@@ -738,22 +761,43 @@ async function runInteractive(parsed) {
     S.buffer += text;
     out(text);
   };
+  const insertPaste = (raw) => {
+    const text = raw.replace(/\r\n?/g, '\n');
+    if (!text || S.inputMode === 'dialog') return;
+    if (PASTE_WRAP && S.inputMode === 'prompt' && (text.match(/\n/g) ?? []).length >= PASTE_WRAP_MIN_NEWLINES) {
+      const id = S.pastes.size + 1;
+      S.pastes.set(id, text);
+      S.buffer += `${PASTE_OPEN}${id}${PASTE_CLOSE}`;
+      out(pasteLabel(id));
+    } else insert(text);
+  };
   const enter = () => {
     if (S.inputMode === 'dialog') { S.dialogResolve?.('approve'); return; }
     if (S.inputMode === 'question') { out('\n'); S.dialogResolve?.(S.answer); return; }
-    const text = S.buffer;
+    const raw = S.buffer;
     out('\n');
     S.buffer = '';
-    submit(text);
+    // `text` is what was typed, byte for byte; `hookText` is what the real CLI reports in UserPromptSubmit.
+    const text = raw.replace(/\uE000(\d+)\uE001/g, (_, id) => S.pastes.get(Number(id)) ?? '');
+    const hookText = raw.replace(/\uE000(\d+)\uE001/g, (_, id) => {
+      const n = PASTE_ID_BASE + Number(id);
+      return `\n\n<pasted_content id="${n}">\n${S.pastes.get(Number(id))}\n</pasted_content id="${n}">\n`;
+    });
+    submit(text, hookText);
   };
   const backspace = () => {
     if (S.inputMode === 'question') { if (S.answer) { S.answer = S.answer.slice(0, -1); out('\b \b'); } return; }
-    if (S.inputMode === 'prompt' && S.buffer) { S.buffer = S.buffer.slice(0, -1); out('\b \b'); }
+    if (S.inputMode !== 'prompt' || !S.buffer) return;
+    if (S.buffer.endsWith(PASTE_CLOSE)) {                       // a collapsed paste is removed as one piece
+      const at = S.buffer.lastIndexOf(PASTE_OPEN);
+      out('\b \b'.repeat(render(S.buffer.slice(at)).length));
+      S.buffer = S.buffer.slice(0, at);
+    } else { S.buffer = S.buffer.slice(0, -1); out('\b \b'); }
   };
   const onChar = (ch) => {
     if (S.inputMode === 'dialog') {
-      if (ch === '\r' || ch === '\n' || ch === '1' || ch === '2') S.dialogResolve?.('approve');
-      else if (ch === '3' || ch === 'n') S.dialogResolve?.('reject');
+      if (ch === '\r' || ch === '\n' || ch === '1' || ch === '2' || ch === '3') S.dialogResolve?.('approve');
+      else if (ch === '4') S.dialogResolve?.('reject');
       else if (ch === '\x03') ctrlC();
       return;
     }
@@ -761,12 +805,13 @@ async function runInteractive(parsed) {
     if (ch === '\x7f' || ch === '\b') return backspace();
     if (ch === '\x03') return ctrlC();
     if (ch === '\x04') { if (S.buffer === '' && !S.turn) { const second = Date.now() - S.lastCtrlC < DOUBLE_PRESS_MS; S.lastCtrlC = Date.now(); if (second) void requestExit('prompt_input_exit'); else out(`\n${dim('Press Ctrl-D again to exit')}\n`); } return; }
-    if (ch === '\x15') { if (S.inputMode === 'prompt') { out('\b \b'.repeat(S.buffer.length)); S.buffer = ''; } return; }
+    if (ch === '\x15') { if (S.inputMode === 'prompt') { out('\b \b'.repeat(render(S.buffer).length)); S.buffer = ''; } return; }
     if (ch < ' ') return;
     insert(ch);
   };
 
   let inPaste = false;
+  let pasteAcc = '';
   let carry = '';
   const partialSuffix = (text, marker) => {
     for (let n = Math.min(marker.length - 1, text.length); n > 0; n--) if (marker.startsWith(text.slice(text.length - n))) return n;
@@ -783,13 +828,13 @@ async function runInteractive(parsed) {
         const end = data.indexOf(PASTE_END, i);
         if (end === -1) {
           const keep = partialSuffix(data.slice(i), PASTE_END);
-          const text = data.slice(i, data.length - keep).replace(/\r\n?/g, '\n');
-          if (text && S.inputMode !== 'dialog') insert(text);
+          pasteAcc += data.slice(i, data.length - keep);
           carry = data.slice(data.length - keep);
           break;
         }
-        const text = data.slice(i, end).replace(/\r\n?/g, '\n');
-        if (text && S.inputMode !== 'dialog') insert(text);
+        pasteAcc += data.slice(i, end);
+        insertPaste(pasteAcc);
+        pasteAcc = '';
         inPaste = false;
         i = end + PASTE_END.length;
         continue;

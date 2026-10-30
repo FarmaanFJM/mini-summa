@@ -179,13 +179,19 @@ export function createNotificationsService(deps: NotificationsServiceDeps): Noti
 
         const sendPush = async (): Promise<NotificationChannelResult> => {
           if (!prefs.push) return 'suppressed_project';
-          const provider = deps.push;
-          if (!provider || !provider.configured()) return 'not_applicable';
-          const targets = deps.devices.pushTargets();
-          if (targets.length === 0) return 'not_applicable';
-          if (quiet) return 'suppressed_quiet';
-          const { sent } = await pushTo(provider, targets, pushPayloadFor(activity, notifiable, projectLabel));
-          return sent > 0 ? 'sent' : 'failed';
+          try {
+            const provider = deps.push;
+            if (!provider || !provider.configured()) return 'not_applicable';
+            const targets = deps.devices.pushTargets();
+            if (targets.length === 0) return 'not_applicable';
+            if (quiet) return 'suppressed_quiet';
+            const { sent } = await pushTo(provider, targets, pushPayloadFor(activity, notifiable, projectLabel));
+            return sent > 0 ? 'sent' : 'failed';
+          } catch (err) {
+            // One channel breaking must not stop the record from being written: the desktop may already have shown it.
+            log.warn('push notification failed', { error: String(err) });
+            return 'failed';
+          }
         };
 
         const [native, push] = await Promise.all([sendNative(), sendPush()]);

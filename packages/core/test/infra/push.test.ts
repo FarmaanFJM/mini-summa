@@ -66,6 +66,7 @@ class FakeGoogle {
     const fcmError = (errorCode: string, extra: object = {}) => ({ '@type': 'type.googleapis.com/google.firebase.fcm.v1.FcmError', errorCode, ...extra });
     if (t.startsWith('good')) return this.json(res, 200, { name: `projects/${m[1]}/messages/0:${Date.now()}` });
     if (t.startsWith('gone404')) return this.json(res, 404, { error: { code: 404, message: 'Requested entity was not found.', status: 'NOT_FOUND', details: [fcmError('UNREGISTERED')] } });
+    if (t.startsWith('plain404')) return this.json(res, 404, 'Not Found');
     if (t.startsWith('gone410')) return this.json(res, 410, 'registration gone');
     if (t.startsWith('unregistered')) return this.json(res, 400, { error: { code: 400, message: 'unregistered', status: 'FAILED_PRECONDITION', details: [fcmError('UNREGISTERED')] } });
     if (t.startsWith('invalid')) return this.json(res, 400, { error: { code: 400, message: 'The registration token is not a valid FCM registration token', status: 'INVALID_ARGUMENT', details: [fcmError('INVALID_ARGUMENT')] } });
@@ -75,6 +76,7 @@ class FakeGoogle {
     if (t.startsWith('badtokenfield')) {
       return this.json(res, 400, { error: { code: 400, message: 'bad', status: 'INVALID_ARGUMENT', details: [{ '@type': 'type.googleapis.com/google.rpc.BadRequest', fieldViolations: [{ field: 'message.token', description: 'not a valid FCM registration token' }] }, fcmError('INVALID_ARGUMENT')] } });
     }
+    if (t.startsWith('statusonly')) return this.json(res, 400, { error: { code: 400, message: 'bad request', status: 'INVALID_ARGUMENT' } });
     if (t.startsWith('plain400')) return this.json(res, 400, { error: { code: 400, message: 'Something else is wrong with the request', status: 'FAILED_PRECONDITION' } });
     if (t.startsWith('denied')) return this.json(res, 403, { error: { code: 403, message: 'Firebase Cloud Messaging API has not been used in project 123 before or it is disabled.', status: 'PERMISSION_DENIED' } });
     if (t.startsWith('busy')) return this.json(res, 429, { error: { code: 429, message: 'Quota exceeded', status: 'RESOURCE_EXHAUSTED' } });
@@ -130,6 +132,15 @@ let dataDir: string;
 beforeAll(async () => { google = new FakeGoogle(); await google.start(); });
 afterAll(async () => { await google.stop(); });
 afterEach(() => { base?.close(); cleanupTempDirs(); });
+
+/** A port on 127.0.0.1 that nothing listens on (port 1 and similar are refused by fetch itself). */
+async function closedPort(): Promise<number> {
+  const server = http.createServer();
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((r) => server.close(() => r()));
+  return port;
+}
 
 function accountJson(over: Record<string, unknown> = {}): string {
   return JSON.stringify({
@@ -226,12 +237,26 @@ describe('importing the service account', () => {
       expect(err.message).toMatch(/Firebase|Paste|Copy/);
       expectPlainText(err.message);
       // the refusal never quotes the key or the pasted text
-      expect(err.message).not.toMatch(/BEGIN|MII[A-Za-z0-9]/);
+      expect(err.message).not.toMatch(/MII[A-Za-z0-9]/);
+      expect(err.message).not.toContain('nope');
+      expect(err.message).not.toContain(privateKey.slice(40, 90));
       expect(provider.configured()).toBe(false);
       expect(fs.existsSync(secretFile())).toBe(false);
       expect(settings.get().mobile.push).toEqual({ provider: 'none', configured: false });
     });
   }
+
+  it('accepts the file as Windows tools save it: with a byte order mark and surrounding blank lines', () => {
+    const { provider } = setup();
+    expect(provider.configureFromJson(`\uFEFF\r\n${accountJson()}\r\n\r\n`)).toEqual({ firebaseProject: PROJECT });
+    expect(provider.configured()).toBe(true);
+  });
+
+  it('keeps the private key exactly as it was given (line breaks included)', () => {
+    const { provider } = setup();
+    provider.configureFromJson(accountJson());
+    expect(JSON.parse(fs.readFileSync(secretFile(), 'utf8')).private_key).toBe(privateKey);
+  });
 
   it('keeps the previous setup when a new import is refused', () => {
     const { provider } = setup();
@@ -458,10 +483,12 @@ describe('sending', () => {
     const cases: [string, string, 'sent' | 'failed' | 'invalid_token', RegExp | null][] = [
       ['200', 'good-1', 'sent', null],
       ['404 NOT_FOUND with UNREGISTERED', 'gone404-1', 'invalid_token', /no longer registered/],
+      ['404 with nothing but text', 'plain404-1', 'invalid_token', /no longer registered/],
       ['410', 'gone410-1', 'invalid_token', /no longer registered/],
       ['errorCode UNREGISTERED', 'unregistered-1', 'invalid_token', /no longer registered/],
       ['errorCode INVALID_ARGUMENT', 'invalid-1', 'invalid_token', /no longer registered/],
       ['INVALID_ARGUMENT that names the token field', 'badtokenfield-1', 'invalid_token', /no longer registered/],
+      ['a bare INVALID_ARGUMENT status without details', 'statusonly-1', 'invalid_token', /no longer registered/],
       ['INVALID_ARGUMENT about other fields (a bug in the message, not a dead token)', 'badpayload-1', 'failed', /rejected the notification \(HTTP 400\)/],
       ['a 400 with nothing about tokens', 'plain400-1', 'failed', /rejected the notification \(HTTP 400\): Something else is wrong/],
       ['403', 'denied-1', 'failed', /refused the request \(HTTP 403\).*Firebase Cloud Messaging API has not been used.*API is enabled/],
@@ -506,12 +533,9 @@ describe('sending', () => {
     it('keeps long error texts short', async () => {
       const { provider } = setup();
       provider.configureFromJson(accountJson());
-      const token = 'echo-' + 'x'.repeat(10);
-      const long = 'y'.repeat(2000);
-      const original = google.requests.length;
-      expect(original).toBe(0);
-      // reuse the denied path with a long message by sending to a token whose handler echoes it
-      const [r] = await provider.send([{ deviceId: 'a', token: `${token}${long}` }], payload());
+      // the fake echoes the whole device token in its error message, so a very long token makes a very long message
+      const [r] = await provider.send([{ deviceId: 'a', token: `echo-${'y'.repeat(2000)}` }], payload());
+      expect(r.result).toBe('failed');
       expect((r.error ?? '').length).toBeLessThan(400);
     });
   });
@@ -527,7 +551,7 @@ describe('sending', () => {
     });
 
     it('reports a server that is not there', async () => {
-      const { provider } = setup({}, { endpoint: 'http://127.0.0.1:1' });
+      const { provider } = setup({}, { endpoint: `http://127.0.0.1:${await closedPort()}` });
       provider.configureFromJson(accountJson());
       const [r] = await provider.send([{ deviceId: 'a', token: 'good-1' }], payload());
       expect(r.result).toBe('failed');
@@ -536,7 +560,7 @@ describe('sending', () => {
 
     it('reports an unreachable sign-in server too', async () => {
       const { provider } = setup();
-      provider.configureFromJson(accountJson({ token_uri: 'http://127.0.0.1:1/token' }));
+      provider.configureFromJson(accountJson({ token_uri: `http://127.0.0.1:${await closedPort()}/token` }));
       const [r] = await provider.send([{ deviceId: 'a', token: 'good-1' }], payload());
       expect(r.result).toBe('failed');
       expect(r.error).toMatch(/Could not reach Google to sign in the service account \(ECONNREFUSED\)/);

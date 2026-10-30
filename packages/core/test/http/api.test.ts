@@ -109,7 +109,7 @@ describe('validation', () => {
     expect(ok.json().text).toBe('part 2 of d1');
   });
 });
-const em = (text: string) => text.includes('—');
+const em = (text: string) => text.includes('\u2014');
 
 describe('error mapping', () => {
   it('keeps the status, code, message and details of a CoreError', async () => {
@@ -640,5 +640,39 @@ describe('conversations.open and conversations.verify', () => {
     expect(verificationOf(result({ ok: false }), ready)).toBe('unreachable');
     expect(verificationOf(result({ verified: true }), { status: 'login_required' })).toBe('login_required');
     expect(verificationOf(result({ verified: true }), { status: 'challenge' })).toBe('unreachable');
+  });
+});
+
+describe('wording of what the server says', () => {
+  it('uses no em dashes in any message a person can read, and every message tells what to do or what is wrong', async () => {
+    const hh = await boot({ push: null, overrides: { projects: { require: () => { throw new Error('boom'); } } } });
+    const messages: string[] = [];
+    const take = (res: { json: <T>() => T }) => messages.push((res.json<{ error: { message: string } }>()).error.message);
+    take(await api(hh, 'GET', '/counts'));                                                                           // 401
+    take(await api(hh, 'POST', '/projects', { token: hh.tokens.read, body: { name: 'x' } }));                         // 403 scope
+    take(await raw(hh.port, { path: '/api/v1/health', headers: { host: 'evil.example' } }));                         // 403 host
+    take(await api(hh, 'POST', '/projects', { token: hh.tokens.desktop, body: { name: 'x' }, headers: { origin: 'https://evil.example' } })); // 403 origin
+    take(await api(hh, 'POST', '/projects', { token: hh.tokens.desktop, body: {} }));                                 // 400 body
+    take(await api(hh, 'GET', '/reports?limit=zero', { token: hh.tokens.read }));                                     // 400 query
+    take(await raw(hh.port, { method: 'POST', path: '/api/v1/projects', headers: { authorization: `Bearer ${hh.tokens.desktop}` }, body: '{' })); // invalid json
+    take(await raw(hh.port, { method: 'POST', path: '/api/v1/projects', headers: { authorization: `Bearer ${hh.tokens.desktop}` }, body: 'x'.repeat(1024 * 1024 + 1) })); // 413
+    take(await api(hh, 'GET', '/nothing', { token: hh.tokens.read }));                                                // 404
+    take(await api(hh, 'GET', '/sessions/nope', { token: hh.tokens.read }));                                          // 400 session key
+    take(await api(hh, 'GET', '/deliveries/d1/parts/x', { token: hh.tokens.desktop }));                               // 400 part
+    take(await api(hh, 'POST', '/projects', { token: hh.tokens.desktop, body: { name: 'x' }, headers: { 'idempotency-key': 'a b' } })); // 400 key
+    take(await api(hh, 'POST', '/push/configure', { token: hh.tokens.desktop, body: { serviceAccountJson: 'x'.repeat(60) } })); // 503
+    take(await api(hh, 'POST', '/conversations/c1/verify', { token: hh.tokens.desktop }));                            // 503
+    take(await api(hh, 'GET', '/projects/p1', { token: hh.tokens.read }));                                            // 500
+    for (let i = 0; i < 11; i++) await api(hh, 'POST', '/pairing/redeem', { body: { offerId: 'o', code: 'abcdefgh1234', deviceName: 'x', platform: 'android' } });
+    take(await api(hh, 'POST', '/pairing/redeem', { body: { offerId: 'o', code: 'abcdefgh1234', deviceName: 'x', platform: 'android' } })); // 429
+    await api(hh, 'POST', '/activity/read', { token: hh.tokens.read, body: { all: true }, headers: { 'idempotency-key': 'k' } });
+    hh.db.run("INSERT INTO idempotency (key, principal, route, response_status, response_json, created_at) VALUES ('k2','desktop','projects.create',200,'{\"v\":1,\"fp\":\"other\",\"body\":{}}', ?)", [hh.clock.now().toISOString()]);
+    take(await api(hh, 'POST', '/projects', { token: hh.tokens.desktop, body: { name: 'x' }, headers: { 'idempotency-key': 'k2' } })); // 422
+    expect(messages.length).toBe(17);
+    for (const m of messages) {
+      expect(m, m).not.toMatch(/—|–/);
+      expect(m.trim().length).toBeGreaterThan(15);
+      expect(m, m).toMatch(/[.!]$/);
+    }
   });
 });

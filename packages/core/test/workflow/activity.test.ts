@@ -72,7 +72,7 @@ describe('activity.record', () => {
 
   it('never stores an em dash: title and description are rewritten, the entry is kept to one line', () => {
     const { env, add } = setup();
-    const { activity } = add({ title: 'Report ready: Fix login — add tests\nsecond line', description: 'Claude finished—probably.' });
+    const { activity } = add({ title: 'Report ready: Fix login \u2014 add tests\nsecond line', description: 'Claude finished\u2014probably.' });
     expect(activity.title).toBe('Report ready: Fix login - add tests second line');
     expect(activity.description).toBe('Claude finished - probably.');
     const stored = env.db.get<{ title: string; description: string }>('SELECT title, description FROM activity')!;
@@ -348,5 +348,22 @@ describe('activity.prune', () => {
     const { svc, add } = setup();
     add({ at: OLD });
     expect(svc.prune(CUTOFF)).toBe(0);
+  });
+});
+
+describe('markRead acknowledges entries that nothing else can close', () => {
+  it('resolves open error and action_result entries but not permission or delivery entries', () => {
+    const { env, svc, add } = setup();
+    for (const [id, type] of [['e1', 'error'], ['a1', 'action_result'], ['p1x', 'needs_permission'], ['d1', 'delivery_state']] as const) {
+      add({ id, type, severity: 'attention', requiresAction: true });
+    }
+    expect(svc.counts().actionsNeeded).toBe(4);
+    svc.markRead({ all: true });
+    expect(svc.counts()).toEqual({ unreadActivity: 0, actionsNeeded: 2 });
+    expect(svc.get('e1')!.resolvedAt).not.toBeNull();
+    expect(svc.get('a1')!.resolvedAt).not.toBeNull();
+    expect(svc.get('p1x')!.resolvedAt).toBeNull();
+    expect(svc.get('d1')!.resolvedAt).toBeNull();
+    expect(env.of('activity.updated').map((e) => (e as { activity: { id: string } }).activity.id).sort()).toEqual(['a1', 'e1']);
   });
 });

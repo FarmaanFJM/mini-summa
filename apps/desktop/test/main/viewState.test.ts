@@ -30,6 +30,7 @@ describe('deriveViewState: status table', () => {
     { name: 'failure beats a stale address', o: { failure: { code: -2, description: 'ERR_FAILED' } }, status: 'error', note: null },
     { name: 'aborted load says nothing about the page', o: { failure: { code: -3, description: 'ERR_ABORTED' } }, status: 'ready', note: null },
     { name: 'loading beats aborted', o: { loading: true, failure: { code: -3, description: 'ERR_ABORTED' } }, status: 'loading', note: null },
+    { name: 'a retry in progress is loading even after a failure', o: { loading: true, failure: { code: -105, description: 'ERR_NAME_NOT_RESOLVED' } }, status: 'loading', note: null },
   ];
   it.each(rows)('$name -> $status', ({ o, status, note }) => {
     const state = deriveViewState(obs(o), nav);

@@ -84,7 +84,7 @@ describe('port already in use', () => {
     expect((err as Error).message).toMatch(/already in use/);
     expect((err as Error).message).toMatch(/port 0/);
     expect(((err as Error).cause as NodeJS.ErrnoException).code).toBe('EADDRINUSE');
-    expect((err as Error).message).not.toMatch(/—/);
+    expect((err as Error).message).not.toMatch(/\u2014/);
     // nothing is left half open
     await second.server.stop();
     expect((await api(first, 'GET', '/health')).status).toBe(200);

@@ -1,8 +1,17 @@
 // Keystrokes Mini-Summa sends into a Claude Code terminal, in one place.
 //
-// Everything here was chosen from how Claude Code's terminal UI is documented to behave and then CONFIRMED against the
-// real CLI (see packages/core/test/claude/REAL-CLAUDE-RUNS.md). If a later Claude Code release changes a dialog, this is
-// the only file that has to change; the rest of the code asks for `approve`/`reject` and for "type this text".
+// CONFIRMED against the real CLI (Claude Code 2.1.314, Linux, 2026-10-30; evidence in
+// packages/core/test/claude/REAL-CLAUDE-RUNS.md). Not run on Windows (ConPTY) or in WSL.
+//  - approve = Enter. The permission dialog is "Do you want to proceed?  1. Yes / 2. Yes, and always allow ... / 3. Yes, and
+//    switch to auto mode / 4. No" with "1. Yes" highlighted; Enter ran the tool (PostToolUse fired, the file was written).
+//  - reject = Escape. "Interrupted - What should Claude do instead?": the tool did not run, no PostToolUse, no Stop.
+//  - text = the text, then Enter as its own write 150 ms later: one prompt, verbatim. Several lines go in as ONE bracketed
+//    paste (then Enter 150 ms later): a single UserPromptSubmit. Caveat of the real CLI: a paste of 4 lines is reported in
+//    UserPromptSubmit.prompt wrapped in <pasted_content id="N"> tags; a paste of 2 lines is reported verbatim.
+//  - Enter selects whatever is highlighted. In the permission dialog that is "Yes", but in the first-run folder-trust dialog it
+//    is "No, exit". Callers must only answer a dialog the hooks have reported (state needs_permission), never blindly.
+// If a later Claude Code release changes a dialog, this is the only file that has to change; the rest of the code asks for
+// `approve`/`reject` and for "type this text".
 
 export type PermissionDecision = 'approve' | 'reject';
 

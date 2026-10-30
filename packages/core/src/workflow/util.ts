@@ -25,7 +25,7 @@ export function unpackText(value: unknown): string {
 export const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 /** Product rule: nothing a person reads contains an em dash. A dash that joins two clauses becomes " - ". */
-export const noEmDashes = (text: string): string => text.replace(/\s*—\s*/g, ' - ');
+export const noEmDashes = (text: string): string => text.replace(/\s*\u2014\s*/g, ' - ');
 
 export function clampInt(value: number | undefined, min: number, max: number, fallback: number): number {
   if (value === undefined || !Number.isFinite(value)) return fallback;

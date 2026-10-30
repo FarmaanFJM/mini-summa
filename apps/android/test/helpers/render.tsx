@@ -6,6 +6,7 @@ import type { Credentials } from '../../src/connection/credentials';
 import { ToastProvider } from '../../src/ui/overlays';
 import { createFakeCore } from './fakeCore';
 import type { CoreData, FakeCore } from './fakeCore';
+import type { ServerEvent } from '@minisumma/shared';
 
 export const creds: Credentials = { baseUrl: 'https://pc.tail1234.ts.net', token: 'tok-secret', deviceId: 'dev_1', serverName: "Farmaan's PC" };
 
@@ -35,4 +36,10 @@ export async function mount(ui: ReactElement, opts: { seed?: Partial<CoreData>; 
   );
   await flush(2);
   return Object.assign(utils, { core, manager });
+}
+
+/** A live event from the desktop, delivered inside act so React sees the update the way it would on a device. */
+export async function emit(core: FakeCore, seq: number, event: ServerEvent): Promise<void> {
+  await act(async () => { core.emit(seq, event); });
+  await flush(2);
 }

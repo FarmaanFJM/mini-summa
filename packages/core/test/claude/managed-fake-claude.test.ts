@@ -332,17 +332,21 @@ describe('the fake CLI: a turn', () => {
     expect(fake.exit()).toBeNull();
   });
 
-  it('the permission dialog waits: status "waiting", Enter / 1 / 2 approve, Esc / 3 reject; Notification follows after a while', async () => {
+  it('the permission dialog waits: status "waiting", Enter / 1 / 3 approve, Esc / 4 reject; Notification follows after a while', async () => {
     const s = setup();
     const fake = launch([], {}, s);
     await fake.text('? for shortcuts');
     await waitFor(() => fake.names().includes('SessionStart'), 'SessionStart');
-    for (const [key, approved] of [['\r', true], ['1', true], ['2', true], ['\x1b', false], ['3', false]] as const) {
+    for (const [key, approved] of [['\r', true], ['1', true], ['3', true], ['\x1b', false], ['4', false]] as const) {
       const marker = path.join(s.cwd, `marker-${approved ? 'yes' : 'no'}-${key.charCodeAt(0)}.txt`);
       fake.write(`${directive.permission('bash', `touch ${path.basename(marker)}`)}\r`);
       await waitFor(() => readLiveFiles(s.state)[0]?.status === 'waiting', 'the dialog');
       expect(readLiveFiles(s.state)[0]).toMatchObject({ status: 'waiting', waitingFor: 'permission prompt' });
-      if (key === '\r') await waitFor(() => fake.events().some((e) => e.event === 'Notification'), 'the delayed Notification');
+      if (key === '\r') {
+        await waitFor(() => fake.events().some((e) => e.event === 'Notification'), 'the delayed Notification');
+        // the dialog has the layout and numbering seen on the real CLI
+        for (const line of ['Bash command', 'Do you want to proceed?', '1. Yes', '2. Yes, and always allow access to', '3. Yes, and switch to auto mode', '4. No', 'Esc to cancel']) expect(fake.plain()).toContain(line);
+      }
       await waitFor(() => fake.names().filter((n) => n === 'PermissionRequest').length >= 1, 'PermissionRequest');
       fake.write(key);
       await waitFor(() => readLiveFiles(s.state)[0]?.status === 'idle', 'idle again');

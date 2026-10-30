@@ -1,6 +1,15 @@
 // One handler per entry of the shared route table (`routes`). `HandlerMap` is a mapped type over every route name, so
 // forgetting a route is a compile error. Handlers only translate: validation happened before them, authentication and
 // scope checks too, and the services own all behaviour.
+//
+// Local decisions (also in the worker report):
+//  * `system.state` lists projects the way `projects.list` does by default (archived ones stay hidden) and sessions
+//    without ended ones; the conversations are those of the listed projects.
+//  * `projects.remove` archives unless `?mode=delete` is given: deleting must be asked for.
+//  * `pairing.createOffer` offers `read` + `notify` unless the caller names scopes, and only `extension` for an
+//    extension offer. Phone offers list the Tailscale URL first, then this server's own address.
+//  * `devices.self` describes the desktop token with a synthetic device (id `desktop`), since it has no device row.
+//  * `push.configure` / `push.clear` also record `mobile.push` in the settings, as the settings schema expects.
 import { API_VERSION, isSessionKey } from '@minisumma/shared';
 import type { Counts, Device, HookStatus, Scope, SessionKey, StateSnapshot, SystemInfo } from '@minisumma/shared';
 import type { CoreBase } from '../contracts.ts';

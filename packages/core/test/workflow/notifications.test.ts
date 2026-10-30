@@ -319,6 +319,19 @@ describe('notifications: push', () => {
     expect(t.devices.cleared).toEqual(['dev_old']);
   });
 
+  it('still writes the record, once, when the device list or the provider itself breaks after the desktop was told', async () => {
+    const t = setup();
+    t.devices.pushTargets = () => { throw new Error('device store is down'); };
+    const record = await t.consider({ h: { dedupeKey: 'broken' } });
+    expect(record).toMatchObject({ native: 'sent', push: 'failed' });
+    expect(t.native.notifications).toHaveLength(1);
+    expect(await t.consider({ h: { dedupeKey: 'broken' } })).toBeNull(); // so a retry does not notify the desktop twice
+    expect(t.native.notifications).toHaveLength(1);
+    const t2 = setup();
+    (t2.push as FakePush).configured = () => { throw new Error('credentials unreadable'); };
+    expect((await t2.consider())!.push).toBe('failed');
+  });
+
   it('is "failed" when no device took it, or the provider throws', async () => {
     const t = setup();
     (t.push as FakePush).respond = (targets) => targets.map((x) => ({ deviceId: x.deviceId, result: 'invalid_token' as const }));

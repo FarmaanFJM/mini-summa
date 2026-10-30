@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 import { CH } from '../../src/main/channels.ts';
-import { createWindowRouter } from '../../src/main/windowRouter.ts';
+import { EventEmitter } from 'node:events';
+import { createWindowRouter, trackRendererReadiness } from '../../src/main/windowRouter.ts';
 import type { RoutableWindow } from '../../src/main/windowRouter.ts';
 
 function fakeWindow(state: { minimized?: boolean; visible?: boolean; destroyed?: boolean } = {}) {
@@ -108,5 +109,38 @@ describe('createWindowRouter', () => {
     router.navigate(target);
     expect(calls).toEqual([]);
     expect(router.reveal()).toBe(false);
+  });
+});
+
+describe('trackRendererReadiness', () => {
+  it('is ready after the page loads, not ready while a new document replaces it, ready again after', () => {
+    const { win, calls } = fakeWindow();
+    const router = createWindowRouter(() => win, log());
+    const contents = new EventEmitter();
+    trackRendererReadiness(contents as never, router);
+
+    router.navigate(target);
+    expect(calls.some((c) => c.startsWith('send:'))).toBe(false);
+    contents.emit('did-finish-load');
+    expect(calls.filter((c) => c.startsWith('send:'))).toHaveLength(1);
+
+    contents.emit('did-navigate');
+    router.navigate({ view: 'activity' });
+    expect(calls.filter((c) => c.startsWith('send:'))).toHaveLength(1);
+    contents.emit('did-finish-load');
+    expect(calls.filter((c) => c.startsWith('send:'))).toHaveLength(2);
+  });
+
+  it('a navigation that the window guard cancelled never un-readies the renderer', () => {
+    // Observed in Electron 45: a cancelled navigation emits did-start-loading and did-stop-loading, and nothing else.
+    const { win, calls } = fakeWindow();
+    const router = createWindowRouter(() => win, log());
+    const contents = new EventEmitter();
+    trackRendererReadiness(contents as never, router);
+    contents.emit('did-finish-load');
+    contents.emit('did-start-loading');
+    contents.emit('did-stop-loading');
+    router.navigate(target);
+    expect(calls.filter((c) => c.startsWith('send:'))).toHaveLength(1);
   });
 });

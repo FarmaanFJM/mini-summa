@@ -22,7 +22,7 @@ import type {
 export interface OrchestratorDeps {
   base: CoreBase;
   sessions: Pick<SessionsService, 'subscribe' | 'get'>;
-  reports: Pick<ReportsService, 'capture' | 'captureCandidate' | 'list'>;
+  reports: Pick<ReportsService, 'capture' | 'captureCandidate' | 'list' | 'summary'>;
   deliveries: Pick<DeliveriesService, 'onReportCaptured' | 'list'>;
   activity: Pick<ActivityService, 'record' | 'resolve' | 'get'>;
   notifications: Pick<NotificationsService, 'consider'>;
@@ -44,6 +44,7 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
   const { base, sessions, reports, deliveries, activity, notifications, actions } = deps;
   const log = base.log;
   const lastDeliveryState = new Map<string, string>();
+  const lastDeliverySignature = new Map<string, string>();
 
   const label = (view: Pick<SessionView, 'projectName' | 'key'>): string =>
     `${view.projectName ?? 'Unassigned session'} / ${shortSessionId(view.key)}`;
@@ -208,6 +209,18 @@ export function createOrchestrator(deps: OrchestratorDeps): Orchestrator {
 
   // ---- deliveries and actions ----------------------------------------------------------------------------------
   function onDelivery(delivery: Delivery): void {
+    // A report summary embeds its latest delivery (state, review, destination). Keep it fresh for clients that only
+    // watch reports, instead of leaving them with the snapshot from the moment the report was created.
+    const signature = `${delivery.state}|${delivery.review}|${delivery.destination?.conversationId ?? ''}`;
+    if (lastDeliverySignature.get(delivery.id) !== signature) {
+      lastDeliverySignature.set(delivery.id, signature);
+      try {
+        const fresh = reports.summary(delivery.reportId);
+        if (fresh) base.bus.emit({ type: 'report.upserted', report: fresh });
+      } catch (err) {
+        log.warn('could not refresh a report summary', { error: String(err), report: delivery.reportId });
+      }
+    }
     const previous = lastDeliveryState.get(delivery.id);
     lastDeliveryState.set(delivery.id, delivery.state);
     if (previous === delivery.state) return;

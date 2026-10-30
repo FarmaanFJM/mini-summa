@@ -260,6 +260,30 @@ describe('layout', () => {
     expect(script).toMatch(/claude-integration[\\/](dist[\\/]capture\.mjs|src[\\/]hook[\\/]capture\.mjs)$/);
   });
 
+  it('gives the host layout without waiting for a slow Claude version check (startup must not hang on it)', async () => {
+    const bin = tmp();
+    const claude = exe(bin);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const root = tmp();
+    const svc = createEnvironmentsService({
+      base: base(path.join(root, 'data')), settings: createFakeSettings(), overrides: { homeDir: root, captureScript: '/opt/ms/capture.mjs', nodeRuntime: { command: 'node', runAsNode: false } },
+      run: async (file, args) => {
+        if (file === claude && args[0] === '--version') await gate;
+        return { stdout: file === claude ? '2.1.0\n' : 'v22.0.0\n', stderr: '', code: 0 };
+      },
+      host: { platform: 'linux', env: { PATH: bin } },
+    });
+    const layout = await svc.layout('posix'); // returns while the version check is still hanging
+    expect(layout.runtime).toMatchObject({ command: 'node', version: '22.0.0' });
+    let listed = false;
+    const list = svc.list().then((l) => { listed = true; return l; });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(listed).toBe(false); // the full description does wait for it
+    release();
+    expect((await list)[0]).toMatchObject({ available: true, claude: { version: '2.1.0' } });
+  });
+
   it('refuses an environment it does not know: layout() rejects with 404, claudeCommand() answers null', async () => {
     const t = linux();
     await expect(t.svc.layout('win')).rejects.toMatchObject({ status: 404, code: 'unknown_environment' });
@@ -325,7 +349,7 @@ const utf16 = (text: string, bom = true): Buffer => Buffer.from(`${bom ? '\uFEFF
 
 interface Distro { claude?: 'ok' | 'missing' | 'login-only' | 'broken'; node?: boolean; home?: string | null; wslpath?: boolean; down?: boolean }
 
-function windows(distros: Record<string, Distro>, opts: { listing?: (() => CommandResult) | null; files?: string[]; env?: Record<string, string>; dataDir?: string; settings?: FakeSettings } = {}) {
+function windows(distros: Record<string, Distro>, opts: { listing?: (() => Partial<CommandResult>) | null; files?: string[]; env?: Record<string, string>; dataDir?: string; settings?: FakeSettings } = {}) {
   const files = new Set(opts.files ?? []);
   const handler = (file: string, args: string[]): Partial<CommandResult> | undefined => {
     if (/claude\.(exe|cmd)$/i.test(file) && args[0] === '--version') return ok('2.1.314 (Claude Code)\n');

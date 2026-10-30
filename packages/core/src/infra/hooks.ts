@@ -246,7 +246,7 @@ function detectIndent(text: string): string {
 }
 
 function parseSettings(text: string, file: string): Loaded {
-  const bom = text.startsWith('﻿');
+  const bom = text.startsWith('\uFEFF');
   const body = bom ? text.slice(1) : text;
   const eol = body.includes('\r\n') ? '\r\n' : '\n';
   const base = { exists: true, text, bom, eol, indent: detectIndent(body), finalNewline: body === '' || /\n$/.test(body) } as const;
@@ -269,7 +269,7 @@ function serialize(root: Obj, like: Pick<Loaded, 'bom' | 'eol' | 'indent' | 'fin
   let out = JSON.stringify(root, null, like.indent);
   if (like.eol === '\r\n') out = out.replace(/\n/g, '\r\n');
   if (like.finalNewline) out += like.eol;
-  return (like.bom ? '﻿' : '') + out;
+  return (like.bom ? '\uFEFF' : '') + out;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

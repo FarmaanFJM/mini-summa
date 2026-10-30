@@ -17,6 +17,8 @@ export interface MenuItem {
   danger?: boolean;
   /** Present for check items (menuitemcheckbox); the check mark shows when true. */
   checked?: boolean;
+  /** With `checked`: one of several exclusive choices (menuitemradio). */
+  radio?: boolean;
   onSelect: () => void;
 }
 export interface MenuSeparator { type: 'separator' }
@@ -162,7 +164,7 @@ export function Menu({ label, items, trigger, placement = 'bottom-start', open: 
             <button
               key={entry.id ?? `${entry.label}-${i}`}
               type="button"
-              role={check ? 'menuitemcheckbox' : 'menuitem'}
+              role={check ? (entry.radio ? 'menuitemradio' : 'menuitemcheckbox') : 'menuitem'}
               aria-checked={check ? entry.checked : undefined}
               tabIndex={-1}
               disabled={entry.disabled}

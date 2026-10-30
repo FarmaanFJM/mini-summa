@@ -32,7 +32,7 @@ export function hookEntry(opts: { n: number; env?: EnvId; payload: HookPayload; 
     transport_id: opts.tid ?? `t-${env}-${opts.n}`, received_at: isoAt(opts.n), wall_ms: Date.parse(isoAt(opts.n)), monotonic_ns: String(1000 + opts.n * 10),
     capture_version: 1, hook_arg: String(opts.payload.hook_event_name ?? ''), handler_id: opts.handler ?? 'h1', env_id: env,
     clock_domain: opts.domain === undefined ? `${env}|fx` : opts.domain, pid: 1, ppid: 1, platform: 'linux', claude_project_dir: null,
-    claude_config_dir: null, claude_code_remote: null, redactions: 0, truncations: 0, parse_error: null,
+    claude_config_dir: null, claude_code_remote: null, redactions: 0, truncations: 0, truncated_chars: 0, parse_error: null,
   };
   return { kind: 'hook', transport, payload: opts.payload };
 }

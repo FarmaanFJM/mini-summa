@@ -97,3 +97,35 @@ export function formatRelative(iso: string | null, now: number = Date.now()): st
 }
 
 export type SessionStateName = SessionState;
+
+// ---------------------------------------------------------------------------------------------------------------
+// The calm notice above a managed session's terminal
+
+export interface Notice { tone: 'info' | 'attention' | 'error'; text: string; canResume: boolean }
+
+/** What happened to (or is being asked by) a managed session, in words. Observed sessions have their own panel. */
+export function noticeFor(session: SessionView, actions: readonly PendingAction[]): Notice | null {
+  if (session.origin !== 'managed') return null;
+  if (session.availability === 'disconnected') {
+    return {
+      tone: 'info', canResume: session.resumable,
+      text: 'Mini-Summa lost its connection to this terminal, for example after a restart. The Claude process may or may not still be running.',
+    };
+  }
+  if (session.availability === 'ended' || session.availability === 'resumable') {
+    const t = session.termination;
+    const reason = t ? t.reason.replace(/\.$/, '') : 'the session is no longer running';
+    const guess = t?.kind === 'suspected' ? ' This is a guess: the session disappeared from Claude\'s list and nothing confirmed that it ended.' : '';
+    return { tone: session.state === 'error' ? 'error' : 'info', canResume: session.resumable, text: `This session ended: ${reason}.${guess}` };
+  }
+  const waiting = waitingFor(session, actions);
+  if (waiting) return { tone: 'attention', text: waiting, canResume: false };
+  if (session.state === 'error') return { tone: 'error', text: 'Claude reported an error. Check the terminal.', canResume: false };
+  if (session.state === 'presence_lost') return { tone: 'attention', text: 'Mini-Summa can no longer see this session. It may have ended.', canResume: false };
+  return null;
+}
+
+export const OBSERVED_WHY: Record<'external' | 'background', string> = {
+  external: 'This session was started outside Mini-Summa, in another terminal. Mini-Summa sees it through Claude Code hooks, so it can show its state but cannot type into it.',
+  background: 'This is a background session. It has no terminal that Mini-Summa could type into; it is observed through Claude Code hooks.',
+};

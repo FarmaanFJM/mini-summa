@@ -1,0 +1,21 @@
+/* Project dialog. Filled rows on the dialog surface, no boxes inside boxes. */
+.ms-form { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; }
+.ms-grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-3); }
+@media (max-width: 560px) { .ms-grid-2 { grid-template-columns: minmax(0, 1fr); } }
+
+.ms-inline { display: flex; align-items: stretch; gap: var(--sp-2); min-width: 0; }
+.ms-inline .sm-input { flex: 1; min-width: 0; }
+.ms-inline .sm-btn { flex: none; }
+
+.ms-roots, .ms-conversations { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+
+.ms-feedback { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); color: var(--text-2); min-width: 0; }
+.ms-feedback p { margin: 0; }
+.ms-feedback__label { color: var(--text-3); }
+.ms-feedback__note { color: var(--text-2); }
+.ms-feedback__warn { display: flex; align-items: flex-start; gap: 6px; color: var(--text-2); }
+.ms-feedback__warn .sm-icon { margin-top: 2px; color: var(--warn); }
+.ms-feedback .ms-field { gap: 6px; }
+
+.ms-row-item__sub[data-verification="verified"] { color: var(--text-2); }
+.ms-row-item__sub[data-verification="mismatch"], .ms-row-item__sub[data-verification="unreachable"], .ms-row-item__sub[data-verification="login_required"] { color: var(--warn); }

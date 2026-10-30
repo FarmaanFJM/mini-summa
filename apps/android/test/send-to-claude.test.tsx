@@ -4,10 +4,10 @@ import { SessionDetailScreen } from '../src/screens/SessionDetail';
 import { RemoteControlScreen } from '../src/screens/RemoteControl';
 import { Linking } from 'react-native';
 import { router, setParams } from './mocks/expo-router';
-import { makeAction, makeDevice, makeSession, SESSION_KEY } from './helpers/data';
+import { makeAction, makeDevice, makeSession, makeSnapshot, SESSION_KEY } from './helpers/data';
 import { createFakeCore, settle } from './helpers/fakeCore';
 import type { FakeCore, Reply } from './helpers/fakeCore';
-import { flush, mount } from './helpers/render';
+import { emit, flush, mount } from './helpers/render';
 import type { PendingAction } from '@minisumma/shared';
 
 const PROMPT = 'Please run the full test suite and report any failures.';
@@ -35,7 +35,7 @@ describe('only managed, live sessions can reach the confirm step', () => {
     ['a disconnected managed session', makeSession({ availability: 'disconnected' }), 'Mini-Summa lost the terminal connection to this session, so it cannot send text to it.'],
     ['an ended managed session', makeSession({ availability: 'ended' }), 'This session has ended.'],
   ])('%s shows why and has no way to compose or confirm', async (_name, session, reason) => {
-    const { core } = await openSend({ snapshot: { ...(await import('./helpers/data')).makeSnapshot({ sessions: [session] }) } });
+    const { core } = await openSend({ snapshot: makeSnapshot({ sessions: [session] }) });
     expect(screen.getByText(reason)).toBeOnTheScreen();
     expect(screen.queryByLabelText('Text to send')).toBeNull();
     expect(screen.queryByText('Review')).toBeNull();
@@ -44,7 +44,7 @@ describe('only managed, live sessions can reach the confirm step', () => {
   });
 
   it('offers Remote Control for an external session', async () => {
-    await openSend({ snapshot: (await import('./helpers/data')).makeSnapshot({ sessions: [makeSession({ origin: 'external' })] }) });
+    await openSend({ snapshot: makeSnapshot({ sessions: [makeSession({ origin: 'external' })] }) });
     await fireEvent.press(screen.getByText('Continue with Remote Control'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/session/remote-control', params: { key: SESSION_KEY } });
   });
@@ -70,7 +70,6 @@ describe('the session screen', () => {
 
   it('for an external session explains it is observed only and offers Remote Control instead of Send', async () => {
     setParams({ key: SESSION_KEY });
-    const { makeSnapshot } = await import('./helpers/data');
     await mount(<SessionDetailScreen />, { seed: { snapshot: makeSnapshot({ sessions: [makeSession({ origin: 'external' })] }) } });
     expect(screen.queryByText('Send to Claude')).toBeNull();
     expect(screen.getByText(/observes it but cannot type into it/)).toBeOnTheScreen();
@@ -80,7 +79,6 @@ describe('the session screen', () => {
 
   it('words a suspected end as "may have ended" and an observed end as "ended"', async () => {
     setParams({ key: SESSION_KEY });
-    const { makeSnapshot } = await import('./helpers/data');
     const suspected = makeSession({ availability: 'resumable', termination: { kind: 'suspected', reason: 'absent from the last listing', at: null } });
     const { unmount } = await mount(<SessionDetailScreen />, { seed: { snapshot: makeSnapshot({ sessions: [suspected] }) } });
     expect(screen.getByText(/May have ended\. Claude Code stopped listing it, which is not confirmation/)).toBeOnTheScreen();
@@ -132,25 +130,25 @@ describe('composing, confirming and sending', () => {
     await flush();
     expect(screen.getByText('Waiting for approval on your PC')).toBeOnTheScreen();
     const sent = core.data.actions[0];
-    core.emit(11, { type: 'action.upserted', action: { ...sent, status: 'executed', executedAt: '2026-10-30T10:00:00.000Z' } });
-    await flush();
+    await emit(core, 11, { type: 'action.upserted', action: { ...sent, status: 'executed', executedAt: '2026-10-30T10:00:00.000Z' } });
     expect(screen.getByText('Sent')).toBeOnTheScreen();
   });
 
   it('shows a failed send as failed with the reason and never retries it on its own', async () => {
-    jest.useFakeTimers();
-    try {
-      const core = createFakeCore();
-      core.on('POST /actions', () => created(core, 'failed', 'The session is waiting for permission and cannot take typed text.'));
-      await openSend({}, core);
-      await compose();
-      await fireEvent.press(screen.getByText('Send to Claude'));
-      await settle();
-      expect(screen.getByText('Could not send: The session is waiting for permission and cannot take typed text.')).toBeOnTheScreen();
-      await jest.advanceTimersByTimeAsync(10 * 60_000);
-      await settle();
-      expect(sendCalls(core)).toHaveLength(1);
-    } finally { jest.useRealTimers(); }
+    const core = createFakeCore();
+    core.on('POST /actions', () => created(core, 'failed', 'The session is waiting for permission and cannot take typed text.'));
+    await openSend({}, core);
+    await compose();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    await fireEvent.press(screen.getByText('Send to Claude'));
+    await settle();
+    expect(screen.getByText('Could not send: The session is waiting for permission and cannot take typed text.')).toBeOnTheScreen();
+    expect(sendCalls(core)).toHaveLength(1);
+    // Ten minutes later nothing has been sent again: there is no automatic retry of any kind.
+    await jest.advanceTimersByTimeAsync(10 * 60_000);
+    await settle();
+    expect(sendCalls(core)).toHaveLength(1);
+    expect(screen.queryByText('Retry')).toBeNull();
   });
 
   it('keeps the same idempotency key when a flaky network loses the answer, so Retry cannot send twice', async () => {
@@ -229,8 +227,7 @@ describe('composing, confirming and sending', () => {
   it('warns and withholds Send if the session was restarted while reviewing', async () => {
     const { core } = await openSend();
     await compose();
-    core.emit(11, { type: 'session.upserted', session: makeSession({ generation: 3 }) });
-    await flush();
+    await emit(core, 11, { type: 'session.upserted', session: makeSession({ generation: 3 }) });
     expect(screen.getByText(/restarted while you were reviewing/)).toBeOnTheScreen();
     expect(screen.queryByText('Send to Claude')).toBeNull();
     expect(screen.getByText('Review again')).toBeOnTheScreen();
@@ -248,7 +245,6 @@ describe('Remote Control for external sessions', () => {
   it('explains what to type and opens claude.ai/code', async () => {
     const open = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
     setParams({ key: SESSION_KEY });
-    const { makeSnapshot } = await import('./helpers/data');
     await mount(<RemoteControlScreen />, { seed: { snapshot: makeSnapshot({ sessions: [makeSession({ origin: 'external' })] }) } });
     expect(screen.getByText('Mini-Summa observes external sessions but cannot type into them.')).toBeOnTheScreen();
     expect(screen.getByText(/type \/remote-control/)).toBeOnTheScreen();

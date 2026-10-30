@@ -15,7 +15,7 @@ interface R {
   unresolved?: number; prompted?: boolean;
 }
 const reducer = (o: R = {}): ReducerFields => ({
-  state: o.state ?? 'idle', evidence: o.evidence ?? 'hook:SessionStart', cwd: o.cwd === undefined ? '/w/proj' : o.cwd, hook_seen: o.hookSeen ?? true,
+  state: o.state ?? 'idle', evidence: (o.evidence ?? 'hook:SessionStart') as ReducerFields['evidence'], cwd: o.cwd === undefined ? '/w/proj' : o.cwd, hook_seen: o.hookSeen ?? true,
   observed: o.kind === undefined && o.pid === undefined ? null : { status: null, waitingFor: null, kind: o.kind ?? 'interactive', pid: o.pid ?? null },
   gen: {
     n: o.n ?? 1, phase: (o.phase ?? 'live') as ReducerFields['gen']['phase'], proc: o.proc === undefined ? null : o.proc,

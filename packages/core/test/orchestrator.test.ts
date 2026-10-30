@@ -41,7 +41,7 @@ function harness() {
   const orch = createOrchestrator({
     base,
     sessions: { subscribe(h) { handlers.current = h; return () => { handlers.current = null; }; }, get: () => view() },
-    reports: { capture: (r) => { captured.push(r.reportId); return { report: {} as ReportSummary, created: true }; }, captureCandidate: () => ({ created: true }), list: () => ({ items: [], nextBefore: null }) },
+    reports: { capture: (r) => { captured.push(r.reportId); return { report: {} as ReportSummary, created: true }; }, captureCandidate: () => ({ created: true }), list: () => ({ items: [], nextBefore: null }), summary: (id) => summary(id) },
     deliveries: { onReportCaptured: (r) => { const d = deliveriesByReport.get(r.id) ?? delivery(r.id); deliveriesByReport.set(r.id, d); return d; }, list: ({ reportId }) => (reportId && deliveriesByReport.has(reportId) ? [deliveriesByReport.get(reportId)!] : []) },
     activity: {
       record(input) {
@@ -176,6 +176,17 @@ describe('orchestrator: reports and deliveries', () => {
     expect(h.resolved).toContainEqual({ link: { kind: 'delivery', id: 'dlv_r4' } });
   });
 
+  it('keeps the report summary current when its delivery changes', () => {
+    const h = harness();
+    const seen: string[] = [];
+    h.bus.subscribe((_s, e) => { if (e.type === 'report.upserted') seen.push(e.report.id); });
+    h.bus.emit({ type: 'delivery.upserted', delivery: h.delivery('r9', { state: 'ready_for_handoff' }) });
+    h.bus.emit({ type: 'delivery.upserted', delivery: h.delivery('r9', { state: 'ready_for_handoff' }) }); // nothing changed
+    h.bus.emit({ type: 'delivery.upserted', delivery: h.delivery('r9', { state: 'copied' }) });
+    h.bus.emit({ type: 'delivery.upserted', delivery: h.delivery('r9', { state: 'copied', review: 'requested' }) });
+    expect(seen).toEqual(['r9', 'r9', 'r9']);
+  });
+
   it('reconcile repairs a report that has no delivery and notifies nothing', () => {
     const h = harness();
     const base = { bus: h.bus, log: { debug() {}, info() {}, warn() {}, error() {} } } as unknown as CoreBase;
@@ -183,7 +194,7 @@ describe('orchestrator: reports and deliveries', () => {
     const created: string[] = [];
     const orch = createOrchestrator({
       base, sessions: { subscribe: () => () => {}, get: () => null },
-      reports: { capture: () => ({ report: missing, created: false }), captureCandidate: () => ({ created: false }), list: () => ({ items: [missing], nextBefore: null }) },
+      reports: { capture: () => ({ report: missing, created: false }), captureCandidate: () => ({ created: false }), list: () => ({ items: [missing], nextBefore: null }), summary: () => missing },
       deliveries: { onReportCaptured: (r) => { created.push(r.id); return h.delivery(r.id); }, list: () => [] },
       activity: { record: (i) => { h.recorded.push(i); return { activity: {} as ActivityEvent, created: true }; }, resolve: () => 0, get: () => null },
       notifications: { consider: async () => { throw new Error('must not notify during reconcile'); } },

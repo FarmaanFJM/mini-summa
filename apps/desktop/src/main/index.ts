@@ -28,7 +28,7 @@ import { hardenMainSession, hardenWebContentsCreation } from './security.ts';
 import { applyHostRules, installCertificateTrust, readTestSeams, resolveDataDir, resolveUserDataDir } from './testSeams.ts';
 import type { TestSeams } from './testSeams.ts';
 import { createAppTray } from './tray.ts';
-import { createWindowRouter } from './windowRouter.ts';
+import { createWindowRouter, trackRendererReadiness } from './windowRouter.ts';
 
 // ---- before ready: identity and paths --------------------------------------------------------------------------------
 
@@ -220,8 +220,7 @@ async function start(launchLink: string | null): Promise<void> {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CH.chatgptState, state);
   });
 
-  win.webContents.on('did-start-loading', () => router.setRendererReady(false));
-  win.webContents.on('did-finish-load', () => router.setRendererReady(true));
+  trackRendererReadiness(win.webContents, router);
   win.on('close', (event) => {
     if (quit.quitting) return;
     event.preventDefault();

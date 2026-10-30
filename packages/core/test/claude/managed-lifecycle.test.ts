@@ -538,6 +538,11 @@ describe('resume with the fake CLI', () => {
     await waitFor(() => eventsOf(h.spool(), first.record.sessionId).filter((e) => e === 'SessionStart').length === 2, 'second SessionStart');
     const starts = h.spool().filter((r) => r.event === 'SessionStart' && r.payload.session_id === first.record.sessionId);
     expect(starts.map((s) => s.payload.source)).toEqual(['startup', 'resume']);
+    // a resumed start looks different on the real CLI (2.1.314): no model, but numeric context fields
+    expect(starts[0].payload).toHaveProperty('model');
+    expect(starts[1].payload).not.toHaveProperty('model');
+    expect(typeof starts[1].payload.context_tokens).toBe('number');
+    expect(starts[1].transport.redactions).toBe(0); // a number named *_tokens is not a secret
     expect(manager.get(first.key)).toMatchObject({ status: 'running', mode: 'resume', resumedFrom: first.key, name: 'resume me', prompted: true });
     expect(readReceived(h.stateDir, first.record.sessionId)).toHaveLength(1);
 

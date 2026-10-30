@@ -62,13 +62,14 @@ export function classifyOrigin(origin: string | undefined, hostHeader: string): 
 
 /**
  * How the request reached us. Everything arrives from a loopback peer (we bind 127.0.0.1 only): either a program on
- * this computer, or `tailscale serve` forwarding a tailnet client. Serve adds `Tailscale-User-Login` (and
- * `X-Forwarded-For`); a request that names the Serve host and carries `X-Forwarded-For` counts too.
+ * this computer, or `tailscale serve` forwarding a tailnet client. Serve adds `Tailscale-User-Login` and
+ * `X-Forwarded-For`, so a request carrying either is `tailscale`, whatever Host it names: a tailnet client can put any
+ * Host header on its request, and `tailscale` is the stricter class (the DevicesService refuses the desktop token
+ * there). Only a loopback request without those headers is `localhost`.
  */
-export function viaOf(input: { peerLoopback: boolean; hostIsTailscale: boolean; headers: { has(name: string): boolean } }): Principal['via'] {
+export function viaOf(input: { peerLoopback: boolean; headers: { has(name: string): boolean } }): Principal['via'] {
   if (!input.peerLoopback) return 'unknown';
-  if (input.headers.has('tailscale-user-login')) return 'tailscale';
-  if (input.hostIsTailscale && input.headers.has('x-forwarded-for')) return 'tailscale';
+  if (input.headers.has('tailscale-user-login') || input.headers.has('x-forwarded-for')) return 'tailscale';
   return 'localhost';
 }
 
@@ -76,12 +77,10 @@ export function describeSecurity(input: {
   hostHeader: string; origin: string | undefined; peerAddress: string | undefined;
   headers: { has(name: string): boolean }; policy: HostPolicy;
 }): RequestSecurity {
-  const ts = tailscaleHost(input.policy.publicUrl());
-  const hostIsTailscale = ts !== null && input.hostHeader.trim().toLowerCase() === ts;
   return {
     host: input.hostHeader,
     originKind: classifyOrigin(input.origin, input.hostHeader),
-    via: viaOf({ peerLoopback: isLoopbackAddress(input.peerAddress), hostIsTailscale, headers: input.headers }),
+    via: viaOf({ peerLoopback: isLoopbackAddress(input.peerAddress), headers: input.headers }),
   };
 }
 

@@ -67,3 +67,16 @@ export function createWindowRouter(getWindow: () => RoutableWindow | null, log: 
     pending: () => queued,
   };
 }
+
+/**
+ * The renderer is ready for a target once its page has finished loading, and stops being ready when a new document
+ * replaces it (did-navigate). A navigation that the window guard cancelled still fires did-start-loading and
+ * did-stop-loading but never commits, so those two must not change readiness.
+ */
+export function trackRendererReadiness(
+  contents: { on(event: 'did-navigate' | 'did-finish-load', listener: () => void): unknown },
+  router: Pick<WindowRouter, 'setRendererReady'>,
+): void {
+  contents.on('did-navigate', () => router.setRendererReady(false));
+  contents.on('did-finish-load', () => router.setRendererReady(true));
+}

@@ -15,10 +15,10 @@ export type SendGuard =
 export function sendGuard(session: SessionView | undefined, scopes: readonly Scope[]): SendGuard {
   if (!session) return { allowed: false, code: 'missing', reason: 'This session is no longer listed on your PC.', offerRemoteControl: false };
   if (session.origin !== 'managed') {
-    const kind = session.origin === 'background' ? 'background' : 'external';
+    const kind = session.origin === 'background' ? 'a background' : 'an external';
     return {
       allowed: false, code: 'not_managed', offerRemoteControl: true,
-      reason: `This is a ${kind} session. Mini-Summa observes it but cannot type into it.`,
+      reason: `This is ${kind} session. Mini-Summa observes it but cannot type into it.`,
     };
   }
   if (session.availability !== 'live') {

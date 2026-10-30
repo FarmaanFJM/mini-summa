@@ -10,6 +10,15 @@
 //  * Hooks run the capture script with a Node runtime: the app's own Electron binary in ELECTRON_RUN_AS_NODE mode, or the
 //    `node` on PATH, or `node` inside the WSL distribution. null = hooks cannot run in that environment.
 //  * Results are cached; list({refresh:true}) probes again. Changing Settings > Claude command drops the host result.
+//  * layout(host) never waits for the Claude version check (which can hang for its whole timeout): startup needs the
+//    paths and the hook runtime, not the version.
+//
+// Contract notes (decisions where the brief and the sibling terminal host disagreed; both are one-line changes here):
+//  - claudeCommand(WSL) is { file: 'claude', prefixArgs: [], wslDistro } : `file` is the command to run INSIDE the
+//    distribution, because ptyHost.buildLaunchPlan builds `wsl.exe -d <distro> --cd <cwd> --exec <file> ...` itself.
+//  - claudeCommand(Windows .cmd shim) is { file: '<shim>.cmd', prefixArgs: [] }, not `cmd.exe /d /c <shim>`:
+//    buildLaunchPlan recognises a .cmd/.bat file and builds the safe `cmd.exe /d /s /c "..."` line itself. Only the
+//    version check here goes through `cmd.exe /d /c <shim> --version`.
 //
 // Windows and WSL behaviour is exercised through an injected command runner and file-system probe only. NOT TESTED on
 // a real Windows host or a real WSL2 distribution.
@@ -283,28 +292,40 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
 
   // ---- The host environment -------------------------------------------------------------------------------------------
 
-  async function probeHost(): Promise<Probe> {
-    const env = hostEnvId;
-    const claude = await detectHostClaude();
-    const notes = [...claude.notes];
-    const runtime = await detectHostNode(notes);
+  // Three separately cached parts, so the quick one (where things live, and whether hooks can run) is never held up by the
+  // slow one (asking Claude for its version, which can hang for the full timeout): the layout is what startup needs.
+  let hostClaude: Promise<HostClaude> | null = null;
+  let hostNode: Promise<{ runtime: Runtime | null; notes: string[] }> | null = null;
+  let hostLayout: Promise<EnvLayout> | null = null;
+  let hostProbe: Promise<Probe> | null = null;
+
+  const getHostClaude = (): Promise<HostClaude> => (hostClaude ??= detectHostClaude());
+  const getHostNode = (): Promise<{ runtime: Runtime | null; notes: string[] }> => (hostNode ??= (async () => {
+    const notes: string[] = [];
+    return { runtime: await detectHostNode(notes), notes };
+  })());
+  const getHostLayout = (): Promise<EnvLayout> => (hostLayout ??= (async () => {
+    const { runtime } = await getHostNode();
     const configDir = host.env.CLAUDE_CONFIG_DIR || lib.join(host.homeDir, '.claude');
-    const spool = spoolDirHostFor(env);
+    const spool = spoolDirHostFor(hostEnvId);
     const registry = registryFileHost();
-    const layout: EnvLayout = {
-      env, spoolDirHost: spool, registryFileHost: registry, spoolDirInEnv: spool, registryFileInEnv: registry,
+    return {
+      env: hostEnvId, spoolDirHost: spool, registryFileHost: registry, spoolDirInEnv: spool, registryFileInEnv: registry,
       captureScriptInEnv: captureScriptHost(), runtime, configDirHost: configDir, configDirInEnv: configDir,
     };
+  })());
+  const getHost = (): Promise<Probe> => (hostProbe ??= (async () => {
+    const [claude, node, layout] = await Promise.all([getHostClaude(), getHostNode(), getHostLayout()]);
     return {
       info: {
-        id: env, label: envLabel(env), available: claude.version !== null,
+        id: hostEnvId, label: envLabel(hostEnvId), available: claude.version !== null,
         claude: { path: claude.path, version: claude.version, error: claude.error },
-        node: { path: runtime?.command ?? null, version: runtime?.version ?? null },
-        configDir, hooks: null, notes,
+        node: { path: node.runtime?.command ?? null, version: node.runtime?.version ?? null },
+        configDir: layout.configDirHost, hooks: null, notes: [...claude.notes, ...node.notes],
       },
       layout, layoutProblem: null, command: claude.command,
     };
-  }
+  })());
 
   // ---- WSL distributions ----------------------------------------------------------------------------------------------
 
@@ -405,11 +426,9 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
 
   // ---- Caches ---------------------------------------------------------------------------------------------------------
 
-  let hostProbe: Promise<Probe> | null = null;
   let distros: Promise<Distros> | null = null;
   const wslProbes = new Map<string, Promise<Probe>>();
 
-  const getHost = (): Promise<Probe> => (hostProbe ??= probeHost());
   const getDistros = (): Promise<Distros> => (distros ??= listDistros());
   const getWsl = (name: string): Promise<Probe> => {
     let p = wslProbes.get(name);
@@ -418,6 +437,9 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
   };
 
   function invalidate(): void {
+    hostClaude = null;
+    hostNode = null;
+    hostLayout = null;
     hostProbe = null;
     distros = null;
     wslProbes.clear();
@@ -434,7 +456,7 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
   }
 
   const offSettings = settings.onChange((next, prev) => {
-    if (next.sessions.claudeCommand !== prev.sessions.claudeCommand) hostProbe = null;
+    if (next.sessions.claudeCommand !== prev.sessions.claudeCommand) { hostClaude = null; hostProbe = null; }
   });
 
   return {
@@ -454,6 +476,7 @@ export function createEnvironmentsService(deps: EnvironmentsDeps): EnvironmentsS
     },
 
     async layout(env) {
+      if (env === hostEnvId) return structuredClone(await getHostLayout()); // never waits for the Claude version check
       const probe = await probeFor(env);
       if (!probe.layout) throw new CoreError(422, 'env_layout', probe.layoutProblem ?? `Mini-Summa could not prepare ${envLabel(env)}.`);
       return structuredClone(probe.layout);

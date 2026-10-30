@@ -6,7 +6,9 @@
   "description": "Optional MV3 extension: focuses the mapped ChatGPT conversation tab using documented tabs/windows APIs only.",
   "scripts": {
     "build": "node build.mjs",
+    "build:test": "node build.mjs --test-hosts",
     "test": "vitest run",
+    "test:real": "node build.mjs --test-hosts && xvfb-run -a node test/real-browser.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": { "@minisumma/shared": "*" },

@@ -9,6 +9,7 @@
 //  * resolve touches only entries that are flagged and still open, and several selectors narrow each other (AND).
 //    No selector at all resolves nothing.
 //  * prune removes entries that are read and no longer need action (not flagged, or flagged and resolved).
+//  * markRead also acknowledges (resolves) open 'error' and 'action_result' entries: nothing else can close them.
 import type { ActivityEvent, ActivitySeverity, ActivitySource, ActivityType, Counts, LinkTarget, ListPage, SessionKey } from '@minisumma/shared';
 import type { SqlValue } from '@minisumma/storage';
 import { bool, fromJson, int, toJson } from '@minisumma/storage';
@@ -163,11 +164,20 @@ export function createActivityService(deps: ActivityServiceDeps): ActivityServic
         if (req.projectId) { selectors++; where.push('project_id = ?'); params.push(req.projectId); }
         if (selectors === 0) return counts();
       }
-      const rows = db.all<{ id: string; seq: number }>(`UPDATE activity SET read_at = ? WHERE ${where.join(' AND ')} RETURNING id, seq`, [nowIso(clock), ...params]);
+      const at = nowIso(clock);
+      const rows = db.all<{ id: string; seq: number }>(`UPDATE activity SET read_at = ? WHERE ${where.join(' AND ')} RETURNING id, seq`, [at, ...params]);
+      // An error or a failed action is closed by nobody but the person who reads it, so reading it acknowledges it.
+      // (Permission, input and delivery entries are closed by what actually happens to them, not by being read.)
+      const acknowledged = rows.length === 0 ? [] : db.all<ActivityRow>(
+        `UPDATE activity SET resolved_at = ? WHERE id IN (${placeholders(rows.length)}) AND ${STILL_OPEN} AND type IN ('error', 'action_result') RETURNING *`,
+        [at, ...rows.map((r) => r.id)],
+      );
       const current = counts();
       if (rows.length > 0) {
         rows.sort((a, b) => a.seq - b.seq);
         bus.emit({ type: 'activity.read', ids: rows.map((r) => r.id), counts: { ...deps.fullCounts(), ...current } });
+        acknowledged.sort((a, b) => a.seq - b.seq);
+        for (const row of acknowledged) bus.emit({ type: 'activity.updated', activity: toActivity(row) });
       }
       return current;
     },

@@ -63,9 +63,12 @@ function listenError(err: NodeJS.ErrnoException, port: number): HttpListenError 
 
 function rejectUpgrade(socket: Duplex, status: number, code: string, message: string): void {
   const body = JSON.stringify(errorBody(code, message));
+  // Node removes its own error listener from an upgrading socket; without one a reset connection would crash the app.
+  socket.on('error', () => undefined);
+  socket.once('finish', () => socket.destroy());
   socket.end(
     `HTTP/1.1 ${status} ${http.STATUS_CODES[status] ?? 'Error'}\r\nConnection: close\r\nContent-Type: application/json; charset=utf-8\r\n`
-    + `Content-Length: ${Buffer.byteLength(body)}\r\nX-Content-Type-Options: nosniff\r\nCache-Control: no-store\r\n\r\n${body}`);
+    + `Content-Length: ${Buffer.byteLength(body)}\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nCache-Control: no-store\r\n\r\n${body}`);
 }
 
 export function createHttpServer(deps: HttpServerDeps): HttpServer {
@@ -295,14 +298,15 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
       pruneTimer = null;
       const s = server;
       server = null;
-      listening = null;
       await hub.stop();
-      if (!s) return;
+      if (!s) { listening = null; return; }
       await new Promise<void>((resolve) => {
         s.close(() => resolve());
         s.closeIdleConnections();
         setTimeout(() => s.closeAllConnections(), 1000).unref();
       });
+      // Kept until the server is closed: a request still in flight must not be refused as a foreign host meanwhile.
+      listening = null;
     },
   };
 }

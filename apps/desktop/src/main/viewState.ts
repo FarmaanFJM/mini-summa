@@ -8,7 +8,7 @@ export interface ViewObservation {
   url: string | null;
   title: string | null;
   loading: boolean;
-  /** Set by did-fail-load for the main frame and cleared when the next navigation starts. */
+  /** Set by did-fail-load for the main frame. It stays until a new page actually commits (did-navigate), because a cancelled or failed retry leaves the error page on screen. */
   failure: { code: number; description: string } | null;
 }
 
@@ -73,13 +73,14 @@ export function deriveViewState(obs: ViewObservation, nav: NavigationFlags): Cha
   const base = { mode: 'embedded' as const, url: obs.url, title: obs.title, canGoBack: nav.canGoBack, canGoForward: nav.canGoForward };
   const make = (status: ChatGptViewStatus, note: string | null): ChatGptViewState => ({ ...base, status, note });
 
+  // A retry in progress is "loading" even if the last attempt failed.
+  if (obs.loading) return make('loading', null);
   if (obs.failure) {
     const kind = classifyFailure(obs.failure.code, obs.failure.description);
     if (kind === 'blocked') return make('blocked', NOTES.blocked(obs.failure.description));
     if (kind === 'error') return make('error', NOTES.error(obs.failure.description));
     // aborted: the navigation was cancelled or replaced, which says nothing about the page itself
   }
-  if (obs.loading) return make('loading', null);
   if (!obs.url || obs.url === 'about:blank') return make('idle', null);
   if (looksLikeGoogleRefusal(obs.url)) return make('blocked', NOTES.googleRefused);
   if (looksLikeChallenge(obs.url, obs.title)) return make('challenge', NOTES.challenge);
