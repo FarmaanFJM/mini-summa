@@ -13,21 +13,32 @@ virtual display, no person at the screen and no ChatGPT or Claude login. It cann
 
 ## Tier 1: what CI already checked (details: [WINDOWS_CI.md](WINDOWS_CI.md))
 
-First complete native run of the installed application (run 41176630640, runner image win25-vs2026, Windows build 10.0.26100, Node 22.23.4;
-the result files are the run's `windows-installed-report` artifact): **22 checks passed, 2 failed.**
+Latest complete native run of the installed application: **commit 91bd25d, run 41179575582 (and 41179579093 for the pull request), runner image
+win25-vs2026 20261021.278.1, Windows build 10.0.26100, Node 22.23.4, Electron 45.1.0. All jobs green; the installed-app report: 24 checks passed, 0 failed,
+3 informational.** The first run (41176630640) had 22 passed and 2 failed; the failures were a wrong uninstall command in the check, a race in the
+check, and a continuity defect found by it (below).
 
-* **Passed:** the installer asks for no elevation; silent per-user install; files and ConPTY components on disk; the `minisumma://` key;
-  per-user uninstall entry, nothing in Program Files or HKLM; the installed app launches and shows its window; a project with a GitHub
-  repository and a ChatGPT link but no folder is accepted; a folder (spaces, accented letter) persists and is read back; a missing folder is
-  refused with a message and nothing is stored; the Windows host environment and the `claude` CLI are found; **the PowerShell hook (W-11):
-  PowerShell does not wait for the app without `| Write-Output` (0.01 s) and does with it (3.06 s), and the SessionStart and Stop commands
-  wrote their spool record before PowerShell returned**; `notifications.test`: Windows accepted the toast request; silent uninstall removes
-  the program and the protocol key and keeps your data.
-* **Failed, and why:** (a) the uninstall entry stayed: the check ran the uninstaller as `/S` instead of the registered
-  `/currentuser /S` (a fault in the check, changed and awaiting its next run); (b) after a restart the remembered ChatGPT address was the
-  project page instead of the conversation address the check had written: under investigation as a continuity defect (see P1 to P4).
-* **Also run natively by CI:** type check, unit tests of six packages (core with 17 POSIX-fixture files skipped on Windows, listed in
-  WINDOWS_CI.md), and the installer build. The installer is **not code-signed**.
+* **Passed on the runner:** the installer asks for no elevation; silent per-user install; files and ConPTY components on disk; the `minisumma://` key;
+  per-user uninstall entry, nothing in Program Files or HKLM; the installed app launches and shows its window; a project with a GitHub repository and a
+  ChatGPT link but no folder is accepted; a folder (spaces, accented letter) persists and is read back; a missing folder is refused with a message and
+  nothing is stored; everything the app held (project, folder, associations, route, the remembered Cloud and ChatGPT pages) is identical after quit and
+  relaunch; the Windows host environment and the `claude` CLI are found; **the PowerShell hook (W-11): PowerShell does not wait for the app without
+  `| Write-Output` (0.01 s) and does with it (3.06 s), and the SessionStart and Stop commands wrote their spool record before PowerShell returned**;
+  `notifications.test`: Windows accepted the toast request; silent uninstall (with the command Windows registered, `/currentuser /S`) removes the program,
+  the protocol key and the uninstall entry (the entry goes about 2 s after the folder) and keeps your data.
+* **What the restart check does and does not show for ChatGPT continuity.** The running app replaced the address the check had written (a conversation) with
+  the linked project page before the check quit it, because the window records the ChatGPT page it shows. The check therefore shows that the page the app
+  recorded survives a restart on Windows. It does **not** show that a remembered conversation is reopened: the runner has no signed-in ChatGPT and the
+  conversation address is made up. The first run exposed a real defect in the restore (a failed or redirected restore overwrote the remembered
+  conversation); it is fixed and covered on Linux against a stand-in (X11), and **untested on Windows and on the real chatgpt.com**. P1 to P4 below are the
+  check that matters.
+* **Also run natively by CI:** type check, unit tests of six packages, the installer build. Known exclusions and Windows-only observations are listed in
+  [WINDOWS_CI.md](WINDOWS_CI.md): 17 core test files that need a POSIX fake `claude` are skipped on Windows (untested there), ConPTY resize is not
+  verified, and an oversize request body can be answered with a connection reset instead of a 413 message. The installer is **not code-signed**.
+
+**The installer built by that run** (artifact `mini-summa-windows-installer` of run 41179575582): `Mini-Summa-Setup-0.1.0-x64.exe`, 122,559,111 bytes,
+SHA-256 `8aedb95980b54c7b83fed0648d72a51f63ae19fa790dd3fd8b3294a6c0056243`, commit `91bd25d7ee0f424559c9213ada431a5044b9b07c`, built on the runner above.
+Commits after it change documentation only unless the status report says otherwise.
 
 Tier 1 does **not** show: a toast on a screen or a click on it, SmartScreen, anything needing a ChatGPT or Claude login, layout, display
 scaling, typing in the terminal, resize, Ctrl+C, a real Claude session on Windows, or behaviour as a standard (non-admin) user.
