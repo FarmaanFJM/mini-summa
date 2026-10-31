@@ -251,7 +251,16 @@ function makeApi(conn) {
     let payload;
     if (method !== 'GET' && method !== 'DELETE') { headers['content-type'] = 'application/json'; payload = JSON.stringify(body ?? {}); }
     if (method === 'POST') headers['idempotency-key'] = randomUUID();
-    const res = await fetch(`${conn.baseUrl}/api/v1${route}`, { method, headers, body: payload, signal: AbortSignal.timeout(30_000) });
+    let res;
+    try {
+      res = await fetch(`${conn.baseUrl}/api/v1${route}`, { method, headers, body: payload, signal: AbortSignal.timeout(30_000) });
+    } catch (error) {
+      const cause = error?.cause;
+      const detail = cause ? `${cause.code ?? cause.name ?? ''} ${cause.message ?? ''}`.trim() : '';
+      const wrapped = new Error(`${error.message}${detail ? ` (${detail})` : ''} calling ${method} ${route} at ${conn.baseUrl}`);
+      wrapped.network = true;
+      throw wrapped;
+    }
     const text = await res.text();
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
@@ -527,9 +536,19 @@ async function phaseSmoke() {
       if (!second?.conn || !hostEnv) return notRun('Needs the API and the host environment from check 3.');
       const api2 = makeApi(second.conn);
       const settingsBefore = fileFingerprint(claudeSettingsFile);
-      const plan = await api2('POST', '/hooks/plan', { env: hostEnv.id, action: 'install' });
+      // One refused connection to the running app was seen on two of the last four runs (and none before); it is retried, and a retry is always said.
+      let plan = null;
+      const attempts = [];
+      for (let attempt = 1; attempt <= 3 && !plan; attempt++) {
+        try { plan = await api2('POST', '/hooks/plan', { env: hostEnv.id, action: 'install' }); } catch (error) {
+          if (!error.network || attempt === 3) throw error;
+          const listening = run('netstat.exe', ['-ano', '-p', 'TCP']).stdout.split(/\r?\n/).filter((l) => l.includes(':47811 ') || l.includes(new URL(second.conn.baseUrl).port)).slice(0, 4).join(' | ');
+          attempts.push(`attempt ${attempt} failed: ${error.message}; listening: ${listening || 'nothing on that port'}`);
+          await sleep(2000);
+        }
+      }
       const commands = extractHookCommands(plan.after, ['SessionStart', 'Stop']);
-      const lines = [`plan.action ${plan.action}, settingsPath ${plan.settingsPath}`, `plan warnings: ${JSON.stringify(plan.warnings)}`];
+      const lines = [...attempts.map((a) => `RETRY NEEDED: ${a}`), `plan.action ${plan.action}, settingsPath ${plan.settingsPath}`, `plan warnings: ${JSON.stringify(plan.warnings)}`];
       const missing = ['SessionStart', 'Stop'].filter((e) => !commands[e]);
       if (missing.length) return fail(`plan.after has no capture command for ${missing.join(', ')}.`, ...lines);
       const hookExe = exeFromCommand(commands.Stop.command);
