@@ -78,7 +78,16 @@ export async function startHarness(opts: { dataDir?: string; root?: string; core
     try { sessions = JSON.stringify((await client.call('sessions.list', { query: {} })).map((x) => ({ key: x.key, origin: x.origin, availability: x.availability, state: x.state, pid: x.pid, generation: x.generation, exited: x.terminal?.exited }))); } catch (e) { sessions = `(sessions.list failed: ${String(e)})`; }
     let log = '';
     try { log = fs.readFileSync(path.join(dataDir, 'logs', 'core.log'), 'utf8').split('\n').slice(-40).join('\n'); } catch { /* no log */ }
-    return `\n--- sessions: ${sessions}\n--- core.log tail:\n${log}`;
+    let fake = '';
+    try {
+      for (const f of fs.readdirSync(stateDir).sort()) {
+        const full = path.join(stateDir, f);
+        const size = fs.statSync(full).size;
+        fake += `\n  ${f} (${size} bytes)`;
+        if (/^hooks-.*\.jsonl$/.test(f)) fake += `: ${fs.readFileSync(full, 'utf8').trim().split('\n').slice(-6).join(' | ').slice(0, 900)}`;
+      }
+    } catch { /* no state dir */ }
+    return `\n--- sessions: ${sessions}\n--- fake claude state:${fake}\n--- core.log tail:\n${log}`;
   };
 
   const waitFor: Harness['waitFor'] = async (what, fn, timeoutMs = 15_000) => {
