@@ -1,5 +1,5 @@
-// Keeps what the window remembers (the selected project and view, each project's session tab, conversation and page of Claude Code
-// on the web, the setup checklist's flags) in the core, which is the durable home: the window's own localStorage belongs to the page origin, and the
+// Keeps what the window remembers (the selected project and view, each project's session tab, conversation, page of Claude Code
+// on the web and last page of ChatGPT, the setup checklist's flags) in the core, which is the durable home: the window's own localStorage belongs to the page origin, and the
 // origin changes when the core has to take another port.
 //
 //   start      After the first snapshot of the core arrives, the core's copy is applied to the window (it wins over localStorage,
@@ -23,7 +23,7 @@ import type { RouteStore } from './route';
 import { readJson, writeJson } from './storage';
 import type { KeyValueStorage } from './storage';
 import type { AppState, AppStore } from './store';
-import { buildPatch, changedRouteFacts, changedSetupFacts, cloudFact, forgetFact, reconcile, routeMemory, sessionFact, conversationFact, storedRouteMemory } from './uiState';
+import { buildPatch, changedRouteFacts, changedSetupFacts, chatgptFact, cloudFact, forgetFact, reconcile, routeMemory, sessionFact, conversationFact, storedRouteMemory } from './uiState';
 import type { FactKey, Memory } from './uiState';
 
 export interface UiSyncOptions {
@@ -147,13 +147,15 @@ export function createUiSync(options: UiSyncOptions): UiSync {
     dirty.delete(sessionFact(id));
     dirty.delete(conversationFact(id));
     dirty.delete(cloudFact(id));
+    dirty.delete(chatgptFact(id));
     remember();
     applying = true;
     try {
-      const { selectSession, selectConversation, selectCloudUrl } = route.getState();
+      const { selectSession, selectConversation, selectCloudUrl, selectChatGptUrl } = route.getState();
       selectSession(id, null);
       selectConversation(id, null);
       selectCloudUrl(id, null);
+      selectChatGptUrl(id, null);
     } finally { applying = false; }
     mark([forgetFact(id)]);
   });

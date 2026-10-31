@@ -1,6 +1,7 @@
 import { parseChatGptUrl, sameChatGptPage } from '@minisumma/shared';
-import type { ChatGptViewState, Conversation, Project } from '@minisumma/shared';
+import type { ChatGptProjectLink, ChatGptViewState, Conversation, Project } from '@minisumma/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChatGptRecorder, recordableAddress } from '../../app/chatgptRecorder';
 import { useNative } from '../../app/native';
 import { conversationsOf } from '../../app/selectors';
 import { useApi, useApp, useRoute, useRuntime, useUi } from '../../app/runtime';
@@ -17,6 +18,27 @@ export interface ChatGptPaneProps {
 /** The conversation the pane should show for a project: the one chosen last, else the preferred one, else the first. */
 export function pickConversation(list: readonly Conversation[], project: Pick<Project, 'preferredConversationId'>, chosenId: string | undefined): Conversation | null {
   return list.find((c) => c.id === chosenId) ?? list.find((c) => c.id === project.preferredConversationId) ?? list[0] ?? null;
+}
+
+export interface PageToOpen {
+  /** Which rule chose it: the last page used in this project, its mapped conversation, or the linked ChatGPT Project's page. */
+  from: 'last' | 'conversation' | 'project';
+  url: string;
+}
+
+/**
+ * The page the pane opens for a project, in this order: the last page the person was on in this project (remembered locally, and only
+ * if it still belongs to the project: a page of another ChatGPT Project than the linked one is not used), else the conversation the
+ * project has mapped (the one chosen last, else the preferred one), else the linked ChatGPT Project's page, else nothing.
+ * `remembered` is only used when the pane is opened for the project (selecting it, starting the app); a change of the mapped
+ * conversation while the pane is open is the person's explicit choice and wins, so it is asked for with `remembered: null`.
+ */
+export function pageToOpen(input: { projectId: string; remembered: string | null; selected: Pick<Conversation, 'url'> | null; linked: Pick<ChatGptProjectLink, 'url' | 'scopeId'> | null }): PageToOpen | null {
+  const last = recordableAddress(input.remembered, { id: input.projectId, scopeId: input.linked?.scopeId ?? null });
+  if (last !== null) return { from: 'last', url: last };
+  if (input.selected) return { from: 'conversation', url: input.selected.url };
+  if (input.linked) return { from: 'project', url: input.linked.url };
+  return null;
 }
 
 function useChatGptViewState(enabled: boolean): ChatGptViewState | null {
@@ -49,7 +71,10 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
   const conversations = useMemo(() => conversationsOf(allConversations, project.id), [allConversations, project.id]);
   const selected = pickConversation(conversations, project, route.conversationByProject[project.id]);
   const linked = project.chatgptProject;
-  const hasPage = selected !== null || linked !== null;
+  const scopeId = linked?.scopeId ?? null;
+  const rememberedUrl = route.chatgptUrlByProject[project.id] ?? null;
+  const remembered = recordableAddress(rememberedUrl, { id: project.id, scopeId });
+  const hasPage = selected !== null || linked !== null || remembered !== null;
 
   const embedded = mode === 'embedded' && native.hasEmbeddedChatGpt;
   const view = useChatGptViewState(embedded);
@@ -60,18 +85,42 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
   const shown = view?.url ? conversations.find((c) => sameChatGptPage(c.url, view.url ?? '')) ?? null : null;
   const current = shown ?? selected;
 
-  // The page to load for the project: its mapped conversation, else its linked ChatGPT Project.
-  const desired = selected
-    ? { marker: `${selected.id}|${selected.url}`, url: selected.url }
-    : linked ? { marker: `project|${linked.url}`, url: linked.url } : null;
+  const { route: routeStore } = useRuntime();
+
+  // What the person does in the view is remembered per project, so that the project opens where it was left (the recorder decides
+  // which pages count and guards the moment right after another project was selected, while the view still shows its page).
+  const recorder = useMemo(() => new ChatGptRecorder(), []);
+  const owner = useRef(0);
+  useEffect(() => {
+    if (!embedded) return undefined;
+    let live = true;
+    native.chatgpt.getState().then((s) => { if (live) recorder.observe(s); }, () => {});
+    const off = native.chatgpt.onState((s) => {
+      const hit = recorder.observe(s);
+      if (hit) routeStore.getState().selectChatGptUrl(hit.projectId, hit.url);
+    });
+    return () => { live = false; off(); };
+  }, [embedded, native, recorder, routeStore]);
+  useEffect(() => {
+    if (!embedded) return undefined;
+    const token = recorder.begin({ id: project.id, scopeId });
+    owner.current = token;
+    return () => { recorder.end(token); };
+    // The scope of the linked ChatGPT Project can change while the pane is open; that does not make the person's page a stranger's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedded, project.id, recorder]);
+  useEffect(() => { recorder.retarget(owner.current, { id: project.id, scopeId }); }, [recorder, project.id, scopeId]);
+
+  // The page to load for the project when its mapped conversation or linked ChatGPT Project is what is asked for.
+  const normal = pageToOpen({ projectId: project.id, remembered: null, selected, linked });
+  const normalMarker = normal ? `${normal.from}|${normal.from === 'conversation' ? `${selected?.id}|` : ''}${normal.url}` : null;
+  const normalUrl = normal?.url ?? null;
 
   // Load it when the project or the choice changes, but never reload a page that is already there. This pane owns what the view
   // shows: when the project settings ask for the linked ChatGPT Project's page ("Open"), the pane loads that instead of the
   // project's conversation, and takes it as the page the person is on, so the conversation does not replace it afterwards.
   const lastNavigated = useRef<string | null>(null);
-  const desiredMarker = desired?.marker ?? null;
-  const desiredUrl = desired?.url ?? null;
-  const { route: routeStore } = useRuntime();
+  const activated = useRef<string | null>(null);
   const projectRequested = route.chatgptProjectOpen[project.id] === true;
   const linkedUrl = linked?.url ?? null;
   useEffect(() => {
@@ -79,39 +128,55 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
     if (!embedded || linkedUrl === null) { routeStore.getState().finishChatGptProjectOpen(project.id); return undefined; }
     if (!visible) return undefined; // asked while another view is on screen: done as soon as the workspace is
     let cancelled = false;
+    const token = owner.current;
     (async () => {
       const state = await native.chatgpt.getState().catch(() => null);
       if (cancelled) return;
-      lastNavigated.current = desiredMarker;
-      if (!(state?.url && sameChatGptPage(state.url, linkedUrl))) await native.chatgpt.navigate(linkedUrl);
+      lastNavigated.current = normalMarker;
+      activated.current = project.id;
+      if (state?.url && sameChatGptPage(state.url, linkedUrl)) recorder.arm(token);
+      else { recorder.expect(token, linkedUrl); await native.chatgpt.navigate(linkedUrl); }
       routeStore.getState().finishChatGptProjectOpen(project.id);
     })().catch(() => { routeStore.getState().finishChatGptProjectOpen(project.id); });
     return () => { cancelled = true; };
-  }, [projectRequested, embedded, linkedUrl, visible, desiredMarker, native, routeStore, project.id]);
+  }, [projectRequested, embedded, linkedUrl, visible, normalMarker, native, routeStore, project.id, recorder]);
 
   useEffect(() => {
-    if (!embedded || desiredMarker === null || desiredUrl === null || projectRequested) return undefined;
-    if (lastNavigated.current === desiredMarker) return undefined;
+    if (!embedded || projectRequested) return undefined;
+    // Opening the pane for a project (selecting it, starting the app) goes back to the last page used in it; afterwards the mapped
+    // conversation or the linked project is what is asked for.
+    const activation = activated.current !== project.id;
+    const rememberedNow = activation ? routeStore.getState().chatgptUrlByProject[project.id] ?? null : null;
+    const target = pageToOpen({ projectId: project.id, remembered: rememberedNow, selected, linked });
+    if (target === null) { activated.current = project.id; return undefined; }
+    const marker = target.from === 'last' ? `last|${project.id}|${target.url}` : normalMarker;
+    if (lastNavigated.current === marker) return undefined;
     let cancelled = false;
+    const token = owner.current;
     (async () => {
       const state = await native.chatgpt.getState().catch(() => null);
       if (cancelled) return;
-      lastNavigated.current = desiredMarker;
-      if (state?.url && sameChatGptPage(state.url, desiredUrl)) return;
-      await native.chatgpt.navigate(desiredUrl);
+      lastNavigated.current = marker;
+      activated.current = project.id;
+      if (state?.url && sameChatGptPage(state.url, target.url)) { recorder.arm(token); return; }
+      recorder.expect(token, target.url);
+      await native.chatgpt.navigate(target.url);
     })().catch(() => { lastNavigated.current = null; });
     return () => { cancelled = true; };
-  }, [embedded, desiredMarker, desiredUrl, projectRequested, native]);
+    // `selected` and `linked` are read through the marker and the url: they change when the marker or the url does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embedded, project.id, normalMarker, normalUrl, projectRequested, native, routeStore, recorder]);
 
   const choose = useCallback((id: string) => {
     const target = conversations.find((c) => c.id === id);
     if (!target) return;
     route.selectConversation(project.id, id);
     if (embedded) {
-      lastNavigated.current = `${target.id}|${target.url}`;
+      lastNavigated.current = `conversation|${target.id}|${target.url}`;
+      recorder.expect(owner.current, target.url);
       void native.chatgpt.navigate(target.url).catch(() => {});
     }
-  }, [conversations, embedded, native, project.id, route]);
+  }, [conversations, embedded, native, project.id, route, recorder]);
 
   const browserFailed = (err: unknown) => {
     toast({ title: 'Could not open your browser', body: err instanceof Error ? err.message : undefined, kind: 'error' });
@@ -191,6 +256,7 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
           <div className="ms-pane__tools">
             {embedded ? (
               <>
+                {linked ? <IconButton label="Open project page" icon="folder-open" size="sm" tooltipPlacement="top" onClick={() => { routeStore.getState().openChatGptProject(project.id); }} /> : null}
                 <IconButton label="Back" icon="arrow-left" size="sm" tooltipPlacement="top" disabled={!view?.canGoBack} onClick={() => { void native.chatgpt.back(); }} />
                 <IconButton label="Forward" icon="arrow-right" size="sm" tooltipPlacement="top" disabled={!view?.canGoForward} onClick={() => { void native.chatgpt.forward(); }} />
                 <IconButton label="Reload" icon="refresh" size="sm" tooltipPlacement="top" onClick={() => { void native.chatgpt.reload(); }} />

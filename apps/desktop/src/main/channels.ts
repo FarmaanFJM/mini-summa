@@ -26,6 +26,10 @@ export const CH = {
   getPaths: 'ms:app:getPaths',
   /** main -> renderer events */
   chatgptState: 'ms:chatgpt:state',
+  /** The state of one project's view, `{ key, state }`, for every view (chatgptState carries only the active one). */
+  chatgptKeyedState: 'ms:chatgpt:keyedState',
+  /** `{ kind: 'unloaded', key, url }`: a project's view was destroyed to stay within the bound on live views. */
+  chatgptNotice: 'ms:chatgpt:notice',
   claudeWebState: 'ms:claudeWeb:state',
   navigate: 'ms:app:navigate',
 } as const;

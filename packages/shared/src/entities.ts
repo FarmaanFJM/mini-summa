@@ -610,6 +610,12 @@ export interface UiProjectPrefs {
   conversationId?: string;
   /** The page of Claude Code on the web the person was on in this project (a session or the new-session page), so it opens there again. */
   cloudUrl?: string;
+  /**
+   * The last page of ChatGPT the person was on in this project: a conversation, or the project page of the linked ChatGPT Project
+   * (https://chatgpt.com, no query, no fragment). Tracked locally by Mini-Summa as the embedded view navigates; it is "last used here",
+   * never "newest in ChatGPT", which OpenAI documents no way to find out. Opening the project shows this page first.
+   */
+  chatgptUrl?: string;
 }
 
 /** The first-run checklist: whether the person hid it, and whether this installation was empty when it was first opened. */
@@ -637,7 +643,7 @@ export interface UiPrefs {
  */
 export interface UiPrefsPatch {
   route?: UiRoute | null;
-  perProject?: Record<string, { sessionKey?: SessionKey | null; conversationId?: string | null; cloudUrl?: string | null } | null>;
+  perProject?: Record<string, { sessionKey?: SessionKey | null; conversationId?: string | null; cloudUrl?: string | null; chatgptUrl?: string | null } | null>;
   setup?: { dismissed?: boolean | null; seenEmpty?: boolean | null };
 }
 

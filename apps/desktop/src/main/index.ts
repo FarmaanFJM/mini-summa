@@ -14,7 +14,7 @@ import { app, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, power
 import type { BrowserWindow, MenuItemConstructorOptions } from 'electron';
 import { badgeBitmap, badgeDescription, watchBadge } from './badge.ts';
 import { CH } from './channels.ts';
-import { ChatGptView } from './chatgptView.ts';
+import { ChatGptViews } from './chatgptViews.ts';
 import { claudeWebSession, createClaudeWebViewHandle } from './claudeElectronView.ts';
 import { ClaudeWebView } from './claudeView.ts';
 import { isHookInvocation } from './hookInvocation.ts';
@@ -108,7 +108,8 @@ const windowContent = (): { width: number; height: number; zoomFactor: number } 
   return { width, height, zoomFactor: win.webContents.getZoomFactor() };
 };
 
-const chatgpt = new ChatGptView({
+// One live ChatGPT view per project, all in the one persist:chatgpt session (chatgptViews.ts).
+const chatgpt = new ChatGptViews({
   createView: () => {
     const win = windowAlive();
     if (!win) throw new Error('There is no window to attach the ChatGPT view to.');
@@ -274,8 +275,14 @@ async function start(launchLink: string | null): Promise<void> {
     screenEvents.on(event, reapply);
     win.once('closed', () => screenEvents.removeListener(event, reapply));
   }
-  chatgpt.onState((state) => {
-    if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CH.chatgptState, state);
+  // Every view reports to the window with its key; the unkeyed channel carries only the active view's, as the single view did.
+  chatgpt.onState((state, key) => {
+    if (win.isDestroyed() || win.webContents.isDestroyed()) return;
+    win.webContents.send(CH.chatgptKeyedState, { key, state });
+    if (key === chatgpt.activeKey) win.webContents.send(CH.chatgptState, state);
+  });
+  chatgpt.onNotice((notice) => {
+    if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CH.chatgptNotice, notice);
   });
   claudeWeb.onState((state) => {
     if (!win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(CH.claudeWebState, state);

@@ -4,7 +4,7 @@
 // This file is bundled with everything it needs into one CommonJS script (a sandboxed preload can only require
 // 'electron'), so it imports types from the shared package and constants from channels.ts and nothing else.
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ChatGptViewState, ClaudeWebViewState, NativeApi, NavigationTarget, Rect } from '@minisumma/shared';
+import type { ChatGptViewNotice, ChatGptViewState, ClaudeWebViewState, NativeApi, NavigationTarget, Rect } from '@minisumma/shared';
 import { CH, VERSION_ARG_PREFIX } from '../main/channels.ts';
 
 const versionArg = process.argv.find((a) => a.startsWith(VERSION_ARG_PREFIX));
@@ -38,15 +38,21 @@ const api: NativeApi = {
   platform,
   connection: () => invoke<{ baseUrl: string; token: string }>(CH.connection),
   chatgpt: {
-    setBounds: (rect: Rect | null) => invoke(CH.chatgptSetBounds, rect),
+    liveViews: true,
+    // The key (a project id) is the last argument, and only sent when there is one.
+    setBounds: (rect: Rect | null, key?: string) => invoke(CH.chatgptSetBounds, rect, ...(key === undefined ? [] : [key])),
     setOverlayActive: (active: boolean) => invoke(CH.chatgptSetOverlayActive, active),
-    navigate: (url: string) => invoke(CH.chatgptNavigate, url),
-    reload: () => invoke(CH.chatgptReload),
-    back: () => invoke(CH.chatgptBack),
-    forward: () => invoke(CH.chatgptForward),
-    focus: () => invoke(CH.chatgptFocus),
-    getState: () => invoke<ChatGptViewState>(CH.chatgptGetState),
-    onState: (listener) => subscribe<ChatGptViewState>(CH.chatgptState, listener),
+    navigate: (url: string, key?: string) => invoke(CH.chatgptNavigate, url, ...(key === undefined ? [] : [key])),
+    reload: (key?: string) => invoke(CH.chatgptReload, ...(key === undefined ? [] : [key])),
+    back: (key?: string) => invoke(CH.chatgptBack, ...(key === undefined ? [] : [key])),
+    forward: (key?: string) => invoke(CH.chatgptForward, ...(key === undefined ? [] : [key])),
+    focus: (key?: string) => invoke(CH.chatgptFocus, ...(key === undefined ? [] : [key])),
+    getState: (key?: string) => invoke<ChatGptViewState>(CH.chatgptGetState, ...(key === undefined ? [] : [key])),
+    // Without a key: the active view's changes, as before. With one: that project's view, whether or not it is the active one.
+    onState: (listener, key) => key === undefined
+      ? subscribe<ChatGptViewState>(CH.chatgptState, listener)
+      : subscribe<{ key: string | null; state: ChatGptViewState }>(CH.chatgptKeyedState, (payload) => { if (payload.key === key) listener(payload.state); }),
+    onNotice: (listener) => subscribe<ChatGptViewNotice>(CH.chatgptNotice, listener),
   },
   // Claude Code on the web: the same shape as `chatgpt` without an overlay switch (the one above covers both native views).
   claudeWeb: {

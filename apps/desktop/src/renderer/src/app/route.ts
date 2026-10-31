@@ -1,5 +1,5 @@
 // Which view, project, session and report the person is looking at. Persisted (guarded) so the app reopens where it was left.
-import { isSessionKey, parseClaudeCodeUrl, UI_LIMITS } from '@minisumma/shared';
+import { isSessionKey, parseClaudeCodeUrl, rememberableChatGptUrl, UI_LIMITS } from '@minisumma/shared';
 import type { NavigationTarget, SessionKey } from '@minisumma/shared';
 import { createStore } from 'zustand';
 import type { StoreApi } from 'zustand';
@@ -19,6 +19,11 @@ export interface RouteState {
   conversationByProject: Record<string, string>;
   /** The last page of Claude Code on the web each project's Cloud tab was on (an address on claude.ai/code, without query). */
   cloudUrlByProject: Record<string, string>;
+  /**
+   * The last page of ChatGPT each project's pane was on (a conversation or the linked ChatGPT Project's page, https://chatgpt.com
+   * without query). "Last used in Mini-Summa": recorded by the pane as the embedded view navigates, never read from the page.
+   */
+  chatgptUrlByProject: Record<string, string>;
   /**
    * Projects whose Claude pane shows the Cloud tab instead of a local session. In memory only, and never the persisted `sessionKey`:
    * choosing any session (a tab, a new session, a notification) takes the pane back to local sessions, and after a restart the pane
@@ -55,6 +60,8 @@ export interface RouteActions {
   selectConversation(projectId: string, conversationId: string | null): void;
   /** Remember the page of Claude Code on the web a project's Cloud tab is on (null forgets it). */
   selectCloudUrl(projectId: string, url: string | null): void;
+  /** Remember the last page of ChatGPT a project's pane was on (null forgets it). Anything that is not a conversation or project page is ignored. */
+  selectChatGptUrl(projectId: string, url: string | null): void;
   /** Show the Cloud tab of a project's Claude pane. `start`: open the start page of a new session (the repository preselected), not the remembered page. */
   showCloud(projectId: string, opts?: { start?: boolean }): void;
   /** Go back from the Cloud tab to the project's local sessions. */
@@ -100,6 +107,14 @@ function validate(raw: unknown): Partial<RouteState> | null {
     }
     out.cloudUrlByProject = Object.fromEntries(pages);
   }
+  if (isRecord(raw.chatgptUrlByProject)) {
+    const pages: [string, string][] = [];
+    for (const [id, value] of Object.entries(raw.chatgptUrlByProject)) {
+      const plain = rememberableChatGptUrl(value);
+      if (plain !== null) pages.push([id, plain]);
+    }
+    out.chatgptUrlByProject = Object.fromEntries(pages);
+  }
   return out;
 }
 
@@ -120,6 +135,7 @@ export function createRouteStore(options: RouteOptions = {}): RouteStore {
     sessionByProject: {},
     conversationByProject: {},
     cloudUrlByProject: {},
+    chatgptUrlByProject: {},
     cloudShown: {},
     cloudStart: {},
     chatgptProjectOpen: {},
@@ -179,6 +195,14 @@ export function createRouteStore(options: RouteOptions = {}): RouteStore {
         return { cloudUrlByProject: { ...s.cloudUrlByProject, [projectId]: read.info.url } };
       });
     },
+    selectChatGptUrl(projectId, url) {
+      set((s) => {
+        if (url === null) return s.chatgptUrlByProject[projectId] === undefined ? s : { chatgptUrlByProject: without(s.chatgptUrlByProject, projectId) };
+        const plain = rememberableChatGptUrl(url);
+        if (plain === null || s.chatgptUrlByProject[projectId] === plain) return s; // not a page worth coming back to, or nothing new
+        return { chatgptUrlByProject: { ...s.chatgptUrlByProject, [projectId]: plain } };
+      });
+    },
     showCloud(projectId, opts) {
       set((s) => ({
         cloudShown: s.cloudShown[projectId] ? s.cloudShown : { ...s.cloudShown, [projectId]: true },
@@ -210,7 +234,7 @@ export function createRouteStore(options: RouteOptions = {}): RouteStore {
     store.subscribe((s) => {
       writeJson(storage, STORAGE_KEY, {
         view: s.view, projectId: s.projectId, sessionByProject: s.sessionByProject, conversationByProject: s.conversationByProject,
-        cloudUrlByProject: s.cloudUrlByProject,
+        cloudUrlByProject: s.cloudUrlByProject, chatgptUrlByProject: s.chatgptUrlByProject,
       });
     });
   }

@@ -18,6 +18,15 @@ export interface ChatGptViewState {
   note: string | null;
 }
 
+/** A project's ChatGPT view was destroyed to save memory: the page loads again at `url` the next time the project is opened. */
+export interface ChatGptViewNotice {
+  kind: 'unloaded';
+  /** The project's key (its id). */
+  key: string | null;
+  /** The last address the view showed, or null. */
+  url: string | null;
+}
+
 export type ClaudeWebViewStatus = 'idle' | 'loading' | 'ready' | 'login_required' | 'blocked' | 'error';
 
 /**
@@ -116,17 +125,27 @@ export interface NativeApi {
   /** Address and bearer token of the embedded core. The token never travels over HTTP. */
   connection(): Promise<{ baseUrl: string; token: string }>;
   chatgpt: {
-    /** Place the native ChatGPT view over this rectangle (CSS pixels, window coordinates). null hides it. */
-    setBounds(rect: Rect | null): Promise<void>;
-    /** Hide the native view while a modal or menu is open, because a native view always draws above web content. */
+    /**
+     * True when the host keeps a live ChatGPT view for each project: the calls below then take the project's key (its id) as the last
+     * argument and act on that project's view, so switching projects only hides one view and shows another. Absent or false: one view
+     * for everything, and a key is ignored.
+     */
+    readonly liveViews?: boolean;
+    /** Place the native ChatGPT view over this rectangle (CSS pixels, window coordinates). null hides it. `key`: the project's view. */
+    setBounds(rect: Rect | null, key?: string): Promise<void>;
+    /** Hide the native view while a modal or menu is open, because a native view always draws above web content. Covers every project's view. */
     setOverlayActive(active: boolean): Promise<void>;
-    navigate(url: string): Promise<void>;
-    reload(): Promise<void>;
-    back(): Promise<void>;
-    forward(): Promise<void>;
-    focus(): Promise<void>;
-    getState(): Promise<ChatGptViewState>;
-    onState(listener: (state: ChatGptViewState) => void): () => void;
+    navigate(url: string, key?: string): Promise<void>;
+    reload(key?: string): Promise<void>;
+    back(key?: string): Promise<void>;
+    forward(key?: string): Promise<void>;
+    focus(key?: string): Promise<void>;
+    /** The view of the key; a project without a live view is idle. Without a key: the active view. */
+    getState(key?: string): Promise<ChatGptViewState>;
+    /** State changes of the view of the key (without a key: the active view). */
+    onState(listener: (state: ChatGptViewState) => void, key?: string): () => void;
+    /** Told when a project's view was destroyed to stay within the bound on live views. Absent in a host that keeps one view. */
+    onNotice?(listener: (notice: ChatGptViewNotice) => void): () => void;
   };
   /**
    * Claude Code on the web (claude.ai/code) in a second native view with its own browser profile, created the first time it is

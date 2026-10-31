@@ -18,7 +18,7 @@ const page = (segment: string, tail = ''): string => `https://claude.ai/code/${s
 const SESSION_PAGE = page('session_abc123');
 const OTHER_PAGE = page('session_xyz789');
 
-const route = (over: Partial<RouteMemory> = {}): RouteMemory => ({ view: 'workspace', projectId: null, sessionByProject: {}, conversationByProject: {}, cloudUrlByProject: {}, ...over });
+const route = (over: Partial<RouteMemory> = {}): RouteMemory => ({ view: 'workspace', projectId: null, sessionByProject: {}, conversationByProject: {}, cloudUrlByProject: {}, chatgptUrlByProject: {}, ...over });
 const memory = (r: Partial<RouteMemory> = {}, setup: Partial<Memory['setup']> = {}): Memory => ({ route: route(r), setup: { dismissed: false, seenEmpty: false, ...setup } });
 const project = (id: string, over: Partial<Project> = {}): Project => ({ ...createSeed().projects[0], id, name: id, archivedAt: null, ...over });
 const projects = [project('prj_a'), project('prj_b'), project('prj_archived', { archivedAt: '2026-01-01T00:00:00.000Z' })];

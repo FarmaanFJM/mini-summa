@@ -55,6 +55,15 @@ export function validateBoolean(value: unknown, what: string): boolean {
   return typeof value === 'boolean' ? value : bad(what);
 }
 
+/**
+ * Which project's ChatGPT view a call is about: absent (the active view) or a short key of plain characters (a project id). The key is
+ * only ever a map key in the main process; it is never used as a path or run as anything.
+ */
+export function validateViewKey(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  return typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,100}$/.test(value) ? value : bad('view key');
+}
+
 /** Addresses the renderer may load in the ChatGPT view: chatgpt.com over https, normalized. */
 export function validateChatGptUrl(value: unknown): string {
   if (typeof value !== 'string' || value.length > 2048) return bad('ChatGPT address');

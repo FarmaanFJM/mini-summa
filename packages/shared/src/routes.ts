@@ -95,7 +95,7 @@ const uiId = z.string().min(1).max(UI_LIMITS.idChars).refine((v) => v !== '__pro
 const uiSessionKey = z.string().max(UI_LIMITS.keyChars).refine((v): v is SessionKey => isSessionKey(v), 'Not a valid session key') as unknown as z.ZodType<SessionKey>;
 const uiPatchSchema = z.strictObject({
   route: z.strictObject({ projectId: uiId.nullable(), view: z.enum(['workspace', 'activity', 'reports', 'settings']) }).nullable(),
-  perProject: z.record(uiId, z.strictObject({ sessionKey: uiSessionKey.nullable(), conversationId: uiId.nullable(), cloudUrl: z.string().max(UI_LIMITS.urlChars).nullable() }).partial().nullable())
+  perProject: z.record(uiId, z.strictObject({ sessionKey: uiSessionKey.nullable(), conversationId: uiId.nullable(), cloudUrl: z.string().max(UI_LIMITS.urlChars).nullable(), chatgptUrl: z.string().max(UI_LIMITS.urlChars).nullable() }).partial().nullable())
     .refine((v) => Object.keys(v).length <= UI_LIMITS.projects, `At most ${UI_LIMITS.projects} projects can be named in one change`),
   setup: z.strictObject({ dismissed: z.boolean().nullable(), seenEmpty: z.boolean().nullable() }).partial(),
 }).partial();

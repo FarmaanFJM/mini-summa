@@ -153,6 +153,25 @@ export class ChatGptView {
   /** Whether the pane is placed and not covered by an overlay right now. */
   get showing(): boolean { return this.applied.visible; }
 
+  /** Whether the renderer has placed the pane (it has a rectangle), covered or not. */
+  get placed(): boolean { return this.rect !== null; }
+
+  /** Whether the native view exists. It is created by the first navigation and lives until the pool that owns it removes it. */
+  get hasView(): boolean { return this.view !== null; }
+
+  /** The last address the view showed, or null. */
+  get address(): string | null { return this.obs.url; }
+
+  /**
+   * Lets go of this controller after the pool that owns it destroyed the native view (chatgptViews.ts, an eviction): nobody is
+   * told about its state any more and it cannot be driven. Nothing else ever calls this, so layout changes cannot end a view.
+   */
+  retire(): void {
+    this.listeners.clear();
+    for (const wake of [...this.boundsWaiters]) wake();
+    this.view = null;
+  }
+
   getState(): ChatGptViewState { return this.state; }
 
   onState(listener: (s: ChatGptViewState) => void): () => void {

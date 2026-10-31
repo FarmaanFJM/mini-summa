@@ -1,6 +1,7 @@
 import { isSessionKey } from './env.ts';
 import type { SessionKey } from './env.ts';
 import { DEFAULT_REVIEW_REQUEST } from './report-message.ts';
+import { parseChatGptUrl } from './chatgpt.ts';
 import { parseClaudeCodeUrl } from './claude-web.ts';
 import type { ProjectNotificationPrefs, Settings, SettingsPatch, UiPrefs, UiPrefsPatch, UiProjectPrefs, UiViewId } from './entities.ts';
 
@@ -36,7 +37,7 @@ export const UI_LIMITS = {
   idChars: 100,
   /** A session key: `<env>|<session id>`. */
   keyChars: 200,
-  /** An address on claude.ai/code. */
+  /** An address on claude.ai/code or chatgpt.com. */
   urlChars: 600,
 } as const;
 
@@ -49,6 +50,19 @@ export interface UiProblem { field: string; message: string }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 const isUiId = (v: unknown): v is string => typeof v === 'string' && v.length >= 1 && v.length <= UI_LIMITS.idChars && !FORBIDDEN_KEYS.has(v);
+/**
+ * A page of ChatGPT worth coming back to: a conversation (also inside a ChatGPT Project) or the page of a ChatGPT Project. The home
+ * page, settings, sign-in, share links and addresses of a form that is not recognised are not. Returns the plain address (https,
+ * chatgpt.com, no query, no fragment), or null.
+ */
+export function rememberableChatGptUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > UI_LIMITS.urlChars) return null;
+  const read = parseChatGptUrl(value);
+  if (!read.ok) return null;
+  const kind = read.info.kind;
+  return kind === 'chat' || kind === 'project_chat' || kind === 'gpt_chat' || kind === 'project' ? read.info.url : null;
+}
+
 const isUiSessionKey = (v: unknown): v is SessionKey => typeof v === 'string' && v.length <= UI_LIMITS.keyChars && isSessionKey(v);
 
 /**
@@ -96,7 +110,7 @@ export function checkUiPatch(input: unknown): { patch: UiPrefsPatch; problems: U
           if (!isUiId(id)) { bad(here, `A project id in "ui.perProject" must have 1 to ${UI_LIMITS.idChars} characters. Use the project's id.`); continue; }
           if (entry === null) { out[id] = null; continue; }
           if (!isRecord(entry)) { bad(here, `The setting "${here}" must be an object like {"sessionKey":"win|..."}, or null to forget the project. Send an object.`); continue; }
-          const change: { sessionKey?: SessionKey | null; conversationId?: string | null; cloudUrl?: string | null } = {};
+          const change: { sessionKey?: SessionKey | null; conversationId?: string | null; cloudUrl?: string | null; chatgptUrl?: string | null } = {};
           for (const key of Object.keys(entry)) {
             const value = entry[key];
             if (key === 'sessionKey') {
@@ -110,7 +124,12 @@ export function checkUiPatch(input: unknown): { patch: UiPrefsPatch; problems: U
               if (value === null) change.cloudUrl = null;
               else if (read?.ok) change.cloudUrl = read.info.url;
               else bad(`${here}.cloudUrl`, `The setting "${here}.cloudUrl" must be an address on claude.ai/code, or null. Send the address of the page.`);
-            } else bad(`${here}.${key}`, `"${here}.${key}" is not remembered. A project keeps sessionKey, conversationId and cloudUrl. Remove "${key}".`);
+            } else if (key === 'chatgptUrl') {
+              const plain = rememberableChatGptUrl(value);
+              if (value === null) change.chatgptUrl = null;
+              else if (plain !== null) change.chatgptUrl = plain;
+              else bad(`${here}.chatgptUrl`, `The setting "${here}.chatgptUrl" must be the address of a ChatGPT conversation or ChatGPT Project page on chatgpt.com, or null. Send the address of the page.`);
+            } else bad(`${here}.${key}`, `"${here}.${key}" is not remembered. A project keeps sessionKey, conversationId, cloudUrl and chatgptUrl. Remove "${key}".`);
           }
           out[id] = change;
         }
@@ -139,7 +158,7 @@ export function checkUiPatch(input: unknown): { patch: UiPrefsPatch; problems: U
 
 export const isEmptyUi = (ui: UiPrefs | undefined): boolean => ui === undefined || (ui.route === undefined && ui.perProject === undefined && ui.setup === undefined);
 
-const sameProjectPrefs = (a: UiProjectPrefs, b: UiProjectPrefs): boolean => a.sessionKey === b.sessionKey && a.conversationId === b.conversationId && a.cloudUrl === b.cloudUrl;
+const sameProjectPrefs = (a: UiProjectPrefs, b: UiProjectPrefs): boolean => a.sessionKey === b.sessionKey && a.conversationId === b.conversationId && a.cloudUrl === b.cloudUrl && a.chatgptUrl === b.chatgptUrl;
 
 /**
  * Applies a (checked) change. Never edits its arguments. An entry that does not change keeps its place, so a patch that changes
@@ -162,8 +181,10 @@ export function mergeUi(base: UiPrefs | undefined, patch: UiPrefsPatch): UiPrefs
     const cloudUrl = change.cloudUrl === undefined ? before?.cloudUrl : change.cloudUrl ?? undefined;
     if (sessionKey !== undefined) next.sessionKey = sessionKey;
     if (conversationId !== undefined) next.conversationId = conversationId;
+    const chatgptUrl = change.chatgptUrl === undefined ? before?.chatgptUrl : change.chatgptUrl ?? undefined;
     if (cloudUrl !== undefined) next.cloudUrl = cloudUrl;
-    if (next.sessionKey === undefined && next.conversationId === undefined && next.cloudUrl === undefined) { entries.delete(id); continue; }
+    if (chatgptUrl !== undefined) next.chatgptUrl = chatgptUrl;
+    if (next.sessionKey === undefined && next.conversationId === undefined && next.cloudUrl === undefined && next.chatgptUrl === undefined) { entries.delete(id); continue; }
     if (before && sameProjectPrefs(before, next)) continue;
     entries.delete(id);
     entries.set(id, next);

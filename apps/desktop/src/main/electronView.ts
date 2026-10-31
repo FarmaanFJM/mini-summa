@@ -1,7 +1,7 @@
 // Adapts a real Electron WebContentsView to the ViewHandle the ChatGptView controller drives.
 import { WebContentsView, session } from 'electron';
 import type { BrowserWindow, Session } from 'electron';
-import type { ViewHandle } from './chatgptView.ts';
+import type { PooledViewHandle } from './chatgptViews.ts';
 
 export const CHATGPT_PARTITION = 'persist:chatgpt';
 const BACKGROUND = '#141515';
@@ -57,12 +57,20 @@ export function createEmbeddedView(win: BrowserWindow, partition: string): WebCo
   return view;
 }
 
-export function createChatGptViewHandle(win: BrowserWindow): ViewHandle {
+/**
+ * A ChatGPT view of one project. `destroy` takes it out of the window and closes its page; only the pool of views calls it, and only to
+ * stay within the bound on live views (chatgptViews.ts). Hiding, moving and covering a view never reach it.
+ */
+export function createChatGptViewHandle(win: BrowserWindow): PooledViewHandle {
   const view = createEmbeddedView(win, CHATGPT_PARTITION);
   const wc = view.webContents;
   return {
     setBounds: (r) => view.setBounds(r),
     setVisible: (v) => view.setVisible(v),
+    destroy: () => {
+      if (!win.isDestroyed()) win.contentView.removeChildView(view);
+      if (!wc.isDestroyed()) wc.close();
+    },
     contents: {
       getURL: () => wc.getURL(),
       getTitle: () => wc.getTitle(),

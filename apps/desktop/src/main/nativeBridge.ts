@@ -1,12 +1,17 @@
 // What the core gets from its host (NativeBridge). Electron objects are injected by index.ts so this stays testable.
 import path from 'node:path';
-import type { NativeBridge } from '@minisumma/shared';
-import type { ChatGptView } from './chatgptView.ts';
+import type { ChatGptOpenResult, ChatGptViewState, NativeBridge } from '@minisumma/shared';
+import type { OpenReason } from './chatgptView.ts';
 import type { Notifier } from './notifications.ts';
 import { validateClipboardText, validateExternalUrl } from './validation.ts';
 
 export interface NativeBridgeDeps {
-  chatgpt: Pick<ChatGptView, 'open' | 'verify' | 'getState'>;
+  /** The ChatGPT view that is on screen (the active project's). */
+  chatgpt: {
+    open(url: string, opts: { focus: boolean; reason: OpenReason }): Promise<ChatGptOpenResult>;
+    verify(url: string): Promise<ChatGptOpenResult>;
+    getState(): ChatGptViewState;
+  };
   notifier: Pick<Notifier, 'notify'>;
   notificationsSupported(): boolean;
   clipboard: { writeText(text: string): Promise<void>; readText(): Promise<string> };
