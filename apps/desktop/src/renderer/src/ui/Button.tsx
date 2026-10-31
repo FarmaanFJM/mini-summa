@@ -4,7 +4,7 @@ import { Icon } from './Icon';
 import type { IconName, IconSize } from './Icon';
 import { Spinner } from './Spinner';
 import { Tooltip } from './Tooltip';
-import type { Placement } from './popover';
+import type { Placement } from './popoverPosition';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'destructive' | 'destructive-quiet';
 export type ButtonSize = 'sm' | 'md' | 'lg';

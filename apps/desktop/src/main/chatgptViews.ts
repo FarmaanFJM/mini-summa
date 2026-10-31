@@ -197,7 +197,6 @@ export class ChatGptViews {
     }
     const handle = this.deps.createView();
     entry.destroy = () => handle.destroy();
-    this.deps.log.info('chatgpt view created', { live: this.liveKeys().length + 1 });
     return handle;
   }
 

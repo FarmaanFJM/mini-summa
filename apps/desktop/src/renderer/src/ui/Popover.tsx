@@ -4,8 +4,8 @@ import { createPortal } from 'react-dom';
 import { getNativeBounds } from '../app/nativeBounds';
 import { cx } from './cx';
 import { useNativeOverlay } from './nativeOverlay';
-import { boxOf, computePosition } from './popover';
-import type { Placement } from './popover';
+import { boxOf, computePosition } from './popoverPosition';
+import type { Placement } from './popoverPosition';
 
 export type PopoverDismissReason = 'outside' | 'escape' | 'blur' | 'resize';
 

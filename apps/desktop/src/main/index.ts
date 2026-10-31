@@ -18,7 +18,7 @@ import { ChatGptViews } from './chatgptViews.ts';
 import { claudeWebSession, createClaudeWebViewHandle } from './claudeElectronView.ts';
 import { ClaudeWebView } from './claudeView.ts';
 import { isHookInvocation } from './hookInvocation.ts';
-import { chatGptSession, createChatGptViewHandle } from './electronView.ts';
+import { chatGptSession, createPooledChatGptViewHandle } from './electronView.ts';
 import { registerIpc } from './ipc.ts';
 import { resolveLocations } from './locations.ts';
 import { createFileLogger } from './log.ts';
@@ -113,7 +113,7 @@ const chatgpt = new ChatGptViews({
   createView: () => {
     const win = windowAlive();
     if (!win) throw new Error('There is no window to attach the ChatGPT view to.');
-    return createChatGptViewHandle(win);
+    return createPooledChatGptViewHandle(win);
   },
   content: windowContent,
   requestWorkspace: () => router.navigate({ view: 'workspace' }),

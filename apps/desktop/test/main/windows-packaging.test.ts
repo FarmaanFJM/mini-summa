@@ -35,7 +35,7 @@ describe('identity', () => {
 
   it('announces the id before anything that can show a window or a notification is created', () => {
     const at = indexTs.indexOf('app.setAppUserModelId(');
-    for (const later of ['new Notification(', 'new ChatGptView(', 'createMainWindow(', 'new Tray(']) {
+    for (const later of ['new Notification(', 'new ChatGptViews(', 'createMainWindow(', 'new Tray(']) {
       expect(indexTs.indexOf(later), later).toBeGreaterThan(at);
     }
   });

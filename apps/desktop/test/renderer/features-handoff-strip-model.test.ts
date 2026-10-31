@@ -1,7 +1,7 @@
 // The handoff strip, as plain functions: which delivery waits, in which order, and what the strip says and offers about it.
 import type { Delivery, DeliveryPartInfo, DeliveryState } from '@minisumma/shared';
 import { describe, expect, it } from 'vitest';
-import { describeStrip, isInProgress, STRIP_STATES, waitingDeliveries } from '../../src/renderer/src/features/reports/handoffStrip';
+import { describeStrip, isInProgress, STRIP_STATES, waitingDeliveries } from '../../src/renderer/src/features/reports/handoffStripModel';
 import { createSeed, IDS } from '../../src/renderer/src/dev/demo/seed';
 
 const base = createSeed().deliveries[0];

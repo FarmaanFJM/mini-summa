@@ -27,6 +27,6 @@ export { CopyButton } from './CopyButton';
 export type { CopyButtonProps } from './CopyButton';
 export { useNativeOverlay, acquireNativeOverlay } from './nativeOverlay';
 export { Popover } from './Popover';
-export { computePosition } from './popover';
-export type { Placement } from './popover';
+export { computePosition } from './popoverPosition';
+export type { Placement } from './popoverPosition';
 export { cx } from './cx';

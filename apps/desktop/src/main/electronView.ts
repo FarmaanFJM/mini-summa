@@ -1,6 +1,7 @@
 // Adapts a real Electron WebContentsView to the ViewHandle the ChatGptView controller drives.
 import { WebContentsView, session } from 'electron';
 import type { BrowserWindow, Session } from 'electron';
+import type { ViewHandle } from './chatgptView.ts';
 import type { PooledViewHandle } from './chatgptViews.ts';
 
 export const CHATGPT_PARTITION = 'persist:chatgpt';
@@ -57,20 +58,12 @@ export function createEmbeddedView(win: BrowserWindow, partition: string): WebCo
   return view;
 }
 
-/**
- * A ChatGPT view of one project. `destroy` takes it out of the window and closes its page; only the pool of views calls it, and only to
- * stay within the bound on live views (chatgptViews.ts). Hiding, moving and covering a view never reach it.
- */
-export function createChatGptViewHandle(win: BrowserWindow): PooledViewHandle {
+function buildChatGptView(win: BrowserWindow): { handle: ViewHandle; view: WebContentsView } {
   const view = createEmbeddedView(win, CHATGPT_PARTITION);
   const wc = view.webContents;
-  return {
+  const handle: ViewHandle = {
     setBounds: (r) => view.setBounds(r),
     setVisible: (v) => view.setVisible(v),
-    destroy: () => {
-      if (!win.isDestroyed()) win.contentView.removeChildView(view);
-      if (!wc.isDestroyed()) wc.close();
-    },
     contents: {
       getURL: () => wc.getURL(),
       getTitle: () => wc.getTitle(),
@@ -92,6 +85,28 @@ export function createChatGptViewHandle(win: BrowserWindow): PooledViewHandle {
       on: (event, listener) => wc.on(event as never, listener as never),
       removeListener: (event, listener) => wc.removeListener(event as never, listener as never),
       setWindowOpenHandler: (handler) => wc.setWindowOpenHandler(handler),
+    },
+  };
+  return { handle, view };
+}
+
+/** A ChatGPT view the controller can drive. It has no way to be destroyed: layout changes cannot lose the page. */
+export function createChatGptViewHandle(win: BrowserWindow): ViewHandle {
+  return buildChatGptView(win).handle;
+}
+
+/**
+ * The view of one project in the pool (chatgptViews.ts). The controller is given only the ViewHandle part; `destroy` stays with the pool,
+ * which calls it for one reason only: the bound on live views was reached and this was the least recently used one. It takes the view
+ * out of the window and closes its page. This is the one place in the main process that does that (a test pins it).
+ */
+export function createPooledChatGptViewHandle(win: BrowserWindow): PooledViewHandle {
+  const { handle, view } = buildChatGptView(win);
+  return {
+    ...handle,
+    destroy: () => {
+      if (!win.isDestroyed()) win.contentView.removeChildView(view);
+      if (!view.webContents.isDestroyed()) view.webContents.close();
     },
   };
 }

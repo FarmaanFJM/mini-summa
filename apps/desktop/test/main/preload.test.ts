@@ -86,8 +86,56 @@ describe('window.miniSumma.claudeWeb', () => {
     expect(removeListener).toHaveBeenCalledWith(CH.claudeWebState, handler);
   });
 
-  it('leaves the ChatGPT surface as it was', () => {
-    expect(Object.keys(api.chatgpt).sort()).toEqual(['back', 'focus', 'forward', 'getState', 'navigate', 'onState', 'reload', 'setBounds', 'setOverlayActive']);
+  // Intentional change (live views per project): the surface gained `liveViews` (a plain flag) and `onNotice`; every other member is as it was.
+  it('keeps the ChatGPT surface, plus liveViews and onNotice', () => {
+    expect(Object.keys(api.chatgpt).sort()).toEqual(['back', 'focus', 'forward', 'getState', 'liveViews', 'navigate', 'onNotice', 'onState', 'reload', 'setBounds', 'setOverlayActive']);
+  });
+
+  it('passes the project key as the LAST argument, and only when there is one: without a key the calls are exactly what they were', async () => {
+    const rect = { x: 1, y: 2, width: 3, height: 4 };
+    const url = 'https://chatgpt.com/c/6a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+    const calls: [() => Promise<unknown>, string, unknown[]][] = [
+      [() => api.chatgpt.setBounds(rect), CH.chatgptSetBounds, [rect]],
+      [() => api.chatgpt.setBounds(rect, 'prj_a'), CH.chatgptSetBounds, [rect, 'prj_a']],
+      [() => api.chatgpt.setBounds(null, 'prj_a'), CH.chatgptSetBounds, [null, 'prj_a']],
+      [() => api.chatgpt.navigate(url), CH.chatgptNavigate, [url]],
+      [() => api.chatgpt.navigate(url, 'prj_a'), CH.chatgptNavigate, [url, 'prj_a']],
+      [() => api.chatgpt.reload('prj_a'), CH.chatgptReload, ['prj_a']],
+      [() => api.chatgpt.back('prj_a'), CH.chatgptBack, ['prj_a']],
+      [() => api.chatgpt.forward('prj_a'), CH.chatgptForward, ['prj_a']],
+      [() => api.chatgpt.focus('prj_a'), CH.chatgptFocus, ['prj_a']],
+      [() => api.chatgpt.getState('prj_a'), CH.chatgptGetState, ['prj_a']],
+      [() => api.chatgpt.getState(), CH.chatgptGetState, []],
+      [() => api.chatgpt.setOverlayActive(true), CH.chatgptSetOverlayActive, [true]], // one switch for every view: never keyed
+    ];
+    for (const [call, channel, args] of calls) {
+      invoke.mockClear();
+      await call();
+      expect(invoke).toHaveBeenCalledWith(channel, ...args);
+      expect(invoke.mock.calls[0]).toHaveLength(1 + args.length);
+    }
+  });
+
+  it('listens to the keyed channel for a project\'s state and only passes on that project\'s, and to the old channel without a key', () => {
+    expect(api.chatgpt.liveViews).toBe(true);
+    const state = { mode: 'embedded', status: 'ready', url: 'https://chatgpt.com/', title: null, canGoBack: false, canGoForward: false, note: null } as const;
+    on.mockClear();
+    const keyedListener = vi.fn();
+    const off = api.chatgpt.onState(keyedListener, 'prj_a');
+    expect(on.mock.calls[0][0]).toBe(CH.chatgptKeyedState);
+    const handler = on.mock.calls[0][1] as (event: unknown, payload: unknown) => void;
+    handler({}, { key: 'prj_b', state });
+    expect(keyedListener).not.toHaveBeenCalled();
+    handler({}, { key: 'prj_a', state });
+    expect(keyedListener).toHaveBeenCalledWith(state);
+    off();
+    expect(removeListener).toHaveBeenCalledWith(CH.chatgptKeyedState, handler);
+    on.mockClear();
+    api.chatgpt.onState(vi.fn());
+    expect(on.mock.calls[0][0]).toBe(CH.chatgptState);
+    on.mockClear();
+    api.chatgpt.onNotice?.(vi.fn());
+    expect(on.mock.calls[0][0]).toBe(CH.chatgptNotice);
   });
 
   it('exposes functions and plain values only: no ipcRenderer, no event emitter, nothing the page could use to reach the main process by itself', () => {
@@ -102,6 +150,6 @@ describe('window.miniSumma.claudeWeb', () => {
     };
     walk(api, 'miniSumma');
     expect(Object.keys(api)).not.toContain('ipcRenderer');
-    expect(seen.sort()).toEqual(['miniSumma.appVersion', 'miniSumma.kind', 'miniSumma.platform']);
+    expect(seen.sort()).toEqual(['miniSumma.appVersion', 'miniSumma.chatgpt.liveViews', 'miniSumma.kind', 'miniSumma.platform']); // liveViews: a plain flag
   });
 });

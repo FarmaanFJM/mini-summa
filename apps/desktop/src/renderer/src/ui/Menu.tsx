@@ -5,7 +5,7 @@ import { Icon } from './Icon';
 import type { IconName } from './Icon';
 import { Popover } from './Popover';
 import type { PopoverDismissReason } from './Popover';
-import type { Placement } from './popover';
+import type { Placement } from './popoverPosition';
 
 export interface MenuItem {
   id?: string;

@@ -55,6 +55,50 @@ describe('registerIpc', () => {
     expect(handlers.size).toBe(0);
   });
 
+  describe('the project key of the ChatGPT views', () => {
+    const rect = { x: 1, y: 2, width: 30, height: 40 };
+    const url = 'https://chatgpt.com/c/6a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
+
+    it('is passed on as the last argument when given, and the surface is called exactly as before when not', async () => {
+      const s = setup();
+      await s.call(CH.chatgptSetBounds, s.good(), rect, 'prj_a');
+      expect(s.chatgpt.setBounds).toHaveBeenLastCalledWith(rect, 'prj_a');
+      await s.call(CH.chatgptSetBounds, s.good(), null, 'prj_a');
+      expect(s.chatgpt.setBounds).toHaveBeenLastCalledWith(null, 'prj_a');
+      await s.call(CH.chatgptSetBounds, s.good(), rect);
+      expect(s.chatgpt.setBounds).toHaveBeenLastCalledWith(rect);
+      await s.call(CH.chatgptSetBounds, s.good(), rect, null);
+      expect(s.chatgpt.setBounds).toHaveBeenLastCalledWith(rect);
+      await s.call(CH.chatgptNavigate, s.good(), `${url}?x=1`, 'prj_a');
+      expect(s.chatgpt.navigate).toHaveBeenLastCalledWith(url, 'prj_a');
+      await s.call(CH.chatgptNavigate, s.good(), url);
+      expect(s.chatgpt.navigate).toHaveBeenLastCalledWith(url);
+      for (const [channel, fn] of [[CH.chatgptReload, s.chatgpt.reload], [CH.chatgptBack, s.chatgpt.back], [CH.chatgptForward, s.chatgpt.forward], [CH.chatgptFocus, s.chatgpt.focus], [CH.chatgptGetState, s.chatgpt.getState]] as const) {
+        await s.call(channel, s.good(), 'prj_a');
+        expect(fn).toHaveBeenLastCalledWith('prj_a');
+        await s.call(channel, s.good());
+        expect(fn).toHaveBeenLastCalledWith();
+      }
+    });
+
+    it('is refused when it is not a short key of plain characters, and nothing is done', async () => {
+      const s = setup();
+      for (const junk of ['', 'a b', '../x', 'x'.repeat(101), 'prj/a', 7, {}, ['prj_a']]) {
+        await expect(s.call(CH.chatgptSetBounds, s.good(), rect, junk), String(junk)).rejects.toThrow(/Invalid view key/);
+        await expect(s.call(CH.chatgptNavigate, s.good(), url, junk)).rejects.toThrow(/Invalid view key/);
+        await expect(s.call(CH.chatgptGetState, s.good(), junk)).rejects.toThrow(/Invalid view key/);
+      }
+      expect(s.chatgpt.setBounds).not.toHaveBeenCalled();
+      expect(s.chatgpt.navigate).not.toHaveBeenCalled();
+    });
+
+    it('the overlay switch takes no key: it covers every view', async () => {
+      const s = setup();
+      await s.call(CH.chatgptSetOverlayActive, s.good(), true, 'prj_a');
+      expect(s.chatgpt.setOverlayActive).toHaveBeenLastCalledWith(true);
+    });
+  });
+
   describe('sender checks (every channel)', () => {
     const argsFor: Record<string, unknown[]> = {
       [CH.chatgptSetBounds]: [null],

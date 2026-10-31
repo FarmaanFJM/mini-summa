@@ -195,7 +195,7 @@ describe('what the adapter lets the controller do to the view and the page (the 
     ]);
   });
 
-  it('no source of the main process or the preload calls anything that would do those things, or removes the view from the window', () => {
+  it('no source of the main process or the preload calls anything that would do those things, and only the pool\'s eviction removes a view from the window', () => {
     const files: string[] = [];
     const walk = (d: string) => {
       for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
@@ -208,6 +208,18 @@ describe('what the adapter lets the controller do to the view and the page (the 
     const page = /\.(executeJavaScript|executeJavaScriptInIsolatedWorld|insertCSS|removeInsertedCSS|insertText|sendInputEvent|setUserAgent|startDrag)\(|\bwebFrame\b|registerPreloadScript|setPreloads|webRequest\./;
     const lifetime = /removeChildView|webContents\??\.(close|destroy)\(|forcefullyCrashRenderer/;
     expect(files.filter((f) => page.test(fs.readFileSync(f, 'utf8'))).map((f) => path.basename(f))).toEqual([]);
-    expect(files.filter((f) => lifetime.test(fs.readFileSync(f, 'utf8'))).map((f) => path.basename(f))).toEqual([]);
+    // Intentional change (live views per project): ONE place may take a ChatGPT view out of the window, the destroy of the pooled handle in
+    // electronView.ts, and only chatgptViews.ts (the pool) may call it, only from evict(), which only runs when the bound on live views is hit.
+    expect(files.filter((f) => lifetime.test(fs.readFileSync(f, 'utf8'))).map((f) => path.basename(f))).toEqual(['electronView.ts']);
+    const electronView = fs.readFileSync(path.resolve(import.meta.dirname, '../../src/main/electronView.ts'), 'utf8');
+    expect(electronView.match(/removeChildView/g)).toHaveLength(1);
+    expect(electronView.slice(electronView.indexOf('export function createChatGptViewHandle'), electronView.indexOf('export function createPooledChatGptViewHandle'))).not.toMatch(lifetime);
+    const pool = fs.readFileSync(path.resolve(import.meta.dirname, '../../src/main/chatgptViews.ts'), 'utf8');
+    expect(pool.match(/\.destroy\?\.\(\)/g)).toHaveLength(1); // the one call, below
+    const evict = pool.slice(pool.indexOf('private evict('), pool.indexOf('private waitForPlacement'));
+    expect(evict).toMatch(/entry\.destroy\?\.\(\)/);
+    for (const f of ['chatgptView.ts', 'claudeView.ts', 'ipc.ts', 'nativeBridge.ts', 'windowRouter.ts']) {
+      expect(fs.readFileSync(path.resolve(import.meta.dirname, '../../src/main', f), 'utf8'), f).not.toMatch(lifetime);
+    }
   });
 });

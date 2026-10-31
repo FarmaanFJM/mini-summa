@@ -3,7 +3,7 @@ import { decideOrientation, LANDSCAPE_THRESHOLD, onlyPane, toggleMaximized } fro
 import {
   clampRatio, DEFAULT_RATIO, MAX_RATIO, MIN_RATIO, ratioAfterKey, ratioFromPointer, roundRatio,
 } from '../../src/renderer/src/ui/splitMath';
-import { computePosition } from '../../src/renderer/src/ui/popover';
+import { computePosition } from '../../src/renderer/src/ui/popoverPosition';
 
 describe('decideOrientation', () => {
   it('goes landscape when the area is at least 1.15 times wider than tall', () => {
