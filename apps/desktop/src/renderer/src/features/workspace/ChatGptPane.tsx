@@ -2,6 +2,7 @@ import { parseChatGptUrl, sameChatGptPage } from '@minisumma/shared';
 import type { ChatGptProjectLink, ChatGptViewState, Conversation, Project } from '@minisumma/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatGptRecorder, recordableAddress } from '../../app/chatgptRecorder';
+import { keyedChatGpt } from '../../app/keyedChatGpt';
 import { useNative } from '../../app/native';
 import { conversationsOf } from '../../app/selectors';
 import { useApi, useApp, useRoute, useRuntime, useUi } from '../../app/runtime';
@@ -48,8 +49,9 @@ function useChatGptViewState(enabled: boolean, key: string | undefined): ChatGpt
     if (!enabled) { setState(null); return undefined; }
     let cancelled = false;
     setState(null); // another project's view: nothing of the previous one's page
-    native.chatgpt.getState(key).then((s) => { if (!cancelled) setState(s); }, () => {});
-    const off = native.chatgpt.onState((s) => { if (!cancelled) setState(s); }, key);
+    const chat = keyedChatGpt(native, key);
+    chat.getState().then((s) => { if (!cancelled) setState(s); }, () => {});
+    const off = chat.onState((s) => { if (!cancelled) setState(s); });
     return () => { cancelled = true; off(); };
   }, [enabled, native, key]);
   return state;
@@ -81,6 +83,7 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
   // With live views (the desktop shell) each project has a ChatGPT view of its own, named by the project's id: switching projects shows
   // another view and the page, its scroll position and an unsent draft stay in the one that was left. A host with one view ignores it.
   const key = native.chatgpt.liveViews ? project.id : undefined;
+  const chat = useMemo(() => keyedChatGpt(native, key), [native, key]);
   const view = useChatGptViewState(embedded, key);
   const bodyRef = useRef<HTMLDivElement>(null);
   useNativeBounds(bodyRef, embedded && visible && hasPage, 'chatgpt', key);
@@ -98,13 +101,13 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
   useEffect(() => {
     if (!embedded) return undefined;
     let live = true;
-    native.chatgpt.getState(key).then((s) => { if (live) recorder.observe(s); }, () => {});
-    const off = native.chatgpt.onState((s) => {
+    chat.getState().then((s) => { if (live) recorder.observe(s); }, () => {});
+    const off = chat.onState((s) => {
       const hit = recorder.observe(s);
       if (hit) routeStore.getState().selectChatGptUrl(hit.projectId, hit.url);
-    }, key);
+    });
     return () => { live = false; off(); };
-  }, [embedded, native, recorder, routeStore, key]);
+  }, [embedded, chat, recorder, routeStore]);
   useEffect(() => {
     if (!embedded) return undefined;
     const token = recorder.begin({ id: project.id, scopeId });
@@ -134,16 +137,16 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
     let cancelled = false;
     const token = owner.current;
     (async () => {
-      const state = await native.chatgpt.getState(key).catch(() => null);
+      const state = await chat.getState().catch(() => null);
       if (cancelled) return;
       lastNavigated.current = normalMarker;
       activated.current = project.id;
       if (state?.url && sameChatGptPage(state.url, linkedUrl)) recorder.arm(token);
-      else { recorder.expect(token, linkedUrl); await native.chatgpt.navigate(linkedUrl, key); }
+      else { recorder.expect(token, linkedUrl); await chat.navigate(linkedUrl); }
       routeStore.getState().finishChatGptProjectOpen(project.id);
     })().catch(() => { routeStore.getState().finishChatGptProjectOpen(project.id); });
     return () => { cancelled = true; };
-  }, [projectRequested, embedded, linkedUrl, visible, normalMarker, native, routeStore, project.id, recorder, key]);
+  }, [projectRequested, embedded, linkedUrl, visible, normalMarker, chat, routeStore, project.id, recorder, key]);
 
   useEffect(() => {
     if (!embedded || projectRequested) return undefined;
@@ -158,7 +161,7 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
     let cancelled = false;
     const token = owner.current;
     (async () => {
-      const state = await native.chatgpt.getState(key).catch(() => null);
+      const state = await chat.getState().catch(() => null);
       if (cancelled) return;
       lastNavigated.current = marker;
       activated.current = project.id;
@@ -167,12 +170,12 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
       if (activation && key !== undefined && state?.url) { recorder.arm(token); return; }
       if (state?.url && sameChatGptPage(state.url, target.url)) { recorder.arm(token); return; }
       recorder.expect(token, target.url);
-      await native.chatgpt.navigate(target.url, key);
+      await chat.navigate(target.url);
     })().catch(() => { lastNavigated.current = null; });
     return () => { cancelled = true; };
     // `selected` and `linked` are read through the marker and the url: they change when the marker or the url does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [embedded, project.id, normalMarker, normalUrl, projectRequested, native, routeStore, recorder, key]);
+  }, [embedded, project.id, normalMarker, normalUrl, projectRequested, chat, routeStore, recorder, key]);
 
   const choose = useCallback((id: string) => {
     const target = conversations.find((c) => c.id === id);
@@ -181,9 +184,9 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
     if (embedded) {
       lastNavigated.current = `conversation|${target.id}|${target.url}`;
       recorder.expect(owner.current, target.url);
-      void native.chatgpt.navigate(target.url, key).catch(() => {});
+      void chat.navigate(target.url).catch(() => {});
     }
-  }, [conversations, embedded, native, project.id, route, recorder, key]);
+  }, [conversations, embedded, chat, project.id, route, recorder]);
 
   const browserFailed = (err: unknown) => {
     toast({ title: 'Could not open your browser', body: err instanceof Error ? err.message : undefined, kind: 'error' });
@@ -264,9 +267,9 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
             {embedded ? (
               <>
                 {linked ? <IconButton label="Open project page" icon="folder-open" size="sm" tooltipPlacement="top" onClick={() => { routeStore.getState().openChatGptProject(project.id); }} /> : null}
-                <IconButton label="Back" icon="arrow-left" size="sm" tooltipPlacement="top" disabled={!view?.canGoBack} onClick={() => { void native.chatgpt.back(key); }} />
-                <IconButton label="Forward" icon="arrow-right" size="sm" tooltipPlacement="top" disabled={!view?.canGoForward} onClick={() => { void native.chatgpt.forward(key); }} />
-                <IconButton label="Reload" icon="refresh" size="sm" tooltipPlacement="top" onClick={() => { void native.chatgpt.reload(key); }} />
+                <IconButton label="Back" icon="arrow-left" size="sm" tooltipPlacement="top" disabled={!view?.canGoBack} onClick={() => { void chat.back(); }} />
+                <IconButton label="Forward" icon="arrow-right" size="sm" tooltipPlacement="top" disabled={!view?.canGoForward} onClick={() => { void chat.forward(); }} />
+                <IconButton label="Reload" icon="refresh" size="sm" tooltipPlacement="top" onClick={() => { void chat.reload(); }} />
               </>
             ) : null}
             <IconButton label="Open in your browser" icon="external" size="sm" tooltipPlacement="top" onClick={openInBrowser} />
