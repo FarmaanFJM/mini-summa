@@ -621,10 +621,12 @@ async function phaseUninstall() {
   copyLogs('before-uninstall');
 
   const uninstaller = fs.existsSync(path.join(installDir, `Uninstall ${PRODUCT}.exe`)) ? path.join(installDir, `Uninstall ${PRODUCT}.exe`) : (safeList(installDir).find((n) => /^uninstall.*\.exe$/i.test(n)) ? path.join(installDir, safeList(installDir).find((n) => /^uninstall.*\.exe$/i.test(n))) : path.join(installDir, `Uninstall ${PRODUCT}.exe`));
-  await check('6.1', 'Silent uninstall (Uninstall Mini-Summa.exe /S), waited for, then polled', async () => {
+  await check('6.1', 'Silent uninstall (the QuietUninstallString Windows registered: Uninstall Mini-Summa.exe /currentuser /S), waited for, then polled', async () => {
     if (!fs.existsSync(uninstaller)) return fail(`${uninstaller} does not exist. Installed files: ${safeList(installDir).join(', ')}`);
     const t0 = Date.now();
-    const child = spawn(uninstaller, ['/S'], { stdio: 'ignore', windowsHide: true });
+    // '/currentuser /S' is exactly what the installer registered as QuietUninstallString (first native run: a bare '/S' on an administrator
+    // account looked in the all-users hive and left the per-user uninstall entry behind, which is a way of calling it, not a product defect).
+    const child = spawn(uninstaller, ['/currentuser', '/S'], { stdio: 'ignore', windowsHide: true });
     const exit = await new Promise((resolve) => {
       const timer = setTimeout(() => resolve({ timeout: true }), 180_000);
       child.once('exit', (code) => { clearTimeout(timer); resolve({ code }); });
