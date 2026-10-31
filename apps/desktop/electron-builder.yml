@@ -1,0 +1,117 @@
+# Packaging for Mini-Summa. Build the app first (electron-vite build), then:
+#   npm run dist:win   (NSIS installer, x64; also builds from Linux, see scripts/fetch-win-natives.mjs)
+#   npm run dist:dir   (unpacked Linux build, used by the smoke test)
+appId: com.minisumma.app
+productName: Mini-Summa
+copyright: Copyright (c) Mini-Summa contributors
+directories:
+  output: release
+  buildResources: build
+
+# package.json says ^45.1.0 and the dependency is hoisted to the repository root, so electron-builder cannot read the
+# version from node_modules. scripts/before-pack.cjs fails the build if this and the installed Electron ever differ.
+electronVersion: 45.1.0
+
+asar: true
+# Nothing is compiled at install time; the native pty ships as a prebuilt per-platform package.
+npmRebuild: false
+nodeGypRebuild: false
+
+beforePack: scripts/before-pack.cjs
+
+# Only what the bundled main process needs at run time. electron-builder would otherwise copy every production
+# dependency listed in package.json (React, xterm, ...), which the renderer bundle already contains.
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+  - '!node_modules/**'
+  - node_modules/ws/**
+  - node_modules/@lydell/node-pty/**
+
+extraResources:
+  # The hook script runs as `Mini-Summa.exe capture.mjs` (Electron in Node mode), so it must be a real file, not inside app.asar.
+  - from: ../../packages/claude-integration/dist/capture.mjs
+    to: hook/capture.mjs
+  - from: resources
+    to: icons
+    filter:
+      - icon.png
+      - tray.png
+      - tray@2x.png
+      - tray.ico
+
+# The pty is native code plus helper programs (conpty.dll, OpenConsole.exe) that must sit on the real disk. Unpacking the
+# whole package keeps its .node files, helper programs and worker scripts together.
+# electron-builder matches these against each file's path relative to this folder. The per-platform pty package is added
+# as a file set from build/native (staged by scripts/before-pack.cjs), so that is the path the second pattern has to match.
+asarUnpack:
+  - node_modules/@lydell/node-pty*/**
+  - build/native/node_modules/@lydell/node-pty*/**
+
+# minisumma:// links. electron-builder uses this for macOS, Linux and AppX packages but NOT for its NSIS target, so on Windows the
+# scheme is registered by build/installer.nsh (customInstall) and by the app itself on every start (setAsDefaultProtocolClient).
+protocols:
+  - name: Mini-Summa link
+    schemes:
+      - minisumma
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  # No administrator rights, ever.
+  requestedExecutionLevel: asInvoker
+  # The executable gets the app icon and version metadata (rcedit, which needs a Windows host or wine on Linux). It is
+  # NOT code-signed: no certificate is configured, so Windows SmartScreen will warn about an unknown publisher until one is.
+  signAndEditExecutable: true
+  # The Windows pty is fetched by scripts/fetch-win-natives.mjs (the beforePack hook runs it) and added to the app as an
+  # ordinary node_modules package, so @lydell/node-pty finds it with its usual require(`...-${process.platform}-${process.arch}`).
+  files:
+    - from: build/native/node_modules/@lydell/node-pty-win32-x64
+      to: node_modules/@lydell/node-pty-win32-x64
+      filter:
+        - '**/*'
+        - '!**/*.pdb'
+        - '!.fetched-integrity'
+
+# NSIS runs its own stub once to produce the uninstaller. That is native on Windows; on Linux or macOS it needs wine
+# on the PATH (apt install wine). electron-builder's own portable wine toolset (toolsets.wine 1.0.1) was tried and its
+# Linux bundle has no Windows-side DLLs ("failed to load ntdll.dll error c0000135"), so it is not used.
+nsis:
+  artifactName: Mini-Summa-Setup-${version}-${arch}.${ext}
+  oneClick: false
+  perMachine: false
+  # perMachine: false only makes "only for me" the default. The install-mode page still offers "anyone who uses this computer",
+  # which asks for administrator rights (UAC). allowElevation: false removes that way in: the choice is shown disabled
+  # ("must run as admin") unless the installer was started as an administrator on purpose.
+  allowElevation: false
+  # Windows version check, minisumma:// registration and the note about kept data on uninstall.
+  include: build/installer.nsh
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Mini-Summa
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+
+linux:
+  # The Linux build (used by the smoke test) takes the pty from the installed package, staged into build/native by
+  # scripts/before-pack.cjs. (A file set, because electron-builder does not merge platform-specific plain patterns into
+  # its node_modules filter.)
+  files:
+    - from: build/native/node_modules/@lydell/node-pty-linux-x64
+      to: node_modules/@lydell/node-pty-linux-x64
+      filter:
+        - '**/*'
+  target: dir
+  icon: build/icon.png
+  executableName: mini-summa
+  category: Utility
+
+# No auto-update channel and no publishing: releases are built and shared by hand.
+publish: null

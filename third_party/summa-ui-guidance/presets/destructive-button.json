@@ -1,0 +1,96 @@
+{
+  "id": "preset.destructive-button",
+  "name": "Destructive button",
+  "purpose": "Make destructive actions clearly distinguishable and readable without relying on colour alone, and without washed-out translucent red.",
+  "whenToUse": [
+    "The confirm button of a destructive confirm dialog (Delete project).",
+    "A dedicated danger zone action in settings (Delete account) that opens a confirmation.",
+    "A menu item that removes or deletes something (text colour plus icon, last in the menu).",
+    "A low-risk, undoable removal where a quiet neutral destructive style is enough (Remove from list)."
+  ],
+  "whenNotToUse": [
+    "Ordinary, reversible actions such as Archive, Clear filters or Close. Use a neutral button.",
+    "As the main action of a view. The primary action is emerald; a destructive action is never primary.",
+    "Placed directly beside the primary button with the same emphasis. Pair a destructive button with a neutral Cancel instead.",
+    "More than one solid destructive button in the same view.",
+    "A pale red text on a translucent dark-red background (P19). That treatment is washed out and fails contrast.",
+    "An icon only red button with no label or accessible name."
+  ],
+  "anatomy": [
+    "Container: solid --danger-solid fill, --r radius, --control-h height (40px for large).",
+    "Label: an explicit verb and object (Delete project), --danger-ink on the fill.",
+    "Optional leading icon (trash, 16px) before the label.",
+    "Loading: a spinner replaces the icon, the label becomes a progressive verb (Deleting), width stays stable."
+  ],
+  "variants": [
+    {
+      "id": "solid",
+      "description": "--danger-solid fill, white text, optional trash icon. Hover steps to --danger-solid-hover.",
+      "useWhen": "Confirming destructive, high-impact actions."
+    },
+    {
+      "id": "neutral-destructive",
+      "description": "Neutral --s3 surface with --danger text and icon. No tinted fill.",
+      "useWhen": "Low-risk deletes, toolbars, the trigger that opens a confirm dialog."
+    },
+    {
+      "id": "menu-item",
+      "description": "Menu item with --danger text and icon, last, after a separator.",
+      "useWhen": "Delete inside a context menu or overflow menu."
+    },
+    {
+      "id": "neutral",
+      "description": "Plain secondary button with a clear verb.",
+      "useWhen": "The action is reversible or has an Undo."
+    }
+  ],
+  "behavior": [
+    "One solid destructive button per view. If two seem necessary, the second is neutral.",
+    "Never adjacent to the primary action in the same emphasis; pair it with Cancel.",
+    "Disabled: opacity 0.45, no pointer; do not remove the button, explain why nearby when it is not obvious.",
+    "Loading: aria-busy=\"true\", spinner replaces the icon, repeat clicks are ignored until done.",
+    "High-impact destructive actions are confirmed in a dialog (see preset.confirm-dialog), with initial focus on Cancel.",
+    "In menus, danger items keep the shared menu hover fill; they never get a red background."
+  ],
+  "tokens": [
+    "--danger-solid",
+    "--danger-solid-hover",
+    "--danger-ink",
+    "--danger",
+    "--s3",
+    "--s4",
+    "--r",
+    "--control-h",
+    "--control-h-lg",
+    "--sp-2",
+    "--fs",
+    "--focus",
+    "--dur",
+    "--ease"
+  ],
+  "accessibility": [
+    "Measured: white (--danger-ink) on --danger-solid is about 5.1:1 (hover state --danger-solid-hover is about 4.3:1, slightly under 4.5). --danger text on --s3 is about 4.75:1 but on --s4 only about 4.0:1, so the neutral and menu variants always pair the colour with a verb and an icon and should not be used for small text.",
+    "The action is named by a verb, not by colour; an icon supports the verb.",
+    "Use a real button element. When busy, set aria-busy and keep the label so the name does not change abruptly.",
+    "Disabled uses the disabled attribute (or aria-disabled when it must stay focusable).",
+    "Focus ring is the shared 1.5px neutral ring, not red."
+  ],
+  "principles": [
+    "P19",
+    "P06",
+    "P15",
+    "P17",
+    "P10"
+  ],
+  "avoids": [
+    "AP-003",
+    "AP-008",
+    "AP-012",
+    "AP-016"
+  ],
+  "implementations": {
+    "html": "examples/destructive-button.html",
+    "css": "css/presets.css",
+    "react": "src/ui/index.tsx"
+  }
+}

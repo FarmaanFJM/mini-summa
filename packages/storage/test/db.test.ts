@@ -1,0 +1,149 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { Db, MIGRATIONS, SCHEMA_VERSION, journalPragmaFor, migrate, newId, openDatabase } from '../src/index.ts';
+
+const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'ms-storage-'));
+
+describe('upgrading a database made by the first release', () => {
+  it('keeps every project and root, and gives existing projects no ChatGPT Project link', () => {
+    const file = path.join(tmp(), 'v1.db');
+    const old = new Db(file);
+    expect(migrate(old, MIGRATIONS.filter((m) => m.version === 1))).toMatchObject({ from: 0, to: 1 });
+    old.run(`INSERT INTO projects (id, name, description, github_repo, default_env, notification_prefs_json, sort_order, created_at, updated_at)
+             VALUES ('prj_a', 'GitManager', 'd', 'acme/git-manager', 'win', '{}', 0, 't', 't')`);
+    old.run("INSERT INTO project_roots (id, project_id, env, path, position, root_key) VALUES ('rot_a', 'prj_a', 'win', 'C:\\Dev\\GitManager', 0, 'win|c:\\dev\\gitmanager')");
+    old.close();
+
+    const { db, migration } = openDatabase(file); // the second release opens it
+    expect(migration).toMatchObject({ from: 1, to: SCHEMA_VERSION });
+    expect(migration.applied.map((m) => m.version)).toEqual(MIGRATIONS.filter((m) => m.version > 1).map((m) => m.version));
+    const project = db.get<Record<string, unknown>>("SELECT * FROM projects WHERE id = 'prj_a'");
+    expect(project).toMatchObject({ name: 'GitManager', github_repo: 'acme/git-manager', chatgpt_project_url: null, chatgpt_project_scope: null, chatgpt_project_title: null });
+    expect(db.get<{ path: string }>("SELECT path FROM project_roots WHERE project_id = 'prj_a'")?.path).toBe('C:\\Dev\\GitManager');
+    db.run("UPDATE projects SET chatgpt_project_url = 'https://chatgpt.com/g/g-p-1/project' WHERE id = 'prj_a'"); // the new columns are writable
+    db.close();
+  });
+});
+
+describe('openDatabase', () => {
+  it('creates the schema, uses WAL and enforces foreign keys', () => {
+    const dir = tmp();
+    const { db, migration } = openDatabase(path.join(dir, 'nested', 'mini-summa.db'));
+    expect(migration).toMatchObject({ from: 0, to: SCHEMA_VERSION });
+    expect(db.get<{ journal_mode: string }>('PRAGMA journal_mode')?.journal_mode).toBe('wal');
+    expect(db.get<{ foreign_keys: number }>('PRAGMA foreign_keys')?.foreign_keys).toBe(1);
+    const tables = db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").map((r) => r.name);
+    for (const t of ['projects', 'project_roots', 'conversations', 'session_bindings', 'managed_sessions', 'raw_events', 'reports',
+      'report_candidates', 'deliveries', 'delivery_events', 'activity', 'notifications', 'pending_actions', 'devices', 'pairing_offers',
+      'idempotency', 'hook_installs', 'sessions_projection', 'kv', 'schema_migrations']) expect(tables).toContain(t);
+    expect(() => db.run("INSERT INTO conversations (id, project_id, title, url, original_url, kind, created_at, updated_at) VALUES ('c','nope','t','u','u','chat','x','x')")).toThrow(/FOREIGN KEY/);
+    db.close();
+  });
+
+  it('reopens without reapplying migrations and keeps data', () => {
+    const file = path.join(tmp(), 'a.db');
+    const first = openDatabase(file);
+    first.db.run("INSERT INTO kv (key, value_json, updated_at) VALUES ('k','1','t')");
+    first.db.close();
+    const second = openDatabase(file);
+    expect(second.migration.applied).toEqual([]);
+    expect(second.db.get<{ value_json: string }>("SELECT value_json FROM kv WHERE key='k'")?.value_json).toBe('1');
+    second.db.close();
+  });
+
+  it('refuses a database from a newer build', () => {
+    const file = path.join(tmp(), 'new.db');
+    const { db } = openDatabase(file);
+    db.run("INSERT INTO schema_migrations (version, name, applied_at) VALUES (99, 'future', 't')");
+    db.close();
+    expect(() => openDatabase(file)).toThrow(/schema version 99/);
+  });
+});
+
+describe('migrate', () => {
+  it('applies only the missing migrations, each atomically', () => {
+    const db = new Db(':memory:');
+    const base = [{ version: 1, name: 'a', sql: 'CREATE TABLE a (x INTEGER)' }];
+    expect(migrate(db, base).applied).toHaveLength(1);
+    const more = [...base, { version: 2, name: 'b', sql: 'CREATE TABLE b (y INTEGER)' }, { version: 3, name: 'broken', sql: 'CREATE TABLE c (z INTEGER); THIS IS NOT SQL' }];
+    expect(() => migrate(db, more)).toThrow();
+    // v2 was applied, v3 rolled back completely (table c must not exist)
+    expect(db.get("SELECT name FROM sqlite_master WHERE name='b'")).toBeDefined();
+    expect(db.get("SELECT name FROM sqlite_master WHERE name='c'")).toBeUndefined();
+    expect(db.get<{ v: number }>('SELECT MAX(version) AS v FROM schema_migrations')?.v).toBe(2);
+    db.close();
+  });
+
+  it('rejects duplicate versions', () => {
+    const db = new Db(':memory:');
+    expect(() => migrate(db, [{ version: 1, name: 'a', sql: 'SELECT 1' }, { version: 1, name: 'b', sql: 'SELECT 1' }])).toThrow(/Duplicate/);
+  });
+
+  it('the shipped migration list is strictly increasing', () => {
+    expect(MIGRATIONS.map((m) => m.version)).toEqual([...MIGRATIONS.map((m) => m.version)].sort((a, b) => a - b));
+  });
+});
+
+describe('Db.tx', () => {
+  it('rolls back the whole transaction on error and nests with savepoints', () => {
+    const db = new Db(':memory:');
+    db.exec('CREATE TABLE t (n INTEGER)');
+    expect(() => db.tx(() => { db.run('INSERT INTO t VALUES (1)'); throw new Error('boom'); })).toThrow('boom');
+    expect(db.all('SELECT * FROM t')).toHaveLength(0);
+    db.tx(() => {
+      db.run('INSERT INTO t VALUES (1)');
+      expect(() => db.tx(() => { db.run('INSERT INTO t VALUES (2)'); throw new Error('inner'); })).toThrow('inner');
+      db.run('INSERT INTO t VALUES (3)');
+    });
+    expect(db.all<{ n: number }>('SELECT n FROM t ORDER BY n').map((r) => r.n)).toEqual([1, 3]);
+    expect(db.inTransaction).toBe(false);
+  });
+
+  it('supports named and positional parameters', () => {
+    const db = new Db(':memory:');
+    db.exec('CREATE TABLE t (a TEXT, b INTEGER)');
+    db.run('INSERT INTO t VALUES (?, ?)', ['x', 1]);
+    db.run('INSERT INTO t VALUES (:a, :b)', { a: 'y', b: 2 });
+    expect(db.get<{ a: string }>('SELECT a FROM t WHERE b = $b', { b: 2 })?.a).toBe('y');
+  });
+});
+
+describe('newId', () => {
+  it('is prefixed and unique', () => {
+    const ids = new Set(Array.from({ length: 500 }, () => newId('prj')));
+    expect(ids.size).toBe(500);
+    expect([...ids][0]).toMatch(/^prj_[0-9a-f]{16}$/);
+  });
+});
+
+// SIMULATED Windows: the decision is a function of the path string, so it is tested here with an injected platform. Nothing ran on Windows.
+describe('journalPragmaFor', () => {
+  const WAL = 'PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;';
+  const ROLLBACK = 'PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL;';
+
+  it('SIMULATED Windows: keeps WAL on a drive path, with spaces and non-ASCII letters, and in the long-path form of a drive', () => {
+    for (const file of ['C:\\Users\\Zoë Müller\\AppData\\Roaming\\Mini-Summa\\data\\mini-summa.db', 'd:/data/x.db', '\\\\?\\C:\\data\\x.db', '\\\\.\\C:\\data\\x.db']) {
+      expect(journalPragmaFor(file, 'win32'), file).toBe(WAL);
+    }
+  });
+
+  it('SIMULATED Windows: uses the rollback journal on a network share, whichever way it is written', () => {
+    for (const file of ['\\\\fileserver\\share\\ms\\mini-summa.db', '//fileserver/share/ms/mini-summa.db', '\\\\?\\UNC\\fileserver\\share\\ms\\x.db', '\\\\wsl.localhost\\Ubuntu\\home\\u\\x.db']) {
+      expect(journalPragmaFor(file, 'win32'), file).toBe(ROLLBACK);
+    }
+  });
+
+  it('keeps WAL everywhere else, also for a path that only looks like a share', () => {
+    expect(journalPragmaFor('//server/share/x.db', 'linux')).toBe(WAL);
+    expect(journalPragmaFor('/home/u/.local/share/mini-summa/mini-summa.db', 'linux')).toBe(WAL);
+    expect(journalPragmaFor('/Users/u/Library/Application Support/Mini-Summa/data/x.db', 'darwin')).toBe(WAL);
+  });
+
+  it('a database in a real folder is still opened in WAL mode', () => {
+    const { db } = openDatabase(path.join(tmp(), 'wal.db'));
+    expect(db.get<{ journal_mode: string }>('PRAGMA journal_mode')?.journal_mode).toBe('wal');
+    db.close();
+  });
+});

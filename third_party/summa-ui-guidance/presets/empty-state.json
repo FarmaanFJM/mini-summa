@@ -1,0 +1,88 @@
+{
+  "id": "preset.empty-state",
+  "name": "Empty state",
+  "purpose": "Tell the user why a region is empty and, if there is a sensible next step, offer exactly one.",
+  "whenToUse": [
+    "A list, table or board has no items yet (first use).",
+    "A search or filter returned nothing (no results).",
+    "A region could not load its data (error loading).",
+    "A task queue or inbox is cleared and the user is caught up."
+  ],
+  "whenNotToUse": [
+    "Anything with an illustration, mascot or decorative icon. Use words.",
+    "More than one action. Choose the one most users want; put others elsewhere.",
+    "Multi-paragraph explanations of how the product works (P05).",
+    "Instead of a loading state. Do not show an empty state before the data has loaded.",
+    "Tables where a blank cell is correct. Leave the cell empty, do not fill it with a dash or the word None.",
+    "Hiding the region entirely would be clearer than describing that it is empty."
+  ],
+  "anatomy": [
+    "One line statement, --text-2, maximum about 46 characters per line.",
+    "At most one action: primary (emerald) for first use, secondary for recovery (Clear search, Try again).",
+    "Left aligned to the surrounding content by default, optionally centred inside a card or panel.",
+    "No illustration, no heading plus subheading pair."
+  ],
+  "variants": [
+    {
+      "id": "first-use",
+      "description": "No items exist. States that plainly and offers the creating action.",
+      "useWhen": "A new account or empty collection. Copy: No projects yet. Create one to get started."
+    },
+    {
+      "id": "no-results",
+      "description": "Items exist but none match. Names the query and offers to clear it.",
+      "useWhen": "Search or filter returns nothing. Copy: No projects match \"atlas\"."
+    },
+    {
+      "id": "error-loading",
+      "description": "The data could not be fetched. Says what failed and offers Try again.",
+      "useWhen": "Network or server failure for a region. Copy: Projects could not be loaded. Check your connection and try again."
+    },
+    {
+      "id": "caught-up",
+      "description": "Nothing to do, no action.",
+      "useWhen": "Cleared inbox or queue. Copy: You are all caught up."
+    }
+  ],
+  "behavior": [
+    "Copy differs by cause: first use, no results and error loading are never the same sentence.",
+    "The error variant uses role=alert only when it appears as a result of a user action; otherwise role=status or none.",
+    "Do not show the empty state while loading; show the loading state first (see preset.loading-state).",
+    "The action label is a verb plus object (Create project), never Get started.",
+    "Keep the region's height stable so the layout does not jump between loading, empty and filled."
+  ],
+  "tokens": [
+    "--text-2",
+    "--sp-3",
+    "--sp-4",
+    "--sp-6",
+    "--accent",
+    "--s3",
+    "--fs"
+  ],
+  "accessibility": [
+    "The statement is plain text in a paragraph; do not hide it in an image.",
+    "The action is a real button or link with a descriptive label.",
+    "Error variant announces with role=alert when triggered by a user action.",
+    "Text uses --text-2 on --s1 and --s2 surfaces, above 4.5:1."
+  ],
+  "principles": [
+    "P05",
+    "P09",
+    "P10",
+    "P11",
+    "P13",
+    "P21"
+  ],
+  "avoids": [
+    "AP-010",
+    "AP-013",
+    "AP-015",
+    "AP-016"
+  ],
+  "implementations": {
+    "html": "examples/empty-state.html",
+    "css": "css/presets.css",
+    "react": "src/lab/guidance/Presets.tsx"
+  }
+}

@@ -1,0 +1,56 @@
+// Gradle init script (copy to ~/.gradle/init.d/): consult a LOCAL, file-based Maven repository FIRST, for plugins, for
+// buildscript classpaths and for project dependencies. It only ADDS a repository in front of the ones the build declares:
+// nothing is removed, replaced or switched off, no checksum or signature check is changed, and everything the local
+// repository does not contain is still fetched from the repositories the build asks for.
+//
+// The local repository is a normal Maven layout (group/path/artifact/version/artifact-version.jar|aar|pom|module).
+// Fill it only with files you downloaded from the official repository AND compared with the checksum that repository
+// publishes next to each file (scripts/android/prefetch-maven.mjs does exactly that). Default location: ~/ms-maven.
+// Override with the MINISUMMA_LOCAL_MAVEN environment variable. Without that folder this script does nothing.
+def localRepoDir = new File(System.getenv('MINISUMMA_LOCAL_MAVEN') ?: "${System.getProperty('user.home')}/ms-maven")
+
+if (localRepoDir.isDirectory()) {
+    def repoName = 'local-verified-files'
+
+    // True when the settings file has a pluginManagement { ... repositories { ... } ... } block of its own.
+    def declaresPluginRepositories = { File settingsDir ->
+        def file = ['settings.gradle', 'settings.gradle.kts'].collect { new File(settingsDir, it) }.find { it.isFile() }
+        if (file == null) return false
+        def text = file.text
+        def start = text.indexOf('pluginManagement')
+        if (start < 0) return false
+        def open = text.indexOf('{', start)
+        if (open < 0) return false
+        int depth = 0
+        int end = text.length() - 1
+        for (int i = open; i < text.length(); i++) {
+            def c = text.charAt(i)
+            if (c == ('{' as char)) depth++
+            else if (c == ('}' as char)) { depth--; if (depth == 0) { end = i; break } }
+        }
+        return (text.substring(open, end) =~ /\brepositories\s*\{/).find()
+    }
+
+    // 1. Plugins and the settings classpath (pluginManagement). Added before the settings file runs, so it is first in line.
+    //    A settings file that declares no plugin repositories gets Gradle's default, the Plugin Portal. Declaring any
+    //    repository switches that default off, so when the build declares none, the Plugin Portal is put right behind ours:
+    //    this script must not take a repository away. (It has to happen now: the settings plugins {} block is resolved
+    //    before settingsEvaluated runs.)
+    beforeSettings { settings ->
+        settings.pluginManagement.repositories {
+            maven { name = repoName; url = localRepoDir.toURI() }
+        }
+        if (!declaresPluginRepositories(settings.settingsDir)) {
+            settings.pluginManagement.repositories.gradlePluginPortal()
+        }
+    }
+    // 2. buildscript classpaths and 3. project dependencies. The init script runs before the build script, so these come first.
+    allprojects { project ->
+        project.buildscript.repositories {
+            maven { name = repoName; url = localRepoDir.toURI() }
+        }
+        project.repositories {
+            maven { name = repoName; url = localRepoDir.toURI() }
+        }
+    }
+}

@@ -1,0 +1,394 @@
+{
+  "schemaVersion": 1,
+  "source": "PRINCIPLES.md",
+  "principles": [
+    {
+      "id": "P01",
+      "number": 1,
+      "title": "No Borders Within Borders",
+      "slug": "borders",
+      "antipatterns": [
+        "AP-001",
+        "AP-015"
+      ],
+      "summary": "Do not place bordered elements inside other bordered elements.",
+      "rules": [
+        "Express hierarchy with background elevation, spacing, typography and subtle section dividers.",
+        "A border marks a meaningful boundary, not the existence of an element.",
+        "Inputs and rows inside panels are filled surfaces, not outlined boxes."
+      ],
+      "exceptions": [
+        "A single outline on a floating overlay (menu, dialog) is allowed.",
+        "Checkbox and radio boxes need a visible boundary."
+      ]
+    },
+    {
+      "id": "P02",
+      "number": 2,
+      "title": "Dark Themes Move From Dark to Light",
+      "slug": "elevation",
+      "antipatterns": [
+        "AP-001"
+      ],
+      "summary": "In dark themes each elevated surface is lighter than its parent.",
+      "rules": [
+        "Page is darkest (--s0), main panels --s1, cards and inputs --s2, selected and raised --s3, overlays --s4.",
+        "Never make a nested or elevated surface darker than its parent.",
+        "Elevation should read without borders."
+      ],
+      "exceptions": [
+        "A media lightbox backdrop may be darker than the page so the image dominates."
+      ]
+    },
+    {
+      "id": "P03",
+      "number": 3,
+      "title": "No Arbitrary Left-Border Decoration",
+      "slug": "left-border",
+      "antipatterns": [
+        "AP-002"
+      ],
+      "summary": "Do not use a thicker left border to make an element stand out.",
+      "rules": [
+        "Do not use a thick left border for cards, alerts, active items, info panels, categories or emphasis.",
+        "Use fill, type weight or spacing for emphasis instead."
+      ],
+      "exceptions": [
+        "The product or user explicitly requires it.",
+        "It has an established semantic meaning in that interface (blockquote, diff gutter)."
+      ]
+    },
+    {
+      "id": "P04",
+      "number": 4,
+      "title": "Tags Must Be Functional, Not Decorative",
+      "slug": "tags",
+      "antipatterns": [
+        "AP-005"
+      ],
+      "summary": "Tags exist only when users recognize, filter, group or interact with a category or state.",
+      "rules": [
+        "Default tag: one background color, no border, optional icon, short text.",
+        "Never create status tags for information that need not be shown (for example 'Automatically saved').",
+        "Do not scatter tags to add visual variety."
+      ],
+      "exceptions": [
+        "Label tags that filter or group tasks; a failure state that needs attention."
+      ]
+    },
+    {
+      "id": "P05",
+      "number": 5,
+      "title": "Information Must Earn Its Place",
+      "slug": "information",
+      "antipatterns": [
+        "AP-005",
+        "AP-006",
+        "AP-010"
+      ],
+      "summary": "Show the minimum information needed for the current task.",
+      "rules": [
+        "Do not explain familiar concepts because space is available.",
+        "Prefer familiar patterns, clear naming, predictable position, progressive disclosure and contextual help over permanent explanation.",
+        "A small learning curve beats permanent information overload."
+      ],
+      "exceptions": [
+        "Legal or safety text that must be shown.",
+        "A one-time first-use hint that can be dismissed."
+      ]
+    },
+    {
+      "id": "P06",
+      "number": 6,
+      "title": "Use as Few Colors as Possible",
+      "slug": "color",
+      "antipatterns": [
+        "AP-005",
+        "AP-012",
+        "AP-013"
+      ],
+      "summary": "Color is a limited communication resource.",
+      "rules": [
+        "Rely on neutral surfaces, typography, spacing, shape and hierarchy.",
+        "Accent colors communicate meaning, interaction, identity or state.",
+        "If removing a color does not reduce comprehension, remove it."
+      ],
+      "exceptions": [
+        "Data visualisation, media imagery and market movement legitimately need hues."
+      ]
+    },
+    {
+      "id": "P07",
+      "number": 7,
+      "title": "One Visual Language",
+      "slug": "consistency",
+      "antipatterns": [
+        "AP-013"
+      ],
+      "summary": "All Summa products share one design language.",
+      "rules": [
+        "Share spacing logic, typography, surfaces, interaction states, iconography, corner treatment, controls, menus, navigation patterns and motion.",
+        "Theme: matte, restrained, slightly glassy, reusable, consistent.",
+        "Applications differ in content and workflow, not in design language."
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "P08",
+      "number": 8,
+      "title": "Familiarity Is a Feature",
+      "slug": "familiarity",
+      "antipatterns": [
+        "AP-009"
+      ],
+      "summary": "Prefer established interaction conventions.",
+      "rules": [
+        "Do not make users relearn dropdowns, menus, tabs, navigation, search, dialogs, selection, keyboard behavior or editor interactions.",
+        "Innovate on workflow, not on controls users already understand."
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "P09",
+      "number": 9,
+      "title": "Simplicity Beats Cleverness",
+      "slug": "simplicity",
+      "antipatterns": [
+        "AP-015",
+        "AP-016"
+      ],
+      "summary": "Prefer the simpler design when two solve the problem.",
+      "rules": [
+        "Do not add controls, containers, states, visual treatments or terminology without meaningful user value.",
+        "Complexity requires justification; simplicity does not."
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "P10",
+      "number": 10,
+      "title": "Minimalism Over Prevalence",
+      "slug": "contextual-controls",
+      "antipatterns": [
+        "AP-003",
+        "AP-008",
+        "AP-009",
+        "AP-016"
+      ],
+      "summary": "Do not show every possible action at once.",
+      "rules": [
+        "Prefer contextual and dynamic controls.",
+        "Put 'Create' inside the dropdown where it becomes relevant, not beside it.",
+        "Show Send before generation and Stop during it, never both.",
+        "When a control turns into its opposite (Send to Stop), add an interaction guard against accidental double clicks."
+      ],
+      "exceptions": [
+        "Two actions that can genuinely be used at the same moment may both be visible."
+      ]
+    },
+    {
+      "id": "P11",
+      "number": 11,
+      "title": "The Rectangle Rule",
+      "slug": "rectangles",
+      "antipatterns": [
+        "AP-014"
+      ],
+      "summary": "Organize information in clean rectangular regions.",
+      "rules": [
+        "Do not use indentation as the primary hierarchy mechanism.",
+        "Express hierarchy with typography, text color, weight, size and spacing; body content starts at the same left edge as its heading.",
+        "Prefer flat lists, breadcrumbs and a single-level sidebar to indented trees."
+      ],
+      "exceptions": [
+        "List marker gutters and table cell padding are not indentation."
+      ]
+    },
+    {
+      "id": "P12",
+      "number": 12,
+      "title": "Dividers Are Secondary Structure",
+      "slug": "dividers",
+      "antipatterns": [
+        "AP-001"
+      ],
+      "summary": "Use subtle horizontal dividers only to support an existing hierarchy.",
+      "rules": [
+        "Prefer spacing first.",
+        "Add a divider only when spacing alone leaves two regions ambiguous.",
+        "Avoid excessive divider lines."
+      ],
+      "exceptions": [
+        "Repeated rows (feed posts, cart lines, review rows) may use one hairline each."
+      ]
+    },
+    {
+      "id": "P13",
+      "number": 13,
+      "title": "No Em Dashes",
+      "slug": "copy",
+      "antipatterns": [],
+      "summary": "No em dashes in user-facing interface copy.",
+      "rules": [
+        "Use commas, colons, periods, parentheses or a rewritten sentence.",
+        "Applies to headings, descriptions, labels, notifications, empty states and demo content.",
+        "Leave empty table cells empty instead of filling them with a dash."
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "P14",
+      "number": 14,
+      "title": "No Sidebar Stacking",
+      "slug": "navigation",
+      "antipatterns": [
+        "AP-011"
+      ],
+      "summary": "Never answer sidebar navigation with another full navigation sidebar beside it.",
+      "rules": [
+        "Secondary context: replace the sidebar content with a back chevron, or split the sidebar into upper and lower regions, or use the primary content region for details.",
+        "Editors, inspectors, order books and detail panels are content panes and are allowed.",
+        "The rule targets redundant navigation structures only."
+      ],
+      "exceptions": [
+        "Content panes (watchlist, filters, inspectors) are not navigation sidebars."
+      ]
+    },
+    {
+      "id": "P15",
+      "number": 15,
+      "title": "Monochromatic Selection and Focus",
+      "slug": "selection-color",
+      "antipatterns": [
+        "AP-004",
+        "AP-012"
+      ],
+      "summary": "Ordinary selection, hover, focus and active navigation are neutral.",
+      "rules": [
+        "Do not use the emerald accent for focus rings, selected cards, selected nav entries or text input outlines.",
+        "Prefer neutral surface changes or neutral outlines.",
+        "Keep accessible focus visibility.",
+        "Keep semantic colors where they carry meaning (market movement, destructive actions).",
+        "Use emerald sparingly: brand, the primary action of a view, meaningful state."
+      ],
+      "exceptions": [
+        "Semantic colors for trading movement, KPI deltas and destructive actions."
+      ]
+    },
+    {
+      "id": "P16",
+      "number": 16,
+      "title": "Layout Diversity",
+      "slug": "layout",
+      "antipatterns": [],
+      "summary": "No universal left-sidebar/right-content structure.",
+      "rules": [
+        "Choose layout from the task, user expectations and information architecture.",
+        "Support dashboards, public sites, feeds, dense data workspaces, catalogs and form-based experiences.",
+        "Variety comes from the task, never from novelty; familiarity remains essential."
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "P17",
+      "number": 17,
+      "title": "Subtle Focus and Selection",
+      "slug": "subtle-focus",
+      "antipatterns": [
+        "AP-004"
+      ],
+      "summary": "Neutral focus and selection must also be light in visual weight.",
+      "rules": [
+        "Avoid thick, high-contrast or dominant outlines for ordinary input focus, selected content and active controls.",
+        "Use 1px to 1.5px neutral rings and quiet fills.",
+        "Keyboard focus indicators must still reach at least 3:1 contrast against their surface.",
+        "Invisible focus is not tasteful minimalism."
+      ],
+      "exceptions": [
+        "Windows high-contrast or forced-colors modes should use system focus styles."
+      ]
+    },
+    {
+      "id": "P18",
+      "number": 18,
+      "title": "Mobile Navigation Breathing Room",
+      "slug": "mobile",
+      "antipatterns": [
+        "AP-007"
+      ],
+      "summary": "Do not compress navigation, headings, filters and actions into dense vertical stacks on mobile.",
+      "rules": [
+        "Leave clear spacing between navigation and primary content.",
+        "Do not trade readability and rhythm for more information above the fold.",
+        "Scrolling is preferable to compression.",
+        "Move secondary controls into a sheet or menu instead of stacking rows."
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "P19",
+      "number": 19,
+      "title": "No Washed-Out Destructive Buttons",
+      "slug": "destructive",
+      "antipatterns": [
+        "AP-003"
+      ],
+      "summary": "Destructive buttons are solid and readable, or neutral.",
+      "rules": [
+        "Avoid translucent, low-contrast tinted ghost buttons, especially pale red text on dark red tint.",
+        "Use a restrained solid destructive button with readable text, or a neutral treatment when appropriate.",
+        "Do not rely on color alone: use a clear verb and an icon where helpful."
+      ],
+      "exceptions": [
+        "Destructive menu items use danger-colored text plus an icon and sit last after a separator."
+      ]
+    },
+    {
+      "id": "P20",
+      "number": 20,
+      "title": "No Decorative Placeholder Identity",
+      "slug": "identity",
+      "antipatterns": [
+        "AP-006"
+      ],
+      "summary": "Do not invent avatars when no meaningful avatar exists.",
+      "rules": [
+        "No circular initials, generated placeholder avatars or artificial profile-picture indicators by default.",
+        "Plain names and relevant metadata are often enough.",
+        "Introduce an avatar only when identity imagery helps distinguish entities or represents real content."
+      ],
+      "exceptions": [
+        "Social platforms where users have real profile images."
+      ]
+    },
+    {
+      "id": "P21",
+      "number": 21,
+      "title": "Remove Before Adding",
+      "slug": "meta",
+      "antipatterns": [
+        "AP-010",
+        "AP-015"
+      ],
+      "summary": "Meta-principle: when an interface feels unclear, subtract first.",
+      "rules": [
+        "Ask whether something can be removed, merged, relocated, hidden contextually, represented through hierarchy or revealed only when needed before adding a component."
+      ],
+      "exceptions": []
+    },
+    {
+      "id": "P22",
+      "number": 22,
+      "title": "Exception Rule",
+      "slug": "exceptions",
+      "antipatterns": [],
+      "summary": "Principles are defaults, not absolute prohibitions.",
+      "rules": [
+        "A principle may be broken only for a concrete usability requirement, when the alternative interacts worse, deliberately, and with an explainable reason.",
+        "'Because it looks nicer' is not sufficient justification.",
+        "Document every exception."
+      ],
+      "exceptions": []
+    }
+  ]
+}

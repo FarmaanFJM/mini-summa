@@ -1,0 +1,39 @@
+{
+  "id": "AP-007",
+  "name": "Excessively dense mobile navigation",
+  "summary": "On mobile, keep the top area to a title and a few icons, and move secondary controls into a sheet or menu instead of stacking rows above content.",
+  "problem": "Header, tabs, filter chips and action buttons squeezed into 3 to 4px gaps leave a few lines of content and tiny tap targets. The interface feels anxious and is hard to use.",
+  "severity": "high",
+  "applicability": "default",
+  "principles": [
+    "P18"
+  ],
+  "bad": {
+    "description": "A 360px screen with a header, a tab row, a filter chip row and an action row packed above four list rows.",
+    "demo": "bad-dense-mobile"
+  },
+  "good": [
+    {
+      "id": "airy-sheet",
+      "title": "Spacing and a filter sheet",
+      "description": "A 56px top bar, one tab row, 20px of space before the content, and filters behind a single icon that opens a sheet.",
+      "demo": "good-airy-sheet"
+    }
+  ],
+  "why": "Scrolling is cheap, mis-taps are not. Breathing room keeps tap targets large and the visual rhythm readable.",
+  "exceptions": [
+    "A dense, expert-use tool the user explicitly asked for (a trading terminal, a spreadsheet) may be compact if tap targets stay at least 24px and the density is a deliberate choice."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-007"
+    ],
+    "humanReview": [
+      "Is there visible space between navigation and primary content?",
+      "Can every control be tapped without mis-hits?"
+    ]
+  },
+  "relatedAntiPatterns": [
+    "AP-016"
+  ]
+}

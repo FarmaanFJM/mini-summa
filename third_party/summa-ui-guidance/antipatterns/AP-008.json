@@ -1,0 +1,40 @@
+{
+  "id": "AP-008",
+  "name": "Multiple simultaneous opposing action buttons",
+  "summary": "Show only the control that applies in the current state; transform Send into Stop and guard against double clicks.",
+  "problem": "Showing Send and Stop together forces users to work out which one is valid. One of them is always meaningless and invites wrong clicks.",
+  "severity": "medium",
+  "applicability": "default",
+  "principles": [
+    "P10"
+  ],
+  "bad": {
+    "description": "A composer with both a Stop button and a Send button visible at once.",
+    "demo": "bad-send-and-stop"
+  },
+  "good": [
+    {
+      "id": "send-or-stop",
+      "title": "One control that changes",
+      "description": "Send before generation, Stop during it. Stop is briefly disabled after the swap so a repeated click does not cancel the request by accident. Try it.",
+      "demo": "good-send-or-stop"
+    }
+  ],
+  "why": "Fewer visible controls, a clearer next step, and an interaction guard keeps the transformation safe.",
+  "exceptions": [
+    "Both actions may be shown when both can really be used at the same time (Accept and Reject on a review item, Undo and Redo, Zoom in and Zoom out, Play and Next)."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-008"
+    ],
+    "humanReview": [
+      "Can both visible actions be used at the same time?",
+      "Is there a guard against an accidental repeat click after a control transforms?"
+    ]
+  },
+  "relatedAntiPatterns": [
+    "AP-009",
+    "AP-016"
+  ]
+}

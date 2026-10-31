@@ -1,0 +1,49 @@
+{
+  "id": "AP-010",
+  "name": "Unnecessary explanatory copy",
+  "summary": "Remove helper text that explains familiar fields; keep copy that prevents a real error or consequence.",
+  "problem": "A sentence under every field, or paragraphs in empty states, pushes content down, trains users to skip text and treats clear labels as insufficient.",
+  "severity": "medium",
+  "applicability": "contextual",
+  "principles": [
+    "P05",
+    "P21"
+  ],
+  "bad": {
+    "description": "A form with a long helper paragraph under every field.",
+    "demo": "bad-helper-text"
+  },
+  "good": [
+    {
+      "id": "plain-form",
+      "title": "Labels carry the meaning",
+      "description": "Clear labels and familiar fields. Contextual help appears only when a field actually needs it.",
+      "demo": "good-plain-form"
+    },
+    {
+      "id": "empty-line",
+      "title": "One-line empty state",
+      "description": "A short statement and one action instead of paragraphs explaining the feature.",
+      "demo": "good-empty-line",
+      "preset": "preset.empty-state"
+    }
+  ],
+  "why": "Clear naming, familiar patterns and progressive disclosure make the interface faster. A small learning curve is better than permanent clutter.",
+  "exceptions": [
+    "Copy that prevents a costly error, explains a non-obvious consequence (irreversible deletion, billing), or states a format that cannot be guessed is allowed.",
+    "Legal, compliance and first-run onboarding text that is required is allowed.",
+    "Error messages are never \"unnecessary\"; they must explain how to recover."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-010"
+    ],
+    "humanReview": [
+      "Would a user get stuck without this sentence?",
+      "Does the text restate the label?"
+    ]
+  },
+  "relatedPresets": [
+    "preset.empty-state"
+  ]
+}

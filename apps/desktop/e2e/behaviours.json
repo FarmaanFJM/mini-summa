@@ -1,0 +1,165 @@
+{
+  "behaviours": [
+    {
+      "id": "A01",
+      "title": "Mini-Summa launches successfully"
+    },
+    {
+      "id": "A02",
+      "title": "A new project can be registered"
+    },
+    {
+      "id": "A03",
+      "title": "Its repository directory can be selected"
+    },
+    {
+      "id": "A04",
+      "title": "Its ChatGPT conversation URL can be configured"
+    },
+    {
+      "id": "A05",
+      "title": "The linked existing conversation can be opened"
+    },
+    {
+      "id": "A06",
+      "title": "Claude Code launches in the correct directory"
+    },
+    {
+      "id": "A07",
+      "title": "Terminal input and output work"
+    },
+    {
+      "id": "A08",
+      "title": "Terminal resize works"
+    },
+    {
+      "id": "A09",
+      "title": "Switching projects does not terminate unrelated sessions"
+    },
+    {
+      "id": "A10",
+      "title": "Multiple projects can be active"
+    },
+    {
+      "id": "A11",
+      "title": "Multiple sessions can belong to one project"
+    },
+    {
+      "id": "A12",
+      "title": "Portrait layout works"
+    },
+    {
+      "id": "A13",
+      "title": "Landscape layout works"
+    },
+    {
+      "id": "A14",
+      "title": "Pane resizing works (draggable divider; proportions persist)"
+    },
+    {
+      "id": "A15",
+      "title": "Claude activity appears in the feed"
+    },
+    {
+      "id": "A16",
+      "title": "A completion report can be captured"
+    },
+    {
+      "id": "A17",
+      "title": "The report remains linked to the correct project"
+    },
+    {
+      "id": "A18",
+      "title": "The report can be copied in full"
+    },
+    {
+      "id": "A19",
+      "title": "The correct ChatGPT conversation can be opened for handoff"
+    },
+    {
+      "id": "A20",
+      "title": "A report cannot be accidentally routed to another project's mapped conversation"
+    },
+    {
+      "id": "A21",
+      "title": "Desktop notifications work"
+    },
+    {
+      "id": "A22",
+      "title": "Project and session records persist after restart"
+    },
+    {
+      "id": "A23",
+      "title": "Pending reports persist after restart"
+    },
+    {
+      "id": "A24",
+      "title": "Hook installation is permission-gated"
+    },
+    {
+      "id": "A25",
+      "title": "Runtime secrets remain outside the repository"
+    },
+    {
+      "id": "CRIT",
+      "title": "Critical cross-project scenario: a report from A is handed off to A's conversation while B is selected"
+    },
+    {
+      "id": "X11",
+      "title": "A project reopens its ChatGPT pane on the last page used in it, through switching projects and a restart; each project keeps a live ChatGPT view within a bound, and an unloaded view is announced and loads again at its last address",
+      "why": "The persistent-workspace requirement in the real window: a conversation opened in ChatGPT (by an in-page navigation and by a link that loads a document) is remembered per project in the core, only when it belongs to the project (the linked ChatGPT Project's own pages; settings, the home page and another project's pages are not), and neither creates a project nor maps a conversation (projects.list identical); switching among three projects shows each one's own last address in its own web contents with no request; a restart reopens every project on its last address, not its project page; an unlinked project and a project with nothing keep working; the header action opens the linked project page. With five projects: a draft typed in one project's view survives switching away and back (same web contents id), the bound of four live views holds, the fifth view unloads the least recently used one with a notice that unsent text is gone and names the address it reloads at, the project then loads exactly that address into a new web contents with an empty draft; a local Claude session, a notification click and the Workspace view control still work. The pages are a local stand-in for chatgpt.com navigated by the test (pushState and a link), so this says nothing about how the real site navigates, nothing about drafts surviving a restart or an unload (they do not, and the docs say so), and nothing about Windows (NOT TESTED)."
+    }
+  ],
+  "extras": [
+    {
+      "id": "X01",
+      "title": "The Handoff card follows the delivery after \"Copy and open\" and \"I sent it\"",
+      "why": "Regression check for a defect this suite found: the core's event bus numbered a nested event with the newer sequence number, the window dropped it as stale, and the Handoff card stayed on its first state while the queue and the API had moved on."
+    },
+    {
+      "id": "X02",
+      "title": "The window reopens on the project that was selected when it was closed",
+      "why": "Regression check for a defect this suite found: the core listened on a random port, so every start had a new web origin and the window lost everything it keeps in localStorage. The core still has to take another port when 47811 is busy, so the check runs twice: on the same origin, and with 47811 held by another listener for the second launch (a different origin), where the window must restore itself from what the core remembers."
+    },
+    {
+      "id": "X03",
+      "title": "A session that ended says why in words, not as an internal code",
+      "why": "Regression check for a defect this suite found: the notice under a finished session printed the terminal manager's internal code (\"exited\", \"app_exit\") instead of a sentence."
+    },
+    {
+      "id": "X04",
+      "title": "The test sandbox is closed: the app reaches the chatgpt.com stand-in and no other host",
+      "why": "Not a product behaviour: it proves the suite's own promise that nothing a test does can reach a real host (other host names do not resolve, from either of the app's network sessions)."
+    },
+    {
+      "id": "X05",
+      "title": "A report is handed over and confirmed from the workspace, without going back to Reports",
+      "why": "Regression check for a known imperfection: after \"Copy and open\" the report card was out of sight, and \"I sent it\" was only on the Reports screen. A strip above the two panes now carries both buttons for the selected project; this proves the whole loop in the real window, that the native ChatGPT view stays under the strip in every layout, and that nothing says \"sent\" before the person does."
+    },
+    {
+      "id": "X06",
+      "title": "After /clear inside a managed terminal the Claude pane follows to the new session, and a restart reopens on it",
+      "why": "Regression check for a known gap: when Claude replaces the conversation inside a running terminal (/clear, /resume) the core keeps the terminal managed under a new session id and the old session becomes history, but the window used to leave the person on the old, ended tab. This proves, in the real window with the fake Claude CLI, that the pane ends on the new session's tab, that it is the same terminal and typing still reaches the process, that the old session stays reachable as ended history, and that a restart reopens on the new session."
+    },
+    {
+      "id": "X07",
+      "title": "A folder picked for a project that has none is saved, shown, and still there after a restart",
+      "why": "Regression check for a reported defect: in the old project dialog Browse only filled the \"Add a folder\" field, the folder joined the project through a second button, and Save then said \"No changes to save\" and discarded it while the header kept saying \"No folder yet\". This does what the report did in the real window (Browse in the settings of a project made from a GitHub repository alone, then Done, nothing in between), checks the folder is listed at once, stored and shown, then restarts the app and checks it is still there and that a local session starts in it. The settings now apply every change as it is made, so the class of defect (a draft that is compared and discarded) no longer exists; this test keeps the behaviour pinned."
+    },
+    {
+      "id": "X08",
+      "title": "The embedded ChatGPT page is zoomed to follow its pane (Automatic keeps about 900 CSS pixels), fixed sizes apply, layout changes never replace the page, and the page still takes clicks, selection, scrolling and its own Copy button",
+      "why": "Mitigation check for a reported overlap of ChatGPT's floating controls with the writing blocks. The cause is a hypothesis that could not be checked against the real site: a split pane gives ChatGPT only about 500 to 650 CSS pixels, where a responsive site tends to switch to its compact layout. Mini-Summa answers by zooming the view out, never by touching the page. This proves the mechanism in the real window against a stand-in page that reports its own window.innerWidth: Automatic gives a narrow pane a wider page (at least the narrower of 900 and what the 70 percent floor allows) at several window sizes and divider positions, fixed sizes apply exactly, a wide pane stays at 100 percent; hiding, maximizing the other pane, Settings, a dialog and a window resize keep the same web contents, the same page and a typed draft; a real click, double click, wheel and the page's own Copy button still work while zoomed, and a page on another origin (Chromium keeps zoom per host, so it would start at 100 percent) has the zoom put back at once. It proves nothing about ChatGPT's real layout, and the overlap itself was not reproduced."
+    },
+    {
+      "id": "X09",
+      "title": "Claude Code on the web opens in a native view of its own, on demand, with one GET and nothing typed in the page; hiding keeps the page, links and sign-in follow the policy, and its profile is separate from ChatGPT's",
+      "why": "Browser based integration check for the Cloud tab of the Claude pane: Mini-Summa shows the page, it does not control the session. The renderer's tab is not part of it. The test calls window.miniSumma.claudeWeb through the real preload and IPC, as the tab does, and reads the result from the main process and from a local stand-in for claude.ai. It proves the view is created on demand; that claude.ai/code?repositories=acme/webapp makes exactly one GET with the query and no cookie and that the page records no input, key, paste, submit or click; that the state goes loading to ready with the title; that hiding, moving, resizing the window, the overlay switch and a real dialog keep the same web contents, the same document and a half written draft, with no second request and no second view; that other sites go to the default browser, refused addresses go nowhere and Claude pages stay in the view; that one overlay switch hides and restores both native views and never shows a hidden one; that a signed-out visit is login_required; that only https claude.ai/code addresses are accepted; that a cookie in one profile is never sent by the other view and a cookie with an expiry survives a quit and a start. It proves nothing about the real claude.ai (its markup, its sign-in, whether it accepts an embedded browser): that needs a real sign-in on Windows."
+    },
+    {
+      "id": "X10",
+      "title": "A workspace made from an existing ChatGPT Project and a GitHub repository, with no folder, opens the project in ChatGPT, offers cloud but not local, opens Claude Code on the web with the repository preselected, switches views without losing anything, and keeps every association across a restart",
+      "why": "The round-3 journey end to end in the real window: Add project from a pasted ChatGPT Project address (query and fragment dropped, nothing imported), the GitHub repository added in settings, no folder; the linked project page in the embedded ChatGPT with the page size mechanism at work; the Cloud entry opening claude.ai/code?repositories=owner/repo with nothing typed, clicked or submitted and no local session started in its place; Split, Claude and ChatGPT views switched with the same two native views, the same draft and no new request; a restart that keeps the project, its repository, its ChatGPT Project link, the absence of a folder and the Cloud tab's page. Both sites are local stand-ins, so this says nothing about the real chatgpt.com or claude.ai, nor about Windows."
+    }
+  ]
+}

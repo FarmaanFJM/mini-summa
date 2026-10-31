@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "application": {
+    "name": "mini-summa",
+    "repository": "https://github.com/FarmaanFJM/mini-summa"
+  },
+  "guidance": {
+    "name": "summa-ui-guidance",
+    "version": "0.1.0",
+    "bundleDigest": "5ef73215334c313089cb3cd87f6f78f65eef48f67dfdc5d53bd84fedad408cc7",
+    "source": "vendored"
+  },
+  "recordedAt": "2026-10-31T00:50:00Z",
+  "exceptions": [
+    {
+      "principle": "P02",
+      "reason": "X11 a white block behind the pairing QR so phones can scan it",
+      "scope": "pairing QR"
+    },
+    {
+      "principle": "P05",
+      "reason": "X6 and X9 persistent sentences that state a fact the person decides on, such as where keystrokes go and what consent covers",
+      "scope": "terminal header, observed session panel, starting hint, hooks consent, handoff card"
+    },
+    {
+      "principle": "P05",
+      "reason": "X13 the quick switcher draws no title; it is named for assistive technology",
+      "scope": "quick switcher"
+    },
+    {
+      "principle": "P05",
+      "reason": "W1 one permanent sentence says what the Cloud tab cannot do: it cannot see whether a cloud session is working, done or waiting, so it sends no notifications for one",
+      "scope": "Cloud tab of the Claude pane"
+    },
+    {
+      "principle": "P06",
+      "reason": "X5 X7 X10 amber and red status dots always beside words, ANSI colours in program output, tint on diff lines",
+      "scope": "session status, terminal, hooks diff"
+    },
+    {
+      "principle": "P07",
+      "reason": "X7 terminal ANSI colours are program output and not interface chrome",
+      "scope": "terminal"
+    },
+    {
+      "principle": "P10",
+      "reason": "W2 a control that cannot act stays visible, disabled, with its reason and the way to fix it, because local and cloud are chosen for each session and a missing folder or repository must be said",
+      "scope": "new session menu, empty Claude pane"
+    },
+    {
+      "principle": "P12",
+      "reason": "X3 the pane divider is a hairline that is also a drag handle",
+      "scope": "pane divider"
+    },
+    {
+      "principle": "P14",
+      "reason": "X12 a setup checklist that floats and never blocks",
+      "scope": "onboarding"
+    },
+    {
+      "principle": "P15",
+      "reason": "W3 an empty pane offers two real alternatives of equal standing (link a ChatGPT Project or add a conversation; start a local or a cloud session), at most one of them emerald",
+      "scope": "empty ChatGPT and Claude panes"
+    },
+    {
+      "principle": "P18",
+      "reason": "X2 28px compact controls in toolbars, tabs and filters of a desktop application; the type scale and the 32px controls are the bundle's",
+      "scope": "pane headers, tabs, filters"
+    },
+    {
+      "principle": "WORKSPACE_PATTERN (draft, not a principle)",
+      "reason": "W4 showing one pane alone is a focus mode, asked for by the owner: at the smallest window each pane of a split is too narrow for a terminal and for ChatGPT's page; nothing is closed, the control always shows the chosen view",
+      "scope": "Workspace view control, Ctrl+Shift+Arrow"
+    }
+  ]
+}

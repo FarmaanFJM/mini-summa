@@ -1,0 +1,55 @@
+{
+  "id": "AP-005",
+  "name": "Decorative tags and status pills",
+  "summary": "Show a tag only when users filter, group or act on it; drop it or write plain metadata for everything else.",
+  "problem": "Rows of coloured, bordered pills turn information that needs no emphasis into visual noise. Status chips such as \"Automatically saved\" tell users nothing they can use.",
+  "severity": "medium",
+  "applicability": "default",
+  "principles": [
+    "P04",
+    "P05",
+    "P06"
+  ],
+  "bad": {
+    "description": "Four coloured, bordered pills on one title: Automatically saved, Draft, Updated 2m ago, Private.",
+    "demo": "bad-pill-tags"
+  },
+  "good": [
+    {
+      "id": "plain-meta",
+      "title": "Plain metadata",
+      "description": "One muted line of text. Nothing to scan, nothing to colour.",
+      "demo": "good-plain-meta"
+    },
+    {
+      "id": "functional-tag",
+      "title": "Functional tag",
+      "description": "A neutral Tag (one background, no border) for a category that users really filter and group by.",
+      "demo": "good-functional-tag"
+    },
+    {
+      "id": "transient-notification",
+      "title": "Notification",
+      "description": "An event such as a save is acknowledged briefly in a notification instead of a permanent badge.",
+      "demo": "good-toast-saved",
+      "preset": "preset.notification"
+    }
+  ],
+  "why": "Plain text is quieter and quicker to read. Reserving tags for functional categories means that when one appears, users know it can be used.",
+  "exceptions": [
+    "Tags are allowed when they are a functional filter, category or state that users recognise, filter or interact with (labels, issue status in a tracker, stock tickers).",
+    "A failure state that users must notice and fix (for example \"Not saved\") may use a tag or an inline indicator."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-005"
+    ],
+    "humanReview": [
+      "Could a user filter, group or click this tag?",
+      "Would removing the tag reduce comprehension?"
+    ]
+  },
+  "relatedPresets": [
+    "preset.notification"
+  ]
+}

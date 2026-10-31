@@ -1,0 +1,2 @@
+# Per-run output of the acceptance suite (JSON results, evidence, failure artifacts). docs/ACCEPTANCE.md is the committed summary.
+results/

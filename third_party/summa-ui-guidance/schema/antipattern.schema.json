@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://summa-ui/schema/antipattern.schema.json",
+  "title": "Summa-UI anti-pattern",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "summary", "problem", "severity", "applicability", "principles", "bad", "good", "why", "exceptions", "detection"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^AP-\\d{3}$" },
+    "name": { "type": "string", "minLength": 3 },
+    "summary": { "type": "string", "description": "One sentence an agent can act on." },
+    "problem": { "type": "string", "description": "The underlying design problem, not just the appearance." },
+    "severity": { "enum": ["high", "medium", "low"], "description": "How harmful and how often it recurs in generated UI." },
+    "applicability": { "enum": ["always", "default", "contextual"], "description": "always: no known valid use. default: avoid unless an exception applies. contextual: judge per case." },
+    "principles": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^P\\d{2}$" } },
+    "bad": {
+      "type": "object", "additionalProperties": false, "required": ["description", "demo"],
+      "properties": { "description": { "type": "string" }, "demo": { "type": "string", "description": "Key of a React demo registered in src/lab/guidance/ap/registry.tsx" }, "snippet": { "type": "string", "description": "Optional framework-neutral HTML/CSS excerpt of the mistake." } }
+    },
+    "good": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "title", "description", "demo"],
+        "properties": { "id": { "type": "string", "pattern": "^[a-z0-9-]+$" }, "title": { "type": "string" }, "description": { "type": "string" }, "demo": { "type": "string" }, "snippet": { "type": "string" }, "preset": { "type": "string", "pattern": "^preset\\.[a-z-]+$" } }
+      }
+    },
+    "why": { "type": "string", "description": "Why the alternatives are preferable." },
+    "exceptions": { "type": "array", "items": { "type": "string" }, "description": "Explicit cases where the pattern is legitimate. Empty array only if applicability is always." },
+    "detection": {
+      "type": "object", "additionalProperties": false, "required": ["objective", "humanReview"],
+      "properties": {
+        "objective": { "type": "array", "items": { "type": "string", "pattern": "^CHK-\\d{3}$" }, "description": "Rule ids in checks/rules.json that machines can evaluate." },
+        "humanReview": { "type": "array", "items": { "type": "string" }, "description": "Aspects needing human visual judgment." }
+      }
+    },
+    "relatedPresets": { "type": "array", "items": { "type": "string", "pattern": "^preset\\.[a-z-]+$" } },
+    "relatedAntiPatterns": { "type": "array", "items": { "type": "string", "pattern": "^AP-\\d{3}$" } }
+  }
+}

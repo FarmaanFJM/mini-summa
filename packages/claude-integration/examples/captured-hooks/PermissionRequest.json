@@ -1,0 +1,54 @@
+{
+  "note": "REAL payload captured from Claude Code, sanitized: paths are masked and session, prompt and tool-use ids are replaced by synthetic ones. The transport block is added by the capture script.",
+  "transport": {
+    "transport_id": "<uuid>",
+    "received_at": "2026-10-30T10:08:58.890Z",
+    "wall_ms": 1793354938891,
+    "monotonic_ns": "964211414944",
+    "capture_version": 1,
+    "hook_arg": "PermissionRequest",
+    "pid": 0,
+    "ppid": 0,
+    "platform": "linux",
+    "claude_project_dir": "<SCRATCH>/work/projB",
+    "claude_config_dir": "<SCRATCH>/config",
+    "claude_code_remote": null,
+    "redactions": 0,
+    "truncations": 0,
+    "truncated_chars": 0,
+    "parse_error": null
+  },
+  "payload": {
+    "session_id": "00000000-0000-4000-8000-000000000005",
+    "transcript_path": "<SCRATCH>/config/projects/<SCRATCH-ENCODED>-work-projB/00000000-0000-4000-8000-000000000005.jsonl",
+    "cwd": "<SCRATCH>/work/projB",
+    "prompt_id": "00000000-0000-4000-8000-000000000006",
+    "permission_mode": "default",
+    "effort": {
+      "level": "high"
+    },
+    "hook_event_name": "PermissionRequest",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "mkdir permdir && touch permdir/x.txt",
+      "description": "Create permdir directory and an empty x.txt inside it"
+    },
+    "permission_suggestions": [
+      {
+        "type": "addRules",
+        "rules": [
+          {
+            "toolName": "Bash",
+            "ruleContent": "mkdir permdir *"
+          },
+          {
+            "toolName": "Bash",
+            "ruleContent": "touch permdir/x.txt"
+          }
+        ],
+        "behavior": "allow",
+        "destination": "localSettings"
+      }
+    ]
+  }
+}

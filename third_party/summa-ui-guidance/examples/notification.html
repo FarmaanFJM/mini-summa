@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notification preset (toasts)</title>
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/presets.css">
+<style>
+  /* Page chrome only. Everything inside the toast uses sm- classes. */
+  body { margin: 0; background: var(--s0); color: var(--text); font: 400 var(--fs)/1.5 var(--font); }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 160px; display: flex; flex-direction: column; gap: 28px; }
+  h1 { margin: 0; font-size: var(--fs-xl); font-weight: 650; letter-spacing: -0.01em; }
+  main > section > h2 { margin: 0 0 8px; font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+  p { margin: 0; color: var(--text-2); }
+  .group { display: flex; flex-wrap: wrap; gap: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Notifications</h1>
+    <p>Compact and expanded toasts. Bottom centre, never steals focus. Press Tab to reach a toast, Esc to dismiss it. Hover or focus pauses the timer.</p>
+  </div>
+
+  <section>
+    <h2>Compact (one line)</h2>
+    <div class="group">
+      <button class="sm-btn" data-fire="success-c">Success</button>
+      <button class="sm-btn" data-fire="info-c">Info</button>
+      <button class="sm-btn" data-fire="neutral-c">Neutral</button>
+      <button class="sm-btn" data-fire="undo-c">With Undo</button>
+      <button class="sm-btn" data-fire="warning-c">Warning</button>
+      <button class="sm-btn" data-fire="error-c">Error (persists)</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Expanded (title, description, up to two actions)</h2>
+    <div class="group">
+      <button class="sm-btn" data-fire="upload-fail">Failed upload with Retry</button>
+      <button class="sm-btn" data-fire="warning-x">Warning</button>
+      <button class="sm-btn" data-fire="info-x">Info</button>
+      <button class="sm-btn" data-fire="success-x">Success</button>
+      <button class="sm-btn" data-fire="neutral-x">Neutral</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Behaviour</h2>
+    <div class="group">
+      <button class="sm-btn" data-fire="dup">Fire the same message 3 times (de-duplicated)</button>
+      <button class="sm-btn" data-fire="burst">Fire 5 different toasts (max 3 visible)</button>
+      <button class="sm-btn sm-btn--ghost" data-fire="clear">Dismiss all</button>
+    </div>
+  </section>
+</main>
+
+<!-- One region, last in the DOM so Tab reaches it after the page content.
+     Set --sm-toast-offset (for example 56px) when a bottom tab bar is present. -->
+<section class="sm-toast-region" id="toasts" aria-label="Notifications"></section>
+
+<script>
+(function () {
+  var region = document.getElementById('toasts');
+  var MAX_VISIBLE = 3;
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var live = [];            // oldest first; the last item is nearest the anchor
+  var lastOutside = null;   // element to give focus back to when a focused toast goes away
+
+  // Icons are 16px, stroke 1.75, same paths as the shared Icon set. Neutral has no icon.
+  var ICON = {
+    success: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/>',          // circle-check
+    error:   '<circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/>',                 // circle-x
+    warning: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4M12 17h.01"/>', // triangle-alert
+    info:    '<circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/>'                 // info
+  };
+  var DEFAULT_MS = { success: 4000, info: 4000, neutral: 4000, warning: 8000, error: Infinity };
+  var ACTION_MIN_MS = 6000; // a toast with an action stays long enough to be used
+
+  function svg(inner, cls) {
+    return '<svg class="sm-icon ' + (cls || '') + '" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + inner + '</svg>';
+  }
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  document.addEventListener('focusin', function (e) { if (!region.contains(e.target)) lastOutside = e.target; });
+
+  function layout() {
+    live.forEach(function (t, i) { t.node.dataset.depth = Math.min(live.length - 1 - i, MAX_VISIBLE); });
+  }
+
+  function dismiss(t) {
+    var idx = live.indexOf(t);
+    if (idx < 0) return;
+    live.splice(idx, 1);
+    clearTimeout(t.timer);
+    var hadFocus = t.node.contains(document.activeElement);
+    t.node.dataset.state = 'leaving';
+    setTimeout(function () { t.node.remove(); }, reduced ? 0 : 170);
+    if (hadFocus && lastOutside && document.contains(lastOutside)) lastOutside.focus();
+    layout();
+  }
+
+  function arm(t) {
+    clearTimeout(t.timer);
+    if (!isFinite(t.duration)) return;
+    t.startedAt = Date.now();
+    t.timer = setTimeout(function () { dismiss(t); }, t.remaining);
+  }
+  function pause(t) { if (!isFinite(t.duration) || t.paused) return; t.paused = true; clearTimeout(t.timer); t.remaining -= Date.now() - t.startedAt; }
+  function resume(t) { if (!t.paused) return; t.paused = false; arm(t); }
+
+  function toast(type, message, opts) {
+    opts = opts || {};
+    var expanded = !!(opts.title || opts.description) && !opts.compact;
+    var key = [type, opts.title || '', message].join('|');
+
+    // De-duplicate: an identical message restarts its timer instead of stacking.
+    for (var i = 0; i < live.length; i++) {
+      if (live[i].key === key) { live[i].remaining = live[i].duration; live[i].paused = false; arm(live[i]); return live[i]; }
+    }
+
+    var duration = opts.duration != null ? opts.duration : DEFAULT_MS[type];
+    if (opts.action && isFinite(duration)) duration = Math.max(duration, ACTION_MIN_MS);
+    var persistent = !isFinite(duration);
+
+    var node = el('div', 'sm-toast ' + (expanded ? 'sm-toast--expanded' : 'sm-toast--compact'));
+    node.dataset.type = type;
+    // Errors and warnings interrupt (alert); the rest wait their turn (status).
+    node.setAttribute('role', (type === 'error' || type === 'warning') ? 'alert' : 'status');
+    node.setAttribute('aria-live', (type === 'error' || type === 'warning') ? 'assertive' : 'polite');
+    node.setAttribute('aria-atomic', 'true');
+
+    if (type !== 'neutral') {
+      var ic = el('span', 'sm-toast__icon');
+      ic.innerHTML = svg(ICON[type]);
+      node.appendChild(ic);
+    }
+
+    var body = el('div', 'sm-toast__body');
+    if (expanded) {
+      // The message is the title unless opts.title is given, then the message becomes the description.
+      var desc = opts.description || (opts.title ? message : '');
+      body.appendChild(el('div', 'sm-toast__title', opts.title || message));
+      if (desc) body.appendChild(el('div', 'sm-toast__desc', desc));
+    } else {
+      body.appendChild(el('span', 'sm-toast__message', message));
+    }
+
+    var t = { key: key, node: node, duration: duration, remaining: duration, paused: false, timer: 0, startedAt: 0 };
+
+    function addAction(a) {
+      var b = el('button', 'sm-toast__action', a.label);
+      b.type = 'button';
+      b.addEventListener('click', function () { dismiss(t); if (a.onClick) a.onClick(); });
+      return b;
+    }
+    var actions = (opts.actions || (opts.action ? [opts.action] : [])).slice(0, expanded ? 2 : 1);
+    if (expanded && actions.length) {
+      var row = el('div', 'sm-toast__actions');
+      actions.forEach(function (a) { row.appendChild(addAction(a)); });
+      body.appendChild(row);
+      node.appendChild(body);
+    } else {
+      node.appendChild(body);
+      actions.forEach(function (a) { node.appendChild(addAction(a)); });
+    }
+
+    // The dismiss button is always present on expanded and on persistent toasts.
+    if (expanded || persistent) {
+      var x = el('button', 'sm-toast__dismiss');
+      x.type = 'button';
+      x.setAttribute('aria-label', 'Dismiss notification');
+      x.innerHTML = svg('<path d="M18 6 6 18M6 6l12 12"/>', 'sm-icon--sm');
+      x.addEventListener('click', function () { dismiss(t); });
+      node.appendChild(x);
+    }
+
+    // Pause on hover and on keyboard focus; Esc dismisses a focused toast.
+    node.addEventListener('mouseenter', function () { pause(t); });
+    node.addEventListener('mouseleave', function () { if (!node.contains(document.activeElement)) resume(t); });
+    node.addEventListener('focusin', function () { pause(t); });
+    node.addEventListener('focusout', function (e) { if (!node.contains(e.relatedTarget) && !node.matches(':hover')) resume(t); });
+    node.addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.stopPropagation(); dismiss(t); } });
+
+    live.push(t);
+    region.appendChild(node);     // newest last = nearest the bottom anchor
+    layout();
+    arm(t);
+    return t;
+  }
+
+  var fire = {
+    'success-c': function () { toast('success', 'Link copied'); },
+    'info-c':    function () { toast('info', 'Sync paused while offline'); },
+    'neutral-c': function () { toast('neutral', 'Moved to Archive'); },
+    'undo-c':    function () { toast('neutral', 'Conversation archived', { action: { label: 'Undo', onClick: function () { toast('success', 'Restored'); } } }); },
+    'warning-c': function () { toast('warning', 'Storage is almost full'); },
+    'error-c':   function () { toast('error', 'Could not reach the server'); },
+    'upload-fail': function () { toast('error', 'Upload failed', { description: 'quarterly-report.pdf (48 MB) did not finish. Check your connection and try again.', actions: [{ label: 'Retry' }, { label: 'View details' }] }); },
+    'warning-x': function () { toast('warning', 'Sync conflict', { description: 'Changes made on another device will be overwritten. Review the differences first.', actions: [{ label: 'Review' }] }); },
+    'info-x':    function () { toast('info', 'Export updated', { description: 'Exports now include comments. Download the new CSV from Settings.' }); },
+    'success-x': function () { toast('success', 'Project shared', { description: 'Invitations were sent to 4 people.' }); },
+    'neutral-x': function () { toast('neutral', 'Restart required', { description: 'Your changes will apply next time you open the app.' }); },
+    dup:   function () { for (var i = 0; i < 3; i++) toast('success', 'Saved to Drafts'); },
+    burst: function () { toast('info', 'First'); toast('neutral', 'Second'); toast('success', 'Third'); toast('warning', 'Fourth'); toast('info', 'Fifth'); },
+    clear: function () { live.slice().forEach(dismiss); }
+  };
+  document.querySelectorAll('[data-fire]').forEach(function (b) { b.addEventListener('click', function () { fire[b.dataset.fire](); }); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+{
+  "id": "AP-011",
+  "name": "Stacked navigation sidebars",
+  "summary": "Replace the sidebar content and add a back chevron, or use the main region for details, instead of adding a second navigation sidebar.",
+  "problem": "Two or three navigation columns side by side consume width, repeat structure and leave a sliver for content. Mobile has no good fallback for them.",
+  "severity": "high",
+  "applicability": "default",
+  "principles": [
+    "P14"
+  ],
+  "bad": {
+    "description": "A primary sidebar, a secondary sidebar and a narrow content area crammed together.",
+    "demo": "bad-stacked-sidebars"
+  },
+  "good": [
+    {
+      "id": "sidebar-swap",
+      "title": "Swap sidebar content",
+      "description": "Selecting Settings replaces the sidebar content with its sections and a back control. Try it.",
+      "demo": "good-sidebar-swap"
+    },
+    {
+      "id": "content-detail",
+      "title": "Sections in content",
+      "description": "Keep one sidebar and show the secondary context as tabs and a list in the primary content.",
+      "demo": "good-content-detail"
+    }
+  ],
+  "why": "One navigation column keeps the rectangle clean, preserves content width and is simpler to adapt to small screens.",
+  "exceptions": [
+    "Content panes are not navigation sidebars: editors, inspectors, order books and detail panels are allowed.",
+    "A narrow icon rail for switching workspaces beside one list sidebar is an established pattern in some products; use it only when the product requires it and the rail has no second level of its own."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-011"
+    ],
+    "humanReview": [
+      "Are there two navigation structures side by side?",
+      "Is the second column navigation or content?"
+    ]
+  }
+}

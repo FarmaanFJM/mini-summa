@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Empty state preset</title>
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/presets.css">
+<style>
+  /* Page chrome only. Components use sm- classes from presets.css. */
+  body { margin: 0; background: var(--s0); color: var(--text); font: 400 var(--fs)/1.5 var(--font); }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 96px; display: flex; flex-direction: column; gap: 28px; }
+  h1 { margin: 0; font-size: var(--fs-xl); font-weight: 650; letter-spacing: -0.01em; }
+  main > section > h2 { margin: 0 0 8px; font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+  p { margin: 0; color: var(--text-2); }
+  .group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .panel { background: var(--s1); border-radius: var(--r-lg); padding: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Empty state</h1>
+    <p>One line, at most one action, no illustration. The copy differs for first use, no results and loading errors.</p>
+  </div>
+
+  <section>
+    <h2>First use</h2>
+    <div class="panel"><div class="sm-empty">
+      <p class="sm-empty__text">No projects yet. Create one to get started.</p>
+      <button class="sm-btn sm-btn--primary">Create project</button>
+    </div></div>
+  </section>
+  <section>
+    <h2>No results</h2>
+    <div class="panel"><div class="sm-empty">
+      <p class="sm-empty__text">No projects match "atlas".</p>
+      <button class="sm-btn">Clear search</button>
+    </div></div>
+  </section>
+  <section>
+    <h2>Error loading</h2>
+    <div class="panel"><div class="sm-empty" role="alert">
+      <p class="sm-empty__text">Projects could not be loaded. Check your connection and try again.</p>
+      <button class="sm-btn">Try again</button>
+    </div></div>
+  </section>
+  <section>
+    <h2>Nothing to act on (no action)</h2>
+    <div class="panel"><div class="sm-empty">
+      <p class="sm-empty__text">You are all caught up.</p>
+    </div></div>
+  </section>
+</main>
+<script>
+</script>
+</body>
+</html>

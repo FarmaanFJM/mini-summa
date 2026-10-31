@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Confirm dialog preset</title>
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/presets.css">
+<style>
+  /* Page chrome only. Components use sm- classes from presets.css. */
+  body { margin: 0; background: var(--s0); color: var(--text); font: 400 var(--fs)/1.5 var(--font); }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 96px; display: flex; flex-direction: column; gap: 28px; }
+  h1 { margin: 0; font-size: var(--fs-xl); font-weight: 650; letter-spacing: -0.01em; }
+  main > section > h2 { margin: 0 0 8px; font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+  p { margin: 0; color: var(--text-2); }
+  .group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .panel { background: var(--s1); border-radius: var(--r-lg); padding: 8px; }
+</style>
+</head>
+<body>
+<main id="page">
+  <div>
+    <h1>Confirm dialog</h1>
+    <p>Question title with a specific verb, one sentence of consequence, Cancel and a verb button. Esc cancels. A destructive alertdialog is not dismissed by backdrop click; the page behind is inert while any dialog is open.</p>
+  </div>
+
+  <section>
+    <h2>Open a dialog</h2>
+    <div class="group">
+      <button class="sm-btn" id="open-normal">Archive project</button>
+      <button class="sm-btn sm-btn--danger-quiet" id="open-danger"><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Delete project</button>
+      <button class="sm-btn sm-btn--danger-quiet" id="open-type"><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Delete workspace</button>
+    </div>
+    <p style="margin-top:12px" id="result" aria-live="polite">Nothing confirmed yet.</p>
+  </section>
+
+</main>
+  <!-- Dialog markup. Reused for all three variants by the script below. -->
+  <div class="sm-backdrop" id="backdrop" hidden>
+    <div class="sm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-desc" id="dialog">
+      <h2 class="sm-dialog__title" id="dlg-title"></h2>
+      <div class="sm-dialog__body">
+        <span id="dlg-desc"></span>
+        <div class="sm-dialog__field" id="dlg-field" hidden>
+          <label class="sm-dialog__label" for="dlg-input" id="dlg-label"></label>
+          <input class="sm-input" id="dlg-input" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="sm-dialog__foot">
+        <button class="sm-btn" type="button" id="dlg-cancel">Cancel</button>
+        <button class="sm-btn" type="button" id="dlg-confirm"></button>
+      </div>
+    </div>
+  </div>
+<script>
+(function () {
+  var backdrop = document.getElementById('backdrop');
+  var dialog = document.getElementById('dialog');
+  var title = document.getElementById('dlg-title');
+  var desc = document.getElementById('dlg-desc');
+  var field = document.getElementById('dlg-field');
+  var label = document.getElementById('dlg-label');
+  var input = document.getElementById('dlg-input');
+  var cancel = document.getElementById('dlg-cancel');
+  var confirmBtn = document.getElementById('dlg-confirm');
+  var result = document.getElementById('result');
+  var page = document.getElementById('page');
+  var opener = null;
+  var current = null;
+
+  var TRASH = '<svg class="sm-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>';
+
+  function open(cfg) {
+    current = cfg;
+    opener = document.activeElement;
+    dialog.setAttribute('role', cfg.destructive ? 'alertdialog' : 'dialog');
+    if (page) page.inert = true;   // background is unreachable by keyboard, pointer and assistive technology
+    title.textContent = cfg.title;
+    desc.textContent = cfg.description;
+    confirmBtn.className = 'sm-btn ' + (cfg.destructive ? 'sm-btn--danger' : 'sm-btn--primary');
+    confirmBtn.innerHTML = (cfg.destructive ? TRASH : '') + '<span></span>';
+    confirmBtn.lastChild.textContent = cfg.confirmLabel;
+    field.hidden = !cfg.requireText;
+    if (cfg.requireText) {
+      label.innerHTML = 'Type <strong></strong> to confirm';
+      label.querySelector('strong').textContent = cfg.requireText;
+      input.value = '';
+    }
+    confirmBtn.disabled = !!cfg.requireText;
+    backdrop.hidden = false;
+    // Initial focus: Cancel for destructive, Confirm otherwise, the field for type-to-confirm.
+    (cfg.requireText ? input : cfg.destructive ? cancel : confirmBtn).focus();
+  }
+  function close(value) {
+    backdrop.hidden = true;
+    if (page) page.inert = false;
+    var cfg = current; current = null;
+    if (opener && opener.focus) opener.focus();
+    result.textContent = value ? cfg.doneText : 'Cancelled. Nothing changed.';
+  }
+
+  input.addEventListener('input', function () { confirmBtn.disabled = input.value !== current.requireText; });
+  input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !confirmBtn.disabled) close(true); });
+  cancel.addEventListener('click', function () { close(false); });
+  confirmBtn.addEventListener('click', function () { close(true); });
+  // Backdrop click cancels a plain dialog only. An alertdialog must be answered (Esc or Cancel).
+  backdrop.addEventListener('mousedown', function (e) { if (e.target === backdrop && current && !current.destructive) close(false); });
+
+  document.addEventListener('keydown', function (e) {
+    if (backdrop.hidden) return;
+    if (e.key === 'Escape') { e.preventDefault(); close(false); return; }
+    if (e.key === 'Tab') {   // keep focus inside the dialog
+      var f = Array.prototype.filter.call(dialog.querySelectorAll('button, input'), function (n) { return !n.disabled && !n.closest('[hidden]'); });
+      var first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
+
+  document.getElementById('open-normal').addEventListener('click', function () {
+    open({ title: 'Archive this project?', description: 'It moves to Archive and stays there until you restore it.', confirmLabel: 'Archive project', doneText: 'Project archived.' });
+  });
+  document.getElementById('open-danger').addEventListener('click', function () {
+    open({ title: 'Delete project "Atlas"?', description: 'This permanently removes 24 files and 3 collaborators. This cannot be undone.', confirmLabel: 'Delete project', destructive: true, doneText: 'Project deleted.' });
+  });
+  document.getElementById('open-type').addEventListener('click', function () {
+    open({ title: 'Delete workspace "Acme"?', description: 'All projects, files and members are removed immediately. This cannot be undone.', confirmLabel: 'Delete workspace', destructive: true, requireText: 'Acme', doneText: 'Workspace deleted.' });
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "note": "REAL output of claude agents --json while a permission dialog was open. Sanitized; other sessions omitted.",
+  "output": [
+    {
+      "kind": "interactive",
+      "cwd": "<SCRATCH>/work/projA",
+      "startedAt": 1793355245477,
+      "pid": 3712,
+      "status": "waiting",
+      "waitingFor": "permission prompt",
+      "sessionId": "00000000-0000-4000-8000-000000000002",
+      "name": "poc0a-notif"
+    }
+  ]
+}

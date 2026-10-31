@@ -1,0 +1,132 @@
+{
+  "synthetic": true,
+  "description": "One task: three tool calls (two identical Bash inputs, distinct tool_use_ids), one permission prompt, final report.",
+  "events": [
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "model": "claude-x"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "UserPromptSubmit",
+        "prompt_id": "pp-0001",
+        "prompt": "Implement the storage system"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "prompt_id": "pp-0001",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "ls"
+        },
+        "tool_use_id": "toolu_1"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "PostToolUse",
+        "prompt_id": "pp-0001",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "ls"
+        },
+        "tool_response": {
+          "stdout": "a"
+        },
+        "tool_use_id": "toolu_1"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "prompt_id": "pp-0001",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "ls"
+        },
+        "tool_use_id": "toolu_2"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "PermissionRequest",
+        "prompt_id": "pp-0001",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "ls"
+        }
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "PostToolUse",
+        "prompt_id": "pp-0001",
+        "tool_name": "Bash",
+        "tool_input": {
+          "command": "ls"
+        },
+        "tool_response": {
+          "stdout": "a"
+        },
+        "tool_use_id": "toolu_2"
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "Stop",
+        "prompt_id": "pp-0001",
+        "stop_hook_active": false,
+        "last_assistant_message": "Implemented the storage layer.\n\n## Implementation Report\n- Added store.ts\n- Ran 42 tests: 41 passed, 1 failed (flaky clock test)\n- Risk: migration untested on Windows\n\n<!-- mini-summa:report status=complete task=\"Storage System\" -->\n",
+        "background_tasks": [],
+        "session_crons": []
+      }
+    },
+    {
+      "payload": {
+        "session_id": "11111111-1111-4111-8111-111111111111",
+        "transcript_path": "/home/u/.claude/projects/x/11111111-1111-4111-8111-111111111111.jsonl",
+        "cwd": "/w/GitManager",
+        "permission_mode": "default",
+        "hook_event_name": "SessionEnd",
+        "reason": "prompt_input_exit"
+      }
+    }
+  ]
+}

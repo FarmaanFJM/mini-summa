@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Destructive button preset</title>
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="../css/presets.css">
+<style>
+  /* Page chrome only. Components use sm- classes from presets.css. */
+  body { margin: 0; background: var(--s0); color: var(--text); font: 400 var(--fs)/1.5 var(--font); }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 96px; display: flex; flex-direction: column; gap: 28px; }
+  h1 { margin: 0; font-size: var(--fs-xl); font-weight: 650; letter-spacing: -0.01em; }
+  main > section > h2 { margin: 0 0 8px; font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); }
+  p { margin: 0; color: var(--text-2); }
+  .group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .panel { background: var(--s1); border-radius: var(--r-lg); padding: 8px; }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>Destructive button</h1>
+    <p>Solid and readable, always a verb, an icon where it helps. Never a pale tinted ghost.</p>
+  </div>
+
+  <section>
+    <h2>Solid (default for confirmed, high-impact deletes)</h2>
+    <div class="group">
+      <button class="sm-btn sm-btn--danger"><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Delete project</button>
+      <button class="sm-btn sm-btn--danger sm-btn--lg"><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Delete project</button>
+      <button class="sm-btn sm-btn--danger" disabled><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Delete project</button>
+      <button class="sm-btn sm-btn--danger" aria-busy="true" id="busy-static"><span class="sm-spinner" aria-hidden="true"></span> Deleting</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Neutral destructive (low risk, toolbars, undoable)</h2>
+    <div class="group">
+      <button class="sm-btn sm-btn--danger-quiet"><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Remove from list</button>
+      <button class="sm-btn">Remove</button>
+    </div>
+    <p style="margin-top:8px">Danger colour on text and icon only. No tinted fill. If the action can be undone with a toast, prefer the neutral button.</p>
+  </section>
+
+  <section>
+    <h2>Hierarchy: one destructive action per view, never beside Primary</h2>
+    <div class="group" style="gap:16px">
+      <div class="sm-specimen__cell" style="flex:1;min-width:240px">
+        <span class="sm-specimen__label">Do: neutral next to destructive</span>
+        <div class="group"><button class="sm-btn">Cancel</button><button class="sm-btn sm-btn--danger"><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Delete project</button></div>
+      </div>
+      <div class="sm-specimen__cell" style="flex:1;min-width:240px">
+        <span class="sm-specimen__label">Do not: primary next to destructive</span>
+        <div class="group"><button class="sm-btn sm-btn--primary">Save changes</button><button class="sm-btn sm-btn--danger"><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> Delete project</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>In a menu: text colour plus icon, last, after a separator</h2>
+    <div class="sm-menu" role="menu" style="width:220px">
+      <button class="sm-menu__item" role="menuitem"><span class="sm-menu__label">Rename</span></button>
+      <button class="sm-menu__item" role="menuitem"><span class="sm-menu__label">Duplicate</span></button>
+      <hr class="sm-menu__sep">
+      <button class="sm-menu__item sm-menu__item--danger" role="menuitem"><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg><span class="sm-menu__label">Delete project</span></button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Loading (click)</h2>
+    <button class="sm-btn sm-btn--danger" id="del"><svg class="sm-icon " viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg> <span>Delete project</span></button>
+  </section>
+</main>
+<script>
+(function () {
+  var b = document.getElementById('del');
+  var label = b.querySelector('span');
+  b.addEventListener('click', function () {
+    if (b.getAttribute('aria-busy') === 'true') return;   // ignore repeat clicks while busy
+    b.setAttribute('aria-busy', 'true');
+    b.setAttribute('aria-disabled', 'true');
+    var icon = b.querySelector('svg');
+    var spin = document.createElement('span');
+    spin.className = 'sm-spinner'; spin.setAttribute('aria-hidden', 'true');
+    b.replaceChild(spin, icon);
+    label.textContent = 'Deleting';
+    setTimeout(function () {
+      b.removeAttribute('aria-busy'); b.removeAttribute('aria-disabled');
+      b.replaceChild(icon, spin);
+      label.textContent = 'Delete project';
+    }, 1500);
+  });
+})();
+</script>
+</body>
+</html>

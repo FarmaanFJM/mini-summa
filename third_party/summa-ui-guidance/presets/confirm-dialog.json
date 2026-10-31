@@ -1,0 +1,98 @@
+{
+  "id": "preset.confirm-dialog",
+  "name": "Confirm dialog",
+  "purpose": "Make the user pause before an action that is hard to undo or has significant consequences, and let them confirm or back out with certainty.",
+  "whenToUse": [
+    "Permanently deleting data without an undo (delete project, remove member, empty trash).",
+    "Actions with large or external consequences (publish to the public, send to 500 people, revoke access).",
+    "Discarding unsaved work the user cannot recover (leave with unsaved changes).",
+    "Irreversible high-impact actions that deserve type-to-confirm (delete workspace, delete account)."
+  ],
+  "whenNotToUse": [
+    "Reversible actions. Do the action and offer Undo in a toast instead; a dialog for every delete trains users to click through.",
+    "Low-risk or frequent actions (archive, mark as read, remove from a list).",
+    "Asking for information or settings. That is a form dialog, not a confirmation.",
+    "Reporting results or errors. Use a toast or an inline message.",
+    "Stacking a confirmation on top of another confirmation."
+  ],
+  "anatomy": [
+    "Backdrop: dims the page; clicking it cancels.",
+    "Title: a question with a specific verb and the object (Delete project \"Atlas\"?). Never Are you sure?",
+    "Body: one sentence of consequence (This permanently removes 24 files. This cannot be undone.).",
+    "Optional type-to-confirm field: label names the exact text to type; the confirm button stays disabled until it matches.",
+    "Footer: Cancel (secondary) and Confirm, right aligned; Confirm is last. Stacked full width on narrow screens."
+  ],
+  "variants": [
+    {
+      "id": "standard",
+      "description": "Cancel (secondary) and a primary verb button. Initial focus on Confirm.",
+      "useWhen": "Consequential but not destructive: archive, publish, transfer."
+    },
+    {
+      "id": "destructive",
+      "description": "Cancel and a SOLID destructive button (.btn-danger) with trash icon and explicit verb (Delete project). Initial focus on Cancel.",
+      "useWhen": "Data loss or irreversible removal."
+    },
+    {
+      "id": "type-to-confirm",
+      "description": "Destructive plus a field asking the user to type the object name; the destructive button is disabled until the text matches exactly. Initial focus on the field.",
+      "useWhen": "Irreversible, high-impact actions such as deleting a workspace or account."
+    }
+  ],
+  "behavior": [
+    "Initial focus: Cancel for destructive dialogs (a stray Enter must not destroy anything), Confirm for non-destructive ones, the input for type-to-confirm.",
+    "Esc, backdrop click and Cancel all cancel and return focus to the element that opened the dialog.",
+    "Enter on the type-to-confirm field confirms only when the text matches.",
+    "Focus is trapped inside the dialog while open.",
+    "The confirm label repeats the verb of the title (Delete project), never OK or Yes.",
+    "While the action runs, the confirm button shows a spinner and ignores repeat clicks; the dialog closes on success. Errors appear inline in the dialog.",
+    "After confirming, do not add a success toast when the UI already shows the change."
+  ],
+  "tokens": [
+    "--s3",
+    "--s4",
+    "--line-strong",
+    "--shadow-pop",
+    "--r-xl",
+    "--danger-solid",
+    "--danger-solid-hover",
+    "--danger-ink",
+    "--accent",
+    "--text",
+    "--text-2",
+    "--focus",
+    "--sp-2",
+    "--sp-3",
+    "--fs-lg",
+    "--control-h"
+  ],
+  "accessibility": [
+    "role=dialog (alertdialog for destructive confirmations) with aria-modal=true, aria-labelledby the title and aria-describedby the consequence sentence.",
+    "Focus moves into the dialog on open, is trapped, and returns to the trigger on close.",
+    "Never rely on colour alone: the destructive button has a verb and an icon, white text on --danger-solid reaches at least 4.5:1.",
+    "The type-to-confirm field has a visible label that names the exact text; the disabled state is conveyed with the disabled attribute, not only opacity.",
+    "Keyboard: Tab and Shift+Tab cycle, Esc cancels, Enter activates the focused button.",
+    "The background page is inert while the dialog is open (focus, clicks and assistive technology are confined to the dialog). An alertdialog is not dismissed by clicking the backdrop; Esc and the Cancel button answer it. A plain dialog may be dismissed by backdrop click.",
+    "The consequence sentence is the accessible description (aria-describedby); in React pass it as the Dialog description prop."
+  ],
+  "principles": [
+    "P19",
+    "P15",
+    "P17",
+    "P09",
+    "P10",
+    "P08",
+    "P13"
+  ],
+  "avoids": [
+    "AP-003",
+    "AP-008",
+    "AP-010",
+    "AP-016"
+  ],
+  "implementations": {
+    "html": "examples/confirm-dialog.html",
+    "css": "css/presets.css",
+    "react": "src/presets/Confirm.tsx"
+  }
+}

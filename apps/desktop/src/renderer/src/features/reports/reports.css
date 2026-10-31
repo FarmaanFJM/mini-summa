@@ -1,0 +1,128 @@
+/* Reports: the queue in the replaced sidebar (on the page), the report and its handoff card and review on the panel. */
+.ms-rep { display: flex; flex-direction: column; flex: 1; height: 100%; min-height: 0; }
+.ms-rep > .ms-view { flex: 1; height: auto; min-height: 0; }
+
+/* ---------------------------------------------------------------- Queue (inside the replaced sidebar) */
+.ms-rep-queue { display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; }
+.ms-rep-tabs { padding-bottom: 2px; }
+.ms-rep-queue__panel { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.ms-rep-queue__panel:focus { outline: none; }
+.ms-rep-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 0 4px; }
+.ms-rep-filters .sm-select { height: var(--control-h-sm); font-size: var(--fs-sm); }
+.ms-rep-list { display: flex; flex-direction: column; gap: 1px; margin: 0; padding: 0; list-style: none; }
+/* A row is a quiet fill, as in the project list: hover --s2, the open report --select. No border, no accent. */
+.ms-rep-row {
+  display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r); background: none;
+  color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: background var(--dur);
+}
+.ms-rep-row:hover { background: var(--s2); }
+.ms-rep-row:active { background: var(--s3); }
+.ms-rep-row[aria-current="true"] { background: var(--select); }
+.ms-rep-row:focus-visible { outline-offset: -1.5px; }
+.ms-rep-row__title { display: flex; align-items: baseline; gap: 8px; color: var(--text-2); font-size: var(--fs); font-weight: 500; line-height: 1.35; }
+.ms-rep-row__title[data-unread], .ms-rep-row[aria-current="true"] .ms-rep-row__title, .ms-rep-row:hover .ms-rep-row__title { color: var(--text); }
+.ms-rep-row__title[data-unread] { font-weight: 600; }
+.ms-rep-row__text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-width: 0; overflow-wrap: anywhere; }
+.ms-rep-row__dot { width: 7px; height: 7px; background: var(--text); transform: translateY(-1px); }
+.ms-rep-row__meta, .ms-rep-row__state { color: var(--text-2); font-size: var(--fs-xs); line-height: 1.4; }
+.ms-rep-skeleton { height: 54px; }
+.ms-rep-more-row { padding: var(--sp-2) 2px; }
+
+/* ---------------------------------------------------------------- Detail */
+.ms-rep-detail .ms-view__head { gap: var(--sp-3); }
+.ms-rep-detail .ms-view__title { min-width: 0; }
+.ms-rep-scroll { padding: 0; overflow: hidden; container-type: inline-size; container-name: report; }
+.ms-rep-layout { display: grid; grid-template-columns: minmax(0, 1fr) 400px; height: 100%; min-height: 0; }
+.ms-rep-doc { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; padding: var(--sp-2) var(--sp-4) var(--sp-5) 20px; overflow: auto; }
+.ms-rep-side { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; padding: var(--sp-2) 20px var(--sp-5) 0; overflow: auto; }
+@container report (max-width: 940px) {
+  .ms-rep-scroll { overflow: auto; }
+  .ms-rep-layout { display: flex; flex-direction: column; height: auto; }
+  .ms-rep-doc { overflow: visible; padding: var(--sp-2) 20px var(--sp-3); }
+  .ms-rep-side { order: -1; overflow: visible; padding: var(--sp-2) 20px 0; }
+}
+
+.ms-rep-doctabs { padding: 2px 0; }
+.ms-rep-panel { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.ms-rep-panel:focus { outline: none; }
+.ms-rep-scroll--solo { overflow: auto; }
+.ms-rep-doc--solo { max-width: 920px; overflow: visible; }
+
+/* The report itself: monospace, selectable, formatting kept. A card on the panel; code inside it is one step further. */
+.ms-rep-text { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4) 18px; border-radius: var(--r-lg); background: var(--s2); font-size: var(--fs-sm); line-height: 1.6; user-select: text; cursor: text; min-width: 0; }
+.ms-rep-prose { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.ms-rep-code { margin: 0; border-radius: var(--r); background: var(--s3); overflow: hidden; }
+.ms-rep-code__info { padding: 6px 12px 0; color: var(--text-2); font-size: var(--fs-xs); letter-spacing: 0.04em; }
+.ms-rep-code__pre { margin: 0; padding: 10px 12px; overflow-x: auto; white-space: pre; tab-size: 4; color: var(--text); }
+.ms-rep-code__pre code { font: inherit; }
+.ms-rep-text__empty { margin: 0; color: var(--text-2); }
+
+/* ---------------------------------------------------------------- Cards in the side column */
+.ms-rep-card { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-4); border-radius: var(--r-lg); background: var(--s2); min-width: 0; }
+.ms-rep-card__title { font-size: var(--fs-lg); font-weight: 600; letter-spacing: -0.01em; }
+
+.ms-rep-dest { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ms-rep-dest__title { margin: 2px 0 0; font-size: var(--fs-lg); font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.ms-rep-dest__url { margin: 0; color: var(--text-2); font-size: var(--fs-xs); line-height: 1.5; }
+.ms-rep-dest__line { margin: 0; color: var(--text); font-size: var(--fs-sm); }
+.ms-rep-dest__fixed { margin: 2px 0 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.5; }
+.ms-rep-dest .ms-x-actions { margin-top: var(--sp-2); }
+
+.ms-rep-state { display: flex; flex-direction: column; gap: 6px; }
+.ms-rep-state__headline { font-size: var(--fs); font-weight: 600; }
+.ms-rep-state__when { color: var(--text-2); font-weight: 400; }
+.ms-rep-state__body { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.55; }
+
+/* The main button is as wide as its words, like every other button: the accent marks the action, its width does not need to (P06). */
+.ms-rep-buttons { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
+.ms-rep-fallback { min-height: 96px; }
+
+.ms-rep-more { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.ms-rep-parts { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.ms-rep-part { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-2); padding: 6px 4px 6px 8px; border-radius: var(--r); background: var(--s3); font-size: var(--fs-sm); }
+.ms-rep-part__tick { display: inline-grid; place-items: center; color: var(--text-2); }
+.ms-rep-part[data-copied] .ms-rep-part__tick { color: var(--text); }
+.ms-rep-part__text { display: flex; flex-direction: column; min-width: 0; }
+.ms-rep-part__meta { color: var(--text-2); font-size: var(--fs-xs); }
+.ms-rep-part .sm-btn { height: 26px; }
+.ms-rep-part .sm-btn--ghost:hover:not(:disabled) { background: var(--s4); }
+
+.ms-rep-history { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.ms-rep-history__item { display: flex; flex-direction: column; gap: 1px; font-size: var(--fs-sm); }
+.ms-rep-history__meta { color: var(--text-2); font-size: var(--fs-xs); }
+
+/* ---------------------------------------------------------------- Review */
+.ms-rep-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: var(--sp-3) var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.ms-rep-step { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.3; }
+.ms-rep-step[data-status="current"] { color: var(--text); font-weight: 600; }
+.ms-rep-step__mark { display: inline-grid; place-items: center; }
+
+.ms-rep-followup { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ms-rep-followup__title { font-size: var(--fs); font-weight: 600; }
+.ms-rep-followup__save { margin-top: -4px; }
+.ms-rep-targets { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; border: 0; min-width: 0; }
+.ms-rep-targets .ms-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-2); }
+.ms-rep-target { align-items: flex-start; padding-top: 10px; padding-bottom: 10px; cursor: pointer; transition: background var(--dur); }
+.ms-rep-target:hover:not([data-disabled]) { background: var(--s4); }
+.sm-dialog .ms-rep-target:hover:not([data-disabled]) { background: var(--s5); }
+.ms-rep-target > .ms-choice { margin-top: 2px; }
+.ms-rep-target[data-disabled] { cursor: default; }
+.ms-rep-target[data-disabled] .ms-truncate { color: var(--text-2); }
+.ms-rep-target__why { color: var(--text-2); }
+.ms-rep-inspect { display: flex; flex-direction: column; gap: 6px; }
+.ms-rep-inspect__text { margin: 0; padding: 10px 12px; border-radius: var(--r); background: var(--s3); color: var(--text); font-size: var(--fs-sm); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; user-select: text; }
+.sm-dialog .ms-rep-inspect__text { background: var(--s4); }
+
+.ms-rep-choice { cursor: pointer; }
+.ms-rep-choice[data-current] { cursor: default; }
+
+/* ---------------------------------------------------------------- Pending requests */
+.ms-pa-list { display: flex; flex-direction: column; gap: var(--sp-3); margin: 0; padding: 0; list-style: none; max-width: 760px; }
+.ms-pa { display: flex; flex-direction: column; gap: 8px; padding: var(--sp-4); border-radius: var(--r-lg); background: var(--s2); min-width: 0; }
+.ms-pa__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
+.ms-pa__title { font-size: var(--fs); font-weight: 600; }
+.ms-pa__expires { color: var(--text-2); font-size: var(--fs-sm); white-space: nowrap; }
+.ms-pa__target { margin: 0; color: var(--text); font-size: var(--fs-sm); }
+.ms-pa__who { margin: 0; color: var(--text-2); font-size: var(--fs-sm); }
+.ms-pa__text { margin: 0; padding: 10px 12px; border-radius: var(--r); background: var(--s3); color: var(--text); font-size: var(--fs-sm); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; user-select: text; }

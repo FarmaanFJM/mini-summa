@@ -1,0 +1,108 @@
+{
+  "id": "preset.dropdown",
+  "name": "Dropdown (select)",
+  "purpose": "Choose one or many options from a list, with creation of a missing option inside the list.",
+  "whenToUse": [
+    "Choosing from a known set of 3 to about 100 options (status, label, assignee).",
+    "Multi-select of labels or people, showing a count when more than one is chosen.",
+    "Choosing or creating an option in the same control (labels, tags, projects).",
+    "Compact forms and toolbars where radios would take too much space."
+  ],
+  "whenNotToUse": [
+    "Two options: use a switch, a checkbox or a segmented control.",
+    "Up to 4 options that matter at a glance: use radios or tabs so choices are visible.",
+    "Commands. A menu lists actions, a dropdown stores a value.",
+    "A separate Create button beside the dropdown (P10). Put Create inside the list.",
+    "A search field when there are 7 options or fewer.",
+    "Native select styling that breaks the shared menu look."
+  ],
+  "anatomy": [
+    "Trigger (.select): 32px, --s2 fill, value or muted placeholder, chevron-down at the end. aria-haspopup=listbox and aria-expanded.",
+    "Panel: the shared menu glass surface, at least as wide as the trigger.",
+    "Search (only above 7 options): filled input at the top, placeholder Search or Search or create label.",
+    "Options: label, optional icon, colour dot or meta. Single select shows a neutral check on the selected option; multi-select shows a checkbox.",
+    "Create row: appears at the bottom, after a separator, only when the query has no exact match (Create label \"x\").",
+    "List: scrolls when taller than 260px."
+  ],
+  "variants": [
+    {
+      "id": "single",
+      "description": "Choosing one option closes the panel.",
+      "useWhen": "Status, priority, category."
+    },
+    {
+      "id": "searchable",
+      "description": "Search field shown above 7 options.",
+      "useWhen": "Long lists such as labels, projects, people."
+    },
+    {
+      "id": "creatable",
+      "description": "A Create row appears inside the list for unmatched queries.",
+      "useWhen": "Open-ended sets such as labels or tags."
+    },
+    {
+      "id": "multiple",
+      "description": "Checkbox per option; panel stays open; trigger shows the value or a count.",
+      "useWhen": "Assignees, labels on an item."
+    },
+    {
+      "id": "quiet",
+      "description": "No fill at rest; surface only on hover.",
+      "useWhen": "Inline in a toolbar or a dense row."
+    }
+  ],
+  "behavior": [
+    "Search threshold: show the search field when there are more than 7 options.",
+    "Create inside the dropdown: typing a name with no exact match reveals Create label \"name\" at the bottom; Enter creates when nothing else matches. There is no separate Create button (AP-009).",
+    "Keys on the trigger: Enter, Space, Down or Up open the panel.",
+    "Keys in the panel: Up and Down move and wrap, Home and End jump, Enter or Space picks, Esc closes and returns focus to the trigger, Tab closes.",
+    "Type-ahead on lists without search: typing letters jumps to the next option starting with them.",
+    "With search: Down moves from the field into the list, Enter picks the first match.",
+    "Single select closes on pick. Multi-select stays open until Esc or outside click.",
+    "Max height 260px with scroll; the panel flips upward when there is no space below.",
+    "Check marks are neutral (--text), never emerald."
+  ],
+  "tokens": [
+    "--s2",
+    "--s3",
+    "--s4",
+    "--line",
+    "--text",
+    "--text-2",
+    "--text-3",
+    "--r",
+    "--r-lg",
+    "--shadow-pop",
+    "--glass",
+    "--control-h",
+    "--sp-2",
+    "--focus"
+  ],
+  "accessibility": [
+    "Trigger: button with aria-haspopup=listbox, aria-expanded and a name that includes the field label.",
+    "Panel: role=listbox, options role=option with aria-selected; add aria-multiselectable for multi-select.",
+    "Search input has an aria-label; announce the result count when it changes when practical.",
+    "Focus ring on the trigger is the shared 1.5px neutral ring; the focused option uses the hover fill.",
+    "Selection is shown with a check mark (single) or checkbox (multiple), not colour alone."
+  ],
+  "principles": [
+    "P10",
+    "P08",
+    "P15",
+    "P17",
+    "P07",
+    "P09",
+    "P21"
+  ],
+  "avoids": [
+    "AP-009",
+    "AP-016",
+    "AP-012",
+    "AP-001"
+  ],
+  "implementations": {
+    "html": "examples/dropdown.html",
+    "css": "css/presets.css",
+    "react": "src/ui/index.tsx"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "id": "AP-004",
+  "name": "Excessive accent-colored outlines",
+  "summary": "Use neutral 1px focus rings and quiet fills for focus and selection; keep the accent for the primary action and meaning.",
+  "problem": "Emerald rings on every input, emerald selected rows and emerald checkboxes make the whole product shout. When everything is accent coloured, the primary action and real status lose their signal.",
+  "severity": "medium",
+  "applicability": "default",
+  "principles": [
+    "P15",
+    "P17"
+  ],
+  "bad": {
+    "description": "A 2px accent ring on a focused input, an accent frame on the selected row and an accent checkbox.",
+    "demo": "bad-accent-focus"
+  },
+  "good": [
+    {
+      "id": "neutral-focus",
+      "title": "Neutral focus and quiet selection",
+      "description": "A 1px --focus ring on inputs, a --select fill on the selected row and a neutral checkbox. The ring still reaches 3:1 against the surface.",
+      "demo": "good-neutral-focus"
+    }
+  ],
+  "why": "Neutral treatments keep keyboard focus visible without stealing attention, and they leave emerald free for identity, primary actions and meaning.",
+  "exceptions": [
+    "Semantic colour is allowed where it conveys information, such as a destructive field error or a trading gain.",
+    "If a neutral ring cannot reach 3:1 against an unusual surface (for example a bright image), a stronger ring is allowed there."
+  ],
+  "detection": {
+    "objective": [
+      "CHK-004"
+    ],
+    "humanReview": [
+      "Is the focus ring still clearly visible with the keyboard?",
+      "Is the selected state a quiet fill rather than a frame?"
+    ]
+  },
+  "relatedAntiPatterns": [
+    "AP-012"
+  ]
+}

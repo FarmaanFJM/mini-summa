@@ -1,0 +1,14 @@
+{
+  "note": "REAL output of claude agents --json (2.1.314) for an idle interactive session in an isolated config. Sanitized.",
+  "output": [
+    {
+      "pid": 1260,
+      "cwd": "<SCRATCH>/work/projA",
+      "kind": "interactive",
+      "startedAt": 1793354819144,
+      "sessionId": "00000000-0000-4000-8000-000000000001",
+      "name": "poc0a-isolated",
+      "status": "idle"
+    }
+  ]
+}
