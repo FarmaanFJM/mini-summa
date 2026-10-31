@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { ingestSpoolFiles, pendingSpoolFiles } from '../src/lib/spool.mjs';
 import { execWithDeadline, runAgentsJson } from '../src/lib/discovery.mjs';
@@ -124,7 +125,7 @@ fs.renameSync = (from, to) => {
 };
 `);
   const started = Date.now();
-  const r = spawnSync(process.execPath, ['--import', preload, CAPTURE, '--spool', spool, '--env', 'posix', '--handler', 'h1', 'Notification'], {
+  const r = spawnSync(process.execPath, ['--import', pathToFileURL(preload).href, CAPTURE, '--spool', spool, '--env', 'posix', '--handler', 'h1', 'Notification'], {
     input: INPUT, encoding: 'utf8', env: { ...process.env, MS_TEST_FAIL_RENAMES: String(failRenames), MS_TEST_FAIL_CODE: code }, timeout: 20_000,
   });
   return { r, spool, d, ms: Date.now() - started, pending: pendingSpoolFiles(spool), all: names(spool) };
