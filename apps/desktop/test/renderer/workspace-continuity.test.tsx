@@ -160,6 +160,24 @@ describe('remembering what the person does in the view', () => {
   });
 });
 
+describe('a page that belongs to another project', () => {
+  it('is not remembered for the project on screen when it is another project\'s mapped conversation (a handoff opened it in the view on screen)', async () => {
+    stubWorkspaceGeometry();
+    const fake = createFakeNative();
+    const app = await renderApp({ native: fake });
+    const owner = await app.demo.call('projects.create', { body: { name: 'Owner', roots: [] } });
+    await app.demo.call('conversations.add', { params: { id: owner.id }, body: { url: plain('a') } });
+    const other = await app.demo.call('projects.create', { body: { name: 'Other', roots: [] } });
+    act(() => { app.runtime.route.getState().selectChatGptUrl(other.id, plain('b')); app.runtime.route.getState().selectProject(other.id); });
+    await waitFor(() => expect(lastNavigated(fake)).toBe(plain('b')));
+    act(() => fake.emitView({ url: plain('b'), status: 'ready' }));
+    act(() => fake.emitView({ url: plain('a'), status: 'ready' }));
+    expect(app.runtime.route.getState().chatgptUrlByProject[other.id]).toBe(plain('b'));
+    act(() => fake.emitView({ url: plain('c'), status: 'ready' }));
+    expect(app.runtime.route.getState().chatgptUrlByProject[other.id]).toBe(plain('c'));
+  });
+});
+
 describe('the "Open project page" action', () => {
   it('is in the pane header of a linked project and opens the linked project page, which then is the remembered page', async () => {
     stubWorkspaceGeometry();
