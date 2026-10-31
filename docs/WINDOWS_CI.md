@@ -102,15 +102,23 @@ you run it from a browser download. Nothing in CI changes that.
 | Installer, per-user, protocol key, uninstall keeps data | Checks 1.x and 6.x on a clean image. | UAC behaviour as a standard user (the runner is an administrator), SmartScreen, the Start menu entry and tray icon, "Anyone who uses this computer" being greyed out, the uninstall message text, upgrade while running. |
 | Managed Claude sessions, ConPTY terminals | The ConPTY files are installed beside the exe and outside `app.asar`; `environments.list` and `claude --version` discovery. | Everything interactive: starting a session, typing, paste, Ctrl+C, resize, Stop session leaving no `claude.exe`/`node.exe`/`OpenConsole.exe`. The packaged build has its test seams off, so no fake Claude can be injected, and the real one is not authenticated on the runner. |
 
-## Core tests skipped on the Windows runner (UNTESTED ON WINDOWS)
+## Core tests on the Windows runner: what runs, what is skipped, what was found
 
-The first native run of `packages/core` failed 109 tests. After triage:
+Native results for `packages/core` improved over the Windows work: 109 failures in the first run, then 14, 7, 4 and now **all of core passes on Windows except what is listed here as skipped** (2,007 tests pass natively at commit c8c872a).
 
-* **Fixed, genuine product defect.** `createNodePtySpawner` let ConPTY's "File not found" throw escape when the program cannot start; POSIX reports an immediate exit. It is now reported as an exit with code 1 and the reason (test added, runs everywhere).
-* **Fixed, test assumptions.** The folder tests used a POSIX environment with a Windows temp path; the verbatim-arguments test used quotes that verbatim mode must not receive; the pty tests assumed `/usr`, signals and POSIX error text.
-* **Not verified on Windows: resize of a ConPTY child.** The first native run did not see a Node child report `resize`; that test is skipped on win32. Check it by hand (resize the terminal pane while Claude runs).
-* **Observed on Windows: an oversize request body (over 1 MB) can be answered with a connection reset instead of the 413 message.** The server refuses it, but closes the socket with data unread, and on Windows TCP then resets the connection before the client reads the answer. The wording test tolerates this only on win32 and only for that one request. A phone or script that sends an oversize body on Windows may see a reset, not a message. Not fixed.
-* **Skipped on win32 (they run on Linux), 17 files.** They drive a POSIX shell-script fake `claude` or `tailscale`, POSIX signals or file modes, or make projects in a "posix" environment that a Windows host reports as unavailable. The list is `POSIX_FIXTURE_FILES` in `packages/core/vitest.config.ts`. **No claim is made about the behaviour they cover on Windows**: session start with a fake Claude, hook spool to notification, remote access over tailscale, signal shutdown of the CLI, and the multi-environment observer. Follow-up: port the fakes to a Node script behind a `.cmd` shim.
+**Now running natively (they were skipped before):** the integration tests (`lifecycle`, `routing`, `event-order`, `notifications-live`, `notification-latency`, `remote`, `session-continuity`), with the fake `claude` as a `.cmd` shim and the host environment `win`, so a managed session is started, hooks fire through the real capture script, and `/clear` and `/resume` typed in a terminal are followed.
+
+**Fixed because of what the Windows runs found (product):**
+* An unstartable program in a terminal threw instead of ending (ConPTY); now reported as an exit.
+* A managed terminal could not follow `/clear` or `/resume` behind a `.cmd` shim (npm-installed `claude`): the process Claude lists is a child of `cmd.exe`, and Windows had no way to ask a process's parent. It now asks `Win32_Process` (about one second the first time; cached for 4 s).
+* A refused oversize request body (over 1 MB) was answered, on Windows, with a connection reset instead of the 413 message. The server now reads and discards the rest of a refused body (up to 8 MB, 3 s) before closing. Verified natively: the strict tests pass.
+
+**Still skipped on Windows (they run on Linux); nothing is claimed for them there:**
+* 10 files that drive POSIX fixtures: `tailscale-ownership` (shell-script tailscale, file modes), `cli-signals` (POSIX signals), `observer-environments`, `observer-ingestion`, `observer-integration`, `observer-discovery`, `observer-continuation` (WSL and POSIX path fixtures, `:` in file names), `managed-fake-claude`, `managed-lifecycle`, `managed-settings` (POSIX exit codes from signals, file modes). List: `POSIX_FIXTURE_FILES` in `packages/core/vitest.config.ts`.
+* 2 single tests: `remote` "wait for approval ... target changed" (a session stopped and started again is live and its terminal shows the resumed conversation, but no new start hook is seen from the restarted fake process, so its run counter does not move) and `session-continuity` "/resume ... moves it back to the older session" (the terminal follows, but the older session stays shown as ended and never becomes ready). Cause not established; it may be the fake CLI. **To be confirmed with a real Claude on Windows** (stop a session from Mini-Summa and start it again; type /clear then /resume in a session).
+* ConPTY resize: a Node child under ConPTY saw its initial size and then no new size after `resize()` (neither the event nor asking the console). **Whether a real Claude redraws when the terminal pane is resized on Windows is not shown**; check by hand. The initial size is tested natively.
+
+**Observed, one occurrence, not reproduced:** the installed-app check "4.2" once failed with a refused connection to the running app's core (commit 3622c6c); the same check passed on the commits before and after.
 
 ## Limitations of the runner
 
