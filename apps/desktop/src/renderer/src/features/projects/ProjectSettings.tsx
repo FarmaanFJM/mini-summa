@@ -68,7 +68,8 @@ export function ProjectSettings({ projectId, onClose }: ProjectSettingsProps) {
       // A maximised Claude pane hides the ChatGPT one.
       if (maximized === 'claude') void api.call('settings.update', { body: { layout: { maximized: null } } }).catch(() => {});
       const failed = (err: unknown) => toast({ title: 'Could not open ChatGPT', body: failureText(err), kind: 'error' });
-      if (embedded) void native.chatgpt.navigate(link.url).catch(failed);
+      // In the window the ChatGPT pane owns what the view shows, so it is asked (and loads the page itself); otherwise it is the browser's.
+      if (embedded) route.openChatGptProject(project.id);
       else void native.shell.openExternal(link.url).catch(failed);
     });
   }, [project, finish, route, maximized, api, embedded, native]);

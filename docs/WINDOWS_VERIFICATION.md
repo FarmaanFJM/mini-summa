@@ -3,8 +3,8 @@
 Mini-Summa was built and tested on Linux. **Nothing here has been run on Windows or WSL2**: the Windows installer was assembled under
 Wine, and everything that depends on Windows (ConPTY terminals, PowerShell hooks, the tray, toasts, `minisumma://` links) is covered
 only by tests that simulate Windows paths, quoting and failures. This page is the order in which to check it on your PC. The first
-part (steps 1 to 20) takes about 40 minutes and answers one question: *is Mini-Summa usable on this machine?* The last two parts are
-optional and deeper.
+part (steps 1 to 20) takes about 40 minutes and answers one question: *is Mini-Summa usable on this machine?* Part 0, after it, checks what
+round 3 added (30 minutes). The last two parts are optional and deeper.
 
 For each step, "Expect" says what a correct result looks like. If something differs, write down the step number and what you saw,
 and keep the two log folders: `%APPDATA%\Mini-Summa\logs` (the application shell, `main.log`) and `%APPDATA%\Mini-Summa\data\logs`
@@ -25,6 +25,64 @@ Tailscale, an Android phone.
   `apps\desktop\release\`. If this fails, send the last 30 lines of its output.
 
 The installer is **not code-signed** (a certificate costs money and there is none), so SmartScreen warns.
+
+## Part 0: what changed in round 3 (about 30 minutes, after Part 1 works)
+
+Round 3 added a GitHub-only project, linking an existing ChatGPT Project, the Cloud tab, view modes, the ChatGPT page size, a
+"Claude finished" notification and a test notification. All of it was tested on Linux with local stand-ins for ChatGPT and
+claude.ai and with the real Claude Code CLI; **none of it has been run on Windows**, and nothing was ever run against the real
+chatgpt.com or claude.ai. Numbers are the same as in Part 1: write down the step and what you saw.
+
+**R1. The folder defect that started this round.**
+1. New project, **Start from: GitHub repository**, type `owner/repo` (any repository), **Create project**.
+   *Expect:* the project opens; its header names the repository and says nothing about a missing folder.
+2. Open its settings (the pencil in the header), under **Local folders** press **Browse** and choose a real folder.
+   *Expect:* the folder is listed at once, under the Local folders heading, before you press anything else. Press **Done**: no
+   "No changes to save", and the header shows the folder. A path to a folder that does not exist, typed in the field, is refused
+   beside the field with a reason.
+3. Quit Mini-Summa and start it again.
+   *Expect:* the project, its repository and its folder are still there. **New local session** starts Claude in that folder.
+
+**R2. A project without a folder is usable.** With a GitHub-only project selected, the Claude pane offers **New cloud session**
+and shows why **New local session** is not possible and how to fix it (add a folder in the project's settings). No toast, no dead end.
+
+**R3. Link an existing ChatGPT Project.** New project, **Start from: ChatGPT Project**, paste the address of one of your own
+ChatGPT Projects (open the project in ChatGPT and copy the address bar). Mini-Summa shows the title it will use; **Create project**.
+*Expect:* the ChatGPT pane opens that project's page (sign in if asked). Open one of its conversations and press **Use this
+conversation for reports**; a report can then be handed to it. Nothing is imported: only the address is stored. **Write down the
+shape of the address you pasted with the long ids replaced by `xxx`.** If it was refused or opened the wrong page, send that shape.
+
+**R4. The overlapping controls.** Follow the 10-minute check in [CHATGPT_PANE.md](CHATGPT_PANE.md) (page size 100% against
+Automatic, split against ChatGPT alone, your usual window size and display scaling). Report which of the three outcomes you got.
+
+**R5. View modes.** In the workspace header choose **ChatGPT**, then **Claude**, then **Split** (Ctrl+Shift+Left and Right do the same).
+*Expect:* nothing reloads. Write half a message in ChatGPT, switch to **Claude** and back: the half message and the scroll position
+are still there. A running Claude terminal keeps its output while hidden. A dialog or menu opened over the workspace is never
+covered by the ChatGPT or Claude page.
+
+**R6. The Cloud tab (needs a claude.ai subscription that can use Claude Code on the web, and GitHub connected).** Follow the six
+steps in [CLOUD_SESSIONS.md](CLOUD_SESSIONS.md), "Checking it on Windows". The points that matter most: whether you can sign in
+inside the tab (note the method), whether **Open in your browser** is needed, and that Mini-Summa sends **no** notification when a
+cloud session finishes.
+
+**R7. Notifications.**
+1. Settings, Notifications, **Send a test notification**.
+   *Expect:* a Windows toast "Mini-Summa: This is a test notification". If you see nothing: Windows Settings, System,
+   Notifications, Mini-Summa must be on, and Focus assist must be off. Click the toast: Mini-Summa comes to the front on Activity.
+2. Make two projects with a local Claude session each, A and B. Select B. In A's terminal (from another window, or earlier) let
+   Claude finish a task without a report, for example "Reply with the word ok".
+   *Expect:* within a second or two a toast "A: Claude finished"; clicking it brings Mini-Summa forward on **A**, with that session's
+   tab selected, although B was selected. **Write down roughly how many seconds passed between Claude's last output and the toast.**
+3. Let a session ask for permission (only when Claude Code actually asks; in `auto` mode it never does).
+   *Expect:* a toast "needs permission", a dot on that project in the sidebar and a dot on the Mini-Summa taskbar button with the number
+   of sessions waiting. The dot goes when the state changes.
+4. Watch a session in the focused window until it finishes.
+   *Expect:* no "Claude finished" toast for what you are looking at (the feed keeps the entry, unread).
+5. Quit Mini-Summa while a session works.
+   *Expect:* no notification arrives while it is closed (by design); on the next start the feed shows the history, unread, without toasts.
+
+**R8. Restart.** Quit and start again. The GitHub repository, the linked ChatGPT Project, the absence of a folder, the chosen view mode and the
+Cloud tab's remembered page are all as you left them.
 
 ## Part 1: is it usable? (about 40 minutes)
 
@@ -176,4 +234,7 @@ Each prints PASS, FAIL or NOT TESTED per step. A step that could not run is neve
 ## Please send back
 
 Which numbered steps passed, which did not, and for each failure what you saw, plus the newest files in
-`%APPDATA%\Mini-Summa\logs` and `%APPDATA%\Mini-Summa\data\logs`. The most valuable single result is step 11.
+`%APPDATA%\Mini-Summa\logs` and `%APPDATA%\Mini-Summa\data\logs`. The most valuable single result is step 11. From Part 0: the
+shape of your ChatGPT Project address (ids removed), your window size and display scaling with the outcome of the page size check, the
+way you signed in inside the Cloud tab (or that you could not), whether the test notification appeared, and the seconds between
+Claude finishing and its toast.

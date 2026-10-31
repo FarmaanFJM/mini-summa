@@ -18,6 +18,10 @@ the 30-minute checklist for the phone.
 | **WSL2**: launching Claude inside a distribution, `wsl.exe` interop, UNC and `/mnt` paths | Environment ids, path normalisation (both `\\wsl$\` and `\\wsl.localhost\`, any letter case of the distribution name) and command construction have unit tests with recorded and simulated `wsl.exe` output (UTF-16, helper distributions) | A real distribution may format listings differently, and Claude installed through nvm or `~/.local/bin` is started through a login shell that was never run. |
 | **Windows toast notifications** and click-to-navigate | The notification decision, dedupe, quiet mode and the navigation target are tested; the Electron call is observed with a stand-in | Toasts also depend on Windows Focus assist settings. |
 | **The real ChatGPT site** inside the embedded view: sign-in, loading a conversation, the clipboard permission | A local HTTPS stand-in for `chatgpt.com` exercises the real navigation policy and the real view | ChatGPT may change its pages or refuse embedded browsers (Google sign-in often does). The external-browser mode is the fallback. |
+| **The ChatGPT overlap fix (page size)** | The report (floating controls over the writing blocks) was **not reproduced**: chatgpt.com cannot be reached from the build environment. What is built and tested is the mechanism: the view's own browser zoom follows its pane, in the real Electron app against a stand-in page that reports its own width, with clicks, selection, scrolling and the page's Copy button still working while zoomed ([CHATGPT_PANE.md](CHATGPT_PANE.md)) | The cause (a narrow pane makes ChatGPT use its compact layout) is a hypothesis, and the numbers (a target of 900 CSS pixels, never below 70 percent) are judgements. In a split pane on a 1280 wide window Automatic gives ChatGPT about 717 CSS pixels, which may not be enough; ChatGPT focus mode gives the page the whole window. The check on your PC takes 10 minutes (steps in [CHATGPT_PANE.md](CHATGPT_PANE.md)) |
+| **Claude Code on the web inside the Cloud tab** | A local stand-in for claude.ai exercises the real view, navigation policy, profile, permissions and the pre-filled address. No Claude cloud session was ever started: no claude.ai subscription login was available ([CLOUD_SESSIONS.md](CLOUD_SESSIONS.md)) | claude.ai may refuse an embedded Electron view, Google sign-in is often refused in embedded windows (sign in with an email address or use "Open in your browser"), the GitHub connection may need a pop-up that cannot work in one view, and Cloudflare may challenge it. Whether Anthropic's terms allow showing claude.ai in another application is **not answered** by their documentation |
+| **Linking an existing ChatGPT Project** | The pasted address is parsed and stored, opened in the embedded view, survives a restart (stand-in) | The address shapes are observed, not documented, and may change; an unrecognised form is kept as pasted. OpenAI's terms were not readable by the research tool and are unread ([CHATGPT_PROJECTS.md](CHATGPT_PROJECTS.md)) |
+| **The Windows taskbar badge** | The count it shows is driven by the core and unit tested | Never seen on a real taskbar |
 | **An Android device or emulator** | 216 Jest tests, a script that pairs and connects the phone's own code to the real headless core, a bundling check, and the **built APK** (46.2 MB, arm64, release; SHA-256 in [ANDROID.md](ANDROID.md)) read back with `apksigner` and `aapt2`: signature, 8 permissions, not debuggable, no backup, no cleartext. It was built after the Maven Central rate limit was got past with longer retries and a local, checksum-verified copy of 11 files; no verification was bypassed ([ANDROID.md](ANDROID.md), "Build outcome") | The app has never been installed or started: no screen has been seen, and the camera, notifications and Tailscale are untried. The APK is signed with a throwaway key made for this build, so a later build cannot update it (uninstall first, or sign your own with `MINISUMMA_KEYSTORE`); Play Protect warns about an unknown developer. |
 | **Real push delivery** (Firebase Cloud Messaging) | Payload building, token registration, minimal payloads and failure handling against a local stand-in | Needs your own Firebase project and a device. |
 | **Real Tailscale** | The status parser and Serve management against recorded and simulated output | `tailscale serve` flags can differ by version. |
@@ -34,6 +38,17 @@ the 30-minute checklist for the phone.
   request the session can keep showing "needs permission" until Claude's next event or the next discovery poll (the
   interval is a setting; the terminal shows the truth, and the feed entry is closed at once). A `Stop` event means the
   turn ended, not that the task is done; only a report marker (a declaration by the model) says "finished".
+* **A person's ChatGPT Projects cannot be listed.** OpenAI documents no way for a third party to do it (sign-in scopes exclude
+  conversations; "projects" in the OpenAI API are another thing). A workspace is linked by pasting the project's address;
+  nothing is imported or synced ([CHATGPT_PROJECTS.md](CHATGPT_PROJECTS.md)).
+* **Claude cloud sessions cannot be listed, watched or notified about by Mini-Summa.** Anthropic documents no API, event or
+  completion signal an application can use, and hooks on your PC are not read by cloud sessions. The Cloud tab is a web page,
+  not session control: to know a cloud task is done, look at the page or use Anthropic's own apps. Mini-Summa sends no
+  notification for a cloud session ([CLOUD_SESSIONS.md](CLOUD_SESSIONS.md), [NOTIFICATIONS.md](NOTIFICATIONS.md)).
+* **Claude Code may run in a mode that never asks permission.** Claude Code 2.1.314 starts in `auto` mode on the build machine
+  (its hooks say `permission_mode: auto`) and writes files without a prompt, so no "needs permission" notification exists in that
+  mode; "Claude finished" and the report notification still do. The permission checks of `npm run verify:claude-external` report
+  "not tested" there.
 * **Push notifications need your own Firebase project**, and the PC must be awake and on your tailnet to send them.
 * **Remote access needs Tailscale** with HTTPS enabled for your tailnet. Mini-Summa never uses Funnel.
 * **External sessions** (started outside Mini-Summa) can be observed but not typed into. Anthropic's Remote Control is the
@@ -43,6 +58,17 @@ the 30-minute checklist for the phone.
 
 These are things Mini-Summa gets wrong or does clumsily today. None blocks the core workflow.
 
+* **One ChatGPT view and one Claude view are shared by all projects.** Selecting another project loads that project's page into
+  the same view, so a half-written message that ChatGPT does not keep itself is lost on the switch, and the Cloud tab shows the
+  remembered page of the project you switched to (the cloud session itself keeps running). Terminals are not affected: no
+  terminal restarts. A view per project (a small cache) was left out to keep the memory footprint of a lightweight app.
+* **"Claude finished" has limits.** It proves a turn ended, not that the task succeeded. It is not sent while background work is
+  pending (a dev server or a recurring task keeps a session in that state, so it never says finished), not for sessions that
+  belong to no project, and not while you are looking at that very session in a focused window.
+* **The page size setting costs text size.** Automatic zooms ChatGPT out in a narrow pane, to 70 percent at the lowest. Choose
+  100% in Settings, ChatGPT if you prefer the text large and do not see the overlap.
+* **Moving work between cloud and local is a command, not a button.** A cloud session page offers the documented
+  `claude --teleport <id>` command to copy; running it in a checkout of the same repository is up to you.
 * **Quitting adds one unread "Session ended" feed entry per running terminal.**
 * **`/clear` and `/resume` inside a managed terminal are followed, within limits.** The core moves the terminal's record to the
   new session id when `claude agents --json` shows the same process running it (verified with the real CLI for `/clear` and
@@ -94,6 +120,11 @@ These are things Mini-Summa gets wrong or does clumsily today. None blocks the c
 
 ## 4. Deferred polish
 
+* A ChatGPT view and a Claude view per project (a small cache), so switching projects keeps each page and its draft.
+* Running in the tray when the window is closed, and starting with Windows, so notifications keep coming without the window.
+* Real cloud-session control (list, resume, completion events) if Anthropic ever documents an interface for it, and listing of
+  ChatGPT Projects if OpenAI does; both would replace pasting and page-showing.
+* A shared base for the two view controllers (ChatGPT and Claude), which now duplicate about 60 lines.
 * A light theme; the interface is dark only.
 * When the sidebar is collapsed to its narrow rail, Reports and Settings show their own navigation column inside the view
   (recorded as exception X8 in [UI_PRINCIPLE_EXCEPTIONS.md](UI_PRINCIPLE_EXCEPTIONS.md)). A cleaner fix lets a view that

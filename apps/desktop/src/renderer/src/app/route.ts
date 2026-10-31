@@ -27,6 +27,12 @@ export interface RouteState {
   cloudShown: Record<string, true>;
   /** "New cloud session" was chosen for these projects and the Cloud tab has not opened the start page for it yet. In memory only. */
   cloudStart: Record<string, true>;
+  /**
+   * The ChatGPT pane was asked to show the linked ChatGPT Project's page of these projects now (the project settings' "Open"). The
+   * pane owns what the view shows, so it loads the page itself and clears this; a conversation it would load for the project in the
+   * same moment does not take the page away. In memory only.
+   */
+  chatgptProjectOpen: Record<string, true>;
   reportId: string | null;
   deliveryId: string | null;
   activityId: string | null;
@@ -55,6 +61,10 @@ export interface RouteActions {
   hideCloud(projectId: string): void;
   /** The Cloud tab has opened the start page that "New cloud session" asked for. */
   finishCloudStart(projectId: string): void;
+  /** Ask the ChatGPT pane to show the project's linked ChatGPT Project now. The caller selects the project; the pane does the loading. */
+  openChatGptProject(projectId: string): void;
+  /** The pane has done what `openChatGptProject` asked (or cannot). */
+  finishChatGptProjectOpen(projectId: string): void;
   /** Return to the view before this one (the back chevron of a view that replaced the sidebar). */
   back(fallback?: ViewId): void;
 }
@@ -112,6 +122,7 @@ export function createRouteStore(options: RouteOptions = {}): RouteStore {
     cloudUrlByProject: {},
     cloudShown: {},
     cloudStart: {},
+    chatgptProjectOpen: {},
     reportId: null,
     deliveryId: null,
     activityId: null,
@@ -179,6 +190,12 @@ export function createRouteStore(options: RouteOptions = {}): RouteStore {
     },
     finishCloudStart(projectId) {
       set((s) => (s.cloudStart[projectId] ? { cloudStart: without(s.cloudStart, projectId) } : s));
+    },
+    openChatGptProject(projectId) {
+      set((s) => (s.chatgptProjectOpen[projectId] ? s : { chatgptProjectOpen: { ...s.chatgptProjectOpen, [projectId]: true } }));
+    },
+    finishChatGptProjectOpen(projectId) {
+      set((s) => (s.chatgptProjectOpen[projectId] ? { chatgptProjectOpen: without(s.chatgptProjectOpen, projectId) } : s));
     },
     back(fallback = 'workspace') {
       set((s) => {
