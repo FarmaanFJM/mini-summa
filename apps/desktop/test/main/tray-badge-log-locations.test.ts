@@ -134,8 +134,8 @@ describe('locations', () => {
     const l = resolveLocations({ moduleDir: '/app/resources/app.asar/out/main', isPackaged: true, resourcesPath: '/app/resources' });
     expect(l.uiDir).toBe(path.resolve('/app/resources/app.asar', 'out', 'renderer'));
     expect(l.preloadPath).toBe(path.resolve('/app/resources/app.asar', 'out', 'preload', 'index.cjs'));
-    expect(l.captureScript).toBe(path.resolve('/app/resources', 'hook', 'capture.mjs'));
-    expect(l.iconPath).toBe(path.resolve('/app/resources', 'icons', 'icon.png'));
+    expect(l.captureScript).toBe(path.join('/app/resources', 'hook', 'capture.mjs'));
+    expect(l.iconPath).toBe(path.join('/app/resources', 'icons', 'icon.png'));
   });
 });
 
