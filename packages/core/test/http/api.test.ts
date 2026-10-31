@@ -77,9 +77,14 @@ describe('validation', () => {
   it('refuses bodies over 1 MB with 413, with or without a Content-Length', async () => {
     const hh = await boot();
     const big = JSON.stringify({ name: 'x'.repeat(1024 * 1024 + 10) });
-    const withLength = await raw(hh.port, { method: 'POST', path: '/api/v1/projects', headers: { authorization: `Bearer ${hh.tokens.desktop}`, 'content-type': 'application/json' }, body: big });
-    expect(withLength.status).toBe(413);
-    expect(withLength.json().error.code).toBe('payload_too_large');
+    // On Windows the refusal can reach the client as a connection reset instead of the 413 (the server closes with the body unread; see
+    // docs/WINDOWS_CI.md). Only that reset is tolerated, only on win32; any other outcome still fails.
+    const resetOnWindows = (error: unknown) => { if (process.platform === 'win32' && (error as NodeJS.ErrnoException).code === 'ECONNRESET') return null; throw error; };
+    const withLength = await raw(hh.port, { method: 'POST', path: '/api/v1/projects', headers: { authorization: `Bearer ${hh.tokens.desktop}`, 'content-type': 'application/json' }, body: big }).catch(resetOnWindows);
+    if (withLength) {
+      expect(withLength.status).toBe(413);
+      expect(withLength.json().error.code).toBe('payload_too_large');
+    }
     // chunked: no Content-Length, the limit is enforced while reading
     const chunked = await new Promise<{ status: number; text: string }>((resolve, reject) => {
       import('node:http').then(({ default: http }) => {
@@ -92,8 +97,8 @@ describe('validation', () => {
         for (let i = 0; i < 5; i++) r.write('x'.repeat(300_000));
         r.end();
       }, reject);
-    });
-    expect(chunked.status).toBe(413);
+    }).catch(resetOnWindows);
+    if (chunked) expect(chunked.status).toBe(413);
     // just under the limit gets as far as schema validation
     const under = await raw(hh.port, { method: 'POST', path: '/api/v1/projects', headers: { authorization: `Bearer ${hh.tokens.desktop}`, 'content-type': 'application/json' }, body: JSON.stringify({ name: 'x'.repeat(1_000_000) }) });
     expect(under.status).toBe(400);
