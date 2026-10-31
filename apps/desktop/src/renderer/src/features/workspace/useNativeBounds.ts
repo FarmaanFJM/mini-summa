@@ -14,13 +14,16 @@ const same = (a: Rect | null, b: Rect | null): boolean =>
  * rectangle. It is reported after every render, on resize, on scroll, and on a slow timer as a safety net for moves that fire
  * no event. When the element is hidden, absent or `enabled` is false the view is hidden (null). `view` says which native view
  * this body belongs to: the ChatGPT page (the default) or Claude Code on the web; a host without the second one is told nothing.
+ * `key` (ChatGPT only) is the project whose live view this is; when it changes, the previous project's view is hidden (never closed).
  */
-export function useNativeBounds(ref: RefObject<HTMLElement | null>, enabled: boolean, view: NativeViewId = 'chatgpt'): void {
+export function useNativeBounds(ref: RefObject<HTMLElement | null>, enabled: boolean, view: NativeViewId = 'chatgpt', key?: string): void {
   const native = useNative();
   const host = view === 'chatgpt' ? native.chatgpt : native.claudeWeb;
   const last = useRef<Rect | null | undefined>(undefined);
+  const lastKey = useRef<string | undefined>(key);
 
   const report = useCallback(() => {
+    if (lastKey.current !== key) { lastKey.current = key; last.current = undefined; } // another project's view: tell it where the pane is
     const el = ref.current;
     let rect: Rect | null = null;
     if (enabled && el) {
@@ -30,8 +33,8 @@ export function useNativeBounds(ref: RefObject<HTMLElement | null>, enabled: boo
     if (last.current !== undefined && same(rect, last.current)) return;
     last.current = rect;
     setNativeBounds(rect, view);
-    if (host) void Promise.resolve(host.setBounds(rect)).catch(() => { /* the next report tries again */ });
-  }, [enabled, host, ref, view]);
+    if (host) void Promise.resolve(key === undefined ? host.setBounds(rect) : native.chatgpt.setBounds(rect, key)).catch(() => { /* the next report tries again */ });
+  }, [enabled, host, key, native, ref, view]);
 
   useLayoutEffect(() => { report(); });
 
@@ -55,6 +58,6 @@ export function useNativeBounds(ref: RefObject<HTMLElement | null>, enabled: boo
   useEffect(() => () => {
     last.current = undefined;
     setNativeBounds(null, view);
-    if (host) void Promise.resolve(host.setBounds(null)).catch(() => {});
-  }, [host, view]);
+    if (host) void Promise.resolve(key === undefined ? host.setBounds(null) : native.chatgpt.setBounds(null, key)).catch(() => {});
+  }, [host, key, native, view]);
 }

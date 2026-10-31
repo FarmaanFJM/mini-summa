@@ -13,8 +13,33 @@ import { decideOrientation, onlyPane, ORIENTATION_LABEL, toggleMaximized } from 
 import type { PaneName } from './layout';
 import { maximizedOf, ViewSwitch, viewOf } from './ViewSwitch';
 
+/**
+ * What the toast says when the host destroyed a project's ChatGPT view to stay within its bound on live views. Mini-Summa never reads
+ * the page, so it cannot tell whether a draft was in it: the text always says that unsent text is gone.
+ */
+export function unloadedNoticeText(projectName: string, address: string | null): string {
+  const where = address ? `the page will reload at ${address}` : 'the page will reload when you open the project';
+  return `The ChatGPT page of ${projectName} was unloaded to save memory. Unsent text there is gone; ${where}.`;
+}
+
+/** Shows that toast. The window-level hook: the unloaded project is not the one on screen, so the pane cannot be the one to say it. */
+function useChatGptUnloadedToast(): void {
+  const native = useNative();
+  const { store, route } = useRuntime();
+  useEffect(() => {
+    if (!native.chatgpt.onNotice) return undefined;
+    return native.chatgpt.onNotice((notice) => {
+      if (notice.kind !== 'unloaded' || notice.key === null) return;
+      const project = store.getState().projects.find((p) => p.id === notice.key);
+      const address = route.getState().chatgptUrlByProject[notice.key] ?? notice.url;
+      toast({ id: `chatgpt-unloaded:${notice.key}`, title: 'A ChatGPT page was unloaded', body: unloadedNoticeText(project?.name ?? 'a project', address), kind: 'warning', durationMs: 20_000 });
+    });
+  }, [native, store, route]);
+}
+
 /** The core screen: ChatGPT and Claude side by side (or stacked) for one project. Stays mounted while other views show. */
 export function Workspace({ visible }: { visible: boolean }) {
+  useChatGptUnloadedToast();
   const loaded = useApp((s) => s.loaded);
   const project = useSelectedProject();
   return (
