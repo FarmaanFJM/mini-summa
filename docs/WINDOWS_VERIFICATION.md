@@ -60,36 +60,39 @@ and hash you have not compared.
 The installer installs for your user only and asks for no administrator rights. Alternatively build it yourself: Node.js 22.12 or newer,
 `git clone https://github.com/FarmaanFJM/mini-summa`, `git checkout feat/mini-summa-full-base`, `npm ci`, `npm run dist:win`.
 
-## Tier 2: the essential manual checks (about 45 minutes)
+## Tier 2: what only you can check (about 45 minutes, in this order)
 
-You need: Windows 10 1809 or newer or Windows 11 as a standard user, Claude Code installed and logged in (`claude --version` works in PowerShell), Git for Windows, and a ChatGPT account with at least one ChatGPT Project and a few conversations in it. R6 (the Cloud tab) additionally needs a claude.ai plan that can use Claude Code on the web.
+You need: Windows 10 1809 or newer, or Windows 11, as a normal user; Claude Code installed and logged in (`claude --version` works in PowerShell); Git for Windows; a ChatGPT account with **at least two ChatGPT Projects and a few conversations in them**. Stop at the first step that fails, write its number and what you saw, and send `%APPDATA%\Mini-Summa\logs\main.log` and `%APPDATA%\Mini-Summa\data\logs\core.log` (no tokens in them). Do not paste tokens, pairing codes or report text.
 
-Do these in order. For each: *Expect* is the correct result; **Evidence** is what to send back. A screenshot should not show tokens,
-pairing codes or report text. Logs: `%APPDATA%\Mini-Summa\logs\main.log` and `%APPDATA%\Mini-Summa\data\logs\core.log` (no tokens).
+**Why these and nothing else.** Everything a Windows machine without a person, a screen or a login could check has been checked (Tier 1). What follows needs a real ChatGPT account, a real Claude Code, a real screen, or your eyes. A test against a stand-in page or a fake Claude proves nothing about the real ones.
 
-| # | Check | Where the steps are | Evidence to send |
-| --- | --- | --- | --- |
-| R1 | The folder: Browse adds it at once, it survives restart, a GitHub-only project works | Part 0, R1 and R2 | pass or fail per step; if fail, a screenshot of the settings dialog |
-| R3 | Link one of your real ChatGPT Projects by address | Part 0, R3 | pass or fail; **the address shape with the long ids replaced by `xxx`**; whether the project page opened |
-| R4 | The overlapping ChatGPT controls | Part 0, R4 and CHATGPT_PANE.md | window size, display scaling, which of the three outcomes; one screenshot at the size where it overlaps |
-| R5 | View modes keep what is there | Part 0, R5 | pass or fail; whether a half-written ChatGPT message survived |
-| R7 | A Windows toast, and its click | Part 0, R7 | whether the test toast appeared; whether clicking opened the right project and session; seconds from Claude's last output to its toast |
-| H | PowerShell waits for the app (hook, step 11) and a report arrives | Part 1, steps 11 to 13 | the two numbers from step 11; whether a report appeared under the right project |
-| P1 to P4 | Persistent workspaces and ChatGPT conversation continuity | the next section | pass or fail per step |
+### A. Real Claude sessions and the terminal (15 minutes) - most important
+1. **Folder and local session (R1).** New project, source GitHub repository, any `owner/repo`. Open its settings, **Browse**, pick a real folder. *Expect:* the folder is listed at once; the header shows it. Quit and start again: still there. **New local session** starts Claude in that folder.
+   *Send:* pass/fail.
+2. **The hook and the first report (H).** In PowerShell run the two lines of Part 1, step 11 (`$env:ELECTRON_RUN_AS_NODE='1'` ... `Measure-Command`). Then in the session ask for a very small change ("add a comment to README.md"), approve it in **Activity** or the terminal, wait for Claude to finish. *Expect:* the second number about 3; a report appears under this project with its destination conversation; Claude Code shows no hook error.
+   *Send:* the two numbers; pass/fail.
+3. **The terminal.** Type, paste a few lines, press Ctrl+C once at an idle prompt, then **resize the Mini-Summa window and drag the divider while Claude shows its prompt**. *Expect:* keys arrive as typed; paste works; the terminal redraws to the new width (Claude's box lines up). **Known unknown:** a Node test child under ConPTY did not see a resize; if the real Claude does not redraw, say so.
+   *Send:* pass/fail, and whether the redraw happened.
+4. **Stop and start again; `/clear`; `/resume`.** Stop the session from Mini-Summa and start it again with resume. Then in a session type `/clear`, send a prompt, type `/resume` and choose the first session. *Expect:* after each, the tab follows the session Claude now runs, the session shows as live (not ended), and typing still works. **Known unknown:** a fake Claude behind a `.cmd` shim did not refresh the resumed session's state; with a real Claude this may be fine or not.
+   *Send:* pass/fail per action; a screenshot of the session list if a session shows as ended while it is running.
 
-### P1 to P4: persistent workspaces (status: see the status report; the steps below are the acceptance test)
+### B. Real ChatGPT Projects and continuity (15 minutes)
+5. **Link a real ChatGPT Project (R3).** New project, source ChatGPT Project, paste the address of one of your own ChatGPT Projects. *Expect:* its page opens in the ChatGPT pane (sign in if asked). Open a conversation in it and press **Use this conversation for reports**.
+   *Send:* pass/fail; **the pasted address with the long ids replaced by `xxx`** (the shape is undocumented by OpenAI and may have changed).
+6. **Many conversations, one project (P1).** In that ChatGPT Project start a **new** conversation and write two lines. *Expect:* no new Mini-Summa project appears and nothing is mapped on its own.
+7. **Several projects, restart (P2, P3).** Make a second Mini-Summa project from your second ChatGPT Project. Switch A, B, A. *Expect:* each shows its own last conversation. Quit and start Mini-Summa: each reopens its last conversation. An unsent draft is not promised across a restart.
+   *Send:* pass/fail per step; if a project opened the project page instead of its last conversation, the project and what you had open.
+8. **A project without a link (P4).** Keep one project with no ChatGPT link and a local Claude session; switch to it and back, use **Split / ChatGPT / Claude**. *Expect:* everything works; ChatGPT does not pick a conversation by itself.
 
-One Mini-Summa project is one workspace. Several ChatGPT conversations belong to it without creating more projects.
-1. **P1.** Link a ChatGPT Project to project A. Open conversation A1, then start a new conversation A2 inside that ChatGPT Project and
-   write two lines in it. *Expect:* no new Mini-Summa project appears.
-2. **P2.** Make projects B and C the same way (B1, C1). Switch A, B, C, A. *Expect:* each shows its own last conversation; none shows
-   another project's.
-3. **P3.** Quit and start Mini-Summa. *Expect:* each project reopens its last conversation (A2, B1, C1). An unsent draft is **not**
-   promised across a restart.
-4. **P4.** In a project without a ChatGPT link, and with a local Claude session, switch projects, notify, and use Split/ChatGPT/Claude.
-   *Expect:* everything still works and no conversation is auto-associated with a project you did not link.
+### C. Notifications and the screen (15 minutes)
+9. **Toast and click (R7).** Settings, Notifications, **Send a test notification**. *Expect:* a Windows toast; clicking it brings Mini-Summa to the front. Then with two projects, let a session in the **other** project finish while you look at this one. *Expect:* a toast "Claude finished" for that project within a few seconds; clicking it opens **that** project and session.
+   *Send:* appeared or not; seconds from Claude's last output to the toast. If no toast: Windows Settings, System, Notifications, Mini-Summa on, Focus assist off.
+10. **The overlap (R4).** At your usual window size and display scaling, show ChatGPT beside Claude, ask ChatGPT for a short draft, and look at the writing block and its Copy button; then Settings, ChatGPT, Page size: **100%** against **Automatic**. *Expect:* the floating controls do not sit on the text with Automatic. **Only a person can decide this**; the overlap was never reproduced by me.
+   *Send:* window size, scaling, which setting overlaps, one screenshot.
+11. **View modes (R5).** Write half a message in ChatGPT, switch to Claude and back to Split. *Expect:* the half message and the scroll position are still there; nothing reloads.
 
-If a step fails, send the step number, what you saw, and the newest `main.log`.
+### Not on this list on purpose
+Cloud tab (needs a Claude Code on the web plan; read the six steps in [CLOUD_SESSIONS.md](CLOUD_SESSIONS.md) if you use it), WSL2, the phone, SmartScreen after you have verified the installer, a standard-user install on a normal Windows edition. They are in Tier 3.
 
 ## Tier 3: optional and extended
 
