@@ -41,6 +41,10 @@ type AppEnv = { Bindings: HttpBindings; Variables: { sec: RequestSecurity } };
 interface RouteLike { method: string; path: string; scope: Scope | 'public'; body?: ZodType; query?: ZodType; idempotent?: boolean }
 
 /** The request path exactly as sent, still percent-encoded: decoding happens once, where each part is used. */
+/** How much of a refused (413) request body is read and thrown away, and for how long, so the client can read the refusal. */
+const DISCARD_REFUSED_BODY_BYTES = 8 * 1024 * 1024;
+const DISCARD_REFUSED_BODY_MS = 3000;
+
 const rawPath = (request: Request): string => {
   const url = request.url;
   const start = url.indexOf('/', url.indexOf(':') + 4);
@@ -95,11 +99,33 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
     conversations: createConversationActions({ native: deps.native, settings: services.settings, bridge: hub.bridge }),
   });
 
+  /**
+   * Reads and throws away what is left of a body that is being refused, within a byte and a time limit. A refusal sent while the client is
+   * still writing must not be followed by closing the socket with data unread: on Windows that ends in a TCP reset which can destroy the
+   * answer before the client reads it (seen on a real Windows runner). Past the limits the rest is simply not read.
+   */
+  async function discardRest(reader: ReadableStreamDefaultReader<Uint8Array> | undefined, already: number): Promise<void> {
+    if (!reader) return;
+    const deadline = Date.now() + DISCARD_REFUSED_BODY_MS;
+    let seen = already;
+    try {
+      while (seen <= DISCARD_REFUSED_BODY_BYTES && Date.now() < deadline) {
+        const next = await Promise.race([reader.read(), new Promise<null>((r) => setTimeout(() => r(null), Math.max(1, deadline - Date.now())))]);
+        if (next === null || next.done) return;
+        seen += next.value.byteLength;
+      }
+    } catch { /* the client went away: nothing is left to read */ }
+    await reader.cancel().catch(() => undefined);
+  }
+
   async function readLimited(req: Request): Promise<Uint8Array> {
     const tooLarge = () => new CoreError(413, 'payload_too_large', `The request body is larger than ${Math.round(tuning.maxBodyBytes / 1024)} KB. Send less data.`);
-    const declared = Number(req.headers.get('content-length'));
-    if (Number.isFinite(declared) && declared > tuning.maxBodyBytes) throw tooLarge();
     const stream = req.body;
+    const declared = Number(req.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > tuning.maxBodyBytes) {
+      await discardRest(stream?.getReader(), 0);
+      throw tooLarge();
+    }
     if (!stream) return new Uint8Array(0);
     const reader = stream.getReader();
     const chunks: Uint8Array[] = [];
@@ -108,7 +134,7 @@ export function createHttpServer(deps: HttpServerDeps): HttpServer {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > tuning.maxBodyBytes) { await reader.cancel().catch(() => undefined); throw tooLarge(); }
+      if (total > tuning.maxBodyBytes) { await discardRest(reader, total); throw tooLarge(); }
       chunks.push(value);
     }
     return Buffer.concat(chunks);
