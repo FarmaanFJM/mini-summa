@@ -235,7 +235,10 @@ describe('live views: a ChatGPT view for each project', () => {
     await new Promise((r) => setTimeout(r, 150));
     expect(calls(fake.native.chatgpt.navigate).length).toBe(before); // Alpha's view still has its page: nothing was loaded
     // Alpha's view is unloaded (idle again): selecting it loads the remembered page, not the project page.
+    // Beta first settles on its own page (its view is idle, so the pane loads it), so that the order of events does not depend on timing.
     act(() => route().selectProject(b.id));
+    await waitFor(() => expect(calls(fake.native.chatgpt.navigate).at(-1)).toEqual([projectPage(SCOPE_B), b.id]));
+    await waitFor(() => expect(fake.boundsOf(a.id)).toBeNull());
     act(() => fake.emitView({ url: null, status: 'idle', title: null }, a.id));
     act(() => route().selectProject(a.id));
     await waitFor(() => expect(calls(fake.native.chatgpt.navigate).at(-1)).toEqual([chatIn(SCOPE_A, '1'), a.id]));
