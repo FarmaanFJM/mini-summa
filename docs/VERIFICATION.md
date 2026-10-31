@@ -6,26 +6,27 @@ nothing about the real one. Every number below came from a command in this repos
 that can run on your machine and prints PASS, FAIL or NOT RUN for each. A layer that did not execute is never shown as passed.
 
 The final run was made in a **fresh clone of the pushed branch** (`git clone`, `npm ci`, then `npm run verify`) at commit
-`540585e`, with the installer, the packaged-app smoke and the browser scripts run in the same clone; later commits changed
-documentation, one added check in the real-Claude script and one file mode only. The three real-Claude scripts of section 3
-ran from the working tree of that commit plus that added check, which was not committed yet.
-Environment: Linux (container), Node 22, Electron 45.1 under Xvfb, Playwright 1.64, Claude Code 2.1.314. Date: 2026-10-30.
+`b78488b`, with the installer, the packaged Linux app and its smoke test built and run in the same clone; later commits change
+documentation only (this file, the README and the pull request text). The real-Claude scripts of section 3 ran from the working tree at `868c192`, the last commit that changed the core, the shared
+package or those scripts; nothing they exercise changed afterwards. Round 3 (GitHub-only projects, cloud entry, workspace redesign,
+notifications) is summarised in section 12, with what could not be checked.
+Environment: Linux (container), Node 22, Electron 45.1 under Xvfb, Playwright 1.64, Claude Code 2.1.314. Date: 2026-10-31.
 
 ## At a glance
 
 | Layer | Environment | Result |
 | --- | --- | --- |
 | Type check, every workspace | Linux | **PASS** |
-| Unit and service tests (8 suites, 4,298 tests) | Linux | **PASS** |
+| Unit and service tests (8 suites, 4,917 tests: 4,914 pass, 3 skipped) | Linux | **PASS** |
 | Integration: real core + real PTYs + fake Claude, four-project routing | Linux | **PASS** (inside the core suite) |
-| Real Claude Code CLI through the core, including `/clear` and `/resume` in the terminal | Linux, Claude 2.1.314 | **PASS**, 20 of 20 steps (section 3) |
-| A Claude started outside Mini-Summa, followed through installed hooks | Linux, Claude 2.1.314 | **PASS**, 9 of 9 steps (section 3) |
-| Desktop acceptance: 25 behaviours, six extra checks and the four-project scenario, real Electron | Linux, Xvfb | **25 PASS, 1 PARTIAL, 0 FAIL**, six extra checks PASS (section 4) |
+| Real Claude Code CLI through the core, including `/clear` and `/resume` in the terminal and the new "Claude finished" notification | Linux, Claude 2.1.314 | **PASS**, 21 of 21 steps (section 3) |
+| A Claude started outside Mini-Summa, followed through installed hooks | Linux, Claude 2.1.314 | **PASS**, 8 steps; 1 **NOT TESTED** (Claude ran in `auto` mode and never asked permission) (section 3) |
+| Desktop acceptance: 25 behaviours, ten extra checks and the four-project scenario, real Electron | Linux, Xvfb | **25 PASS, 1 PARTIAL, 0 FAIL**, ten extra checks PASS (section 4) |
 | Desktop smoke: real Electron with the real embedded core | Linux, Xvfb | **PASS**, 13 of 13 checks |
 | Browser integration: extension in real Chromium | Linux, Xvfb | **PASS**, 28 of 28 + 9 of 9 steps and the service-worker keep-alive check (section 5) |
 | Android unit tests and phone-code-against-real-core check | Linux, Node | **PASS** (216 tests; 10 checks) |
 | Android APK: built, signed, read back with `apksigner` and `aapt2` | Linux | **BUILT**; never installed (section 6) |
-| Windows installer: built under Wine | Linux + Wine | **BUILT**; never installed (section 7) |
+| Windows installer: built under Wine, packaged Linux app and its smoke test | Linux + Wine | **BUILT**; packaged Linux smoke 13 of 13; installer never installed (section 7) |
 | **Windows runtime** | none | **NOT TESTED** (a code audit and simulated tests only: section 8) |
 | **WSL2** | none | **NOT TESTED** (simulated tests only) |
 | **The Android app on a device or emulator** | none | **NOT TESTED** |
@@ -33,17 +34,21 @@ Environment: Linux (container), Node 22, Electron 45.1 under Xvfb, Playwright 1.
 | **The real ChatGPT site** | none | **NOT TESTED** |
 | **Real Tailscale** | none | **NOT TESTED** |
 | **Windows toast notifications** | none | **NOT TESTED** |
+| **The real claude.ai inside the Cloud tab, and any Claude cloud session** | none | **NOT TESTED** (a local stand-in only; no claude.ai login was available) |
+| **The ChatGPT overlap fix on the real site** | none | **NOT TESTED**, and the overlap itself was never reproduced (section 12) |
+| **Linking a real ChatGPT Project** | none | **NOT TESTED** (a local stand-in only; the address shapes are not documented by OpenAI) |
+| **Windows taskbar badge** | none | **NOT TESTED** |
 
 ## 1. Unit and service tests (Linux)
 
 | Suite | Tests | Result |
 | --- | --- | --- |
-| `packages/shared` (contracts, ChatGPT URL rules, client state, window-state rules) | 87 | PASS |
-| `packages/storage` (SQLite, migrations) | 13 | PASS |
+| `packages/shared` (contracts, ChatGPT and Claude address rules, client state, window-state rules) | 109 | PASS |
+| `packages/storage` (SQLite, migrations) | 14 | PASS |
 | `packages/claude-integration` (hook capture, reducer, discovery, redaction, spool, setup) | 270 | PASS |
 | `poc/claude-integration` (the unmodified research record) | 131 | PASS |
-| `packages/core` (services, HTTP and WebSocket, real-core integration) | 2,289 passed, 1 skipped | PASS |
-| `apps/desktop` (Electron main process and React renderer) | 1,110 passed, 2 skipped | PASS |
+| `packages/core` (services, HTTP and WebSocket, real-core integration) | 2,361 passed, 1 skipped | PASS |
+| `apps/desktop` (Electron main process and React renderer) | 1,634 passed, 2 skipped | PASS |
 | `apps/browser-extension` | 179 | PASS |
 | `apps/android` (Jest) | 216 | PASS |
 
@@ -81,7 +86,7 @@ Three scripts drive the **real** `claude` (isolated configuration directory, tem
 repeated runs and the default model for some, default permission mode). They are for you to repeat against your own Claude
 Code after upgrading it.
 
-**`npm run verify:claude`: a managed session through the headless core.** Result of the final run: **20 passed, 0 failed, 0 not tested** (Haiku, isolated configuration directory, default permission mode). After `/clear` the managed terminal was following the new session id 1.5 s later, in the same process; `/resume <id>` moved it back in 1.5 s.
+**`npm run verify:claude`: a managed session through the headless core.** Result of the round 3 run: **21 passed, 0 failed, 0 not tested** (the machine's default model and its normal Claude login; the permission dialog did appear in this run). The 21st check is new: a real turn that ends without a report produced exactly one "Claude finished" notification record 2.7 s after the prompt was sent in the last run (3.3 s and 4.3 s in two earlier runs; this includes the model's reply time), the turn that ended with a report produced none, and a plain answer created no report. The round 2 result was 20 of 20 (Haiku, isolated configuration directory). After `/clear` the managed terminal was following the new session id 1.5 s later, in the same process; `/resume <id>` moved it back in 1.5 s.
 
 The checks, in order: the core starts · a project and its mapped conversation are registered · the CLI starts as a managed
 session in the project folder · the first real hook arrives and the session leaves "Starting" · a real final message becomes a
@@ -100,7 +105,7 @@ session back as managed in a new generation · nothing was written into the repo
 hooks through the same consent flow the Settings page uses (a plan with a hash, a backup, the user's own keys preserved), and
 checks that the session is attributed from the hook evidence only, typing into it is refused, a permission request is announced
 but cannot be acted on, a report is captured, the end is observed, and removing the hooks restores the user's keys (Claude adds
-keys of its own to `settings.json`, which the comparison ignores). Result of the final run: **9 passed, 0 failed, 0 not tested**.
+keys of its own to `settings.json`, which the comparison ignores). Result of the round 3 run: **8 passed, 0 failed, 1 not tested**. The one not tested is "the permission request is announced": Claude Code 2.1.314 started in `auto` permission mode on this machine (its hooks say `permission_mode: auto`), wrote the file without asking and no permission request existed to observe; the script now says so instead of waiting two minutes and failing. Round 2: 9 of 9.
 
 **`npm run verify:protocol`: does Claude write the report marker by itself?** With natural prompts that never mention a report
 (create a file, add a small function and run it, change a heading, write a to-do list), the default model wrote the marker for 6
@@ -116,6 +121,8 @@ checks require Claude's actual answer; one run showed that `/clear` made the man
 session appeared beside it (fixed, section 9); and a driver flake (the first-run trust dialog answered too early under heavy CPU
 load, selecting "No, exit") was fixed by choosing the highlighted option and by waiting for the screen to settle.
 
+In round 3 the managed-session script first reported two failures that were not the product's: `claude agents --json` lists every Claude process of the computer, including the one that started the run, so a check that no observed session exists anywhere, and one that exactly one session is live anywhere, counted it. Those two checks now look only at sessions inside the run's own temporary directory (a phantom made by the terminal under test would be there), and the second run passed all 21.
+
 Limits: Linux, this sandbox's authentication, one Claude version, two models. Not covered: Windows, WSL2, the Claude desktop
 app, other Claude versions, `/clear` while Claude is working or a dialog is open, and the real Electron window together with the
 real Claude (the Electron suite uses a stand-in CLI so that no model is called).
@@ -130,17 +137,19 @@ it). Everything a person clicks or types was reached by role and accessible name
 
 Result (`docs/ACCEPTANCE.md` is generated from the last run, one row per behaviour with its evidence):
 
-* **A01 to A25 and the critical cross-project scenario: 25 PASS, 1 PARTIAL, 0 FAIL, 0 NOT TESTED.** The six extra checks X01 to X06: 6 PASS.
-  38 tests ran: 37 passed, 1 skipped (the operating-system toast part of A21, declared NOT TESTED).
-* **The full suite passed in the fresh clone** (2 min 54 s) and also in the working tree after the last renderer change (3 min 03 s);
-  before the follow-up work three consecutive full runs had passed. In the fresh clone the one difference from the commit was the
-  executable bit `npm ci` sets on `packages/core/src/cli.ts` (now tracked, so a clean install leaves a clean tree).
+* **A01 to A25 and the critical cross-project scenario: 25 PASS, 1 PARTIAL, 0 FAIL, 0 NOT TESTED.** The ten extra checks X01 to X10: 10 PASS.
+  51 tests ran: 50 passed, 1 skipped (the operating-system toast part of A21, declared NOT TESTED).
+* **The full suite passed in the fresh clone** of the pushed branch (the e2e layer of `npm run verify`: 50 passed, 1 skipped in 4 min 7 s)
+  and in the working tree before that (3 min 43 s), each against an app build made for the run. Round 2 took 2 min 54 s for 38 tests.
+  The suite has no retries; during round 3 a few runs of single files failed for reasons that were not the product's (a test that
+  encoded the old project dialog, a setup that now opens a conversation earlier, a certificate helper that wrote an empty line into
+  a PEM file for two host names) and each was fixed at its cause.
 * **A21, desktop notifications, is PARTIAL.** Executed and asserted: a finished task and a permission request become
   notification records, the main process asks the platform to show them with the right title, body and target, quiet mode and
   the per-project switch suppress them, and click navigation works with the platform layer simulated. **Not observed:** an
   operating-system toast on screen. Electron on this Linux container reports no notification service. Windows toasts were not
   exercised.
-* Six extra checks, each guarding a defect the suite or a later review found: X01 the Handoff card follows the delivery; X02
+* Ten extra checks, each guarding a defect the suite or a later review found (X07 to X10 are round 3's, section 12): X01 the Handoff card follows the delivery; X02
   the window reopens on the selected project at the same address; X03 an ended session is described in words; X04 the sandbox
   cannot reach any other host; X05 a report is handed over and confirmed from the strip at the bottom of the workspace, without
   going back to Reports (portrait and landscape, a collapsed sidebar, several reports, a very long title, a long report copied
@@ -195,7 +204,7 @@ Not tested: Edge, Brave, Firefox, Windows, and the real chatgpt.com.
 ## 7. Packaging
 
 **Windows installer (built, never installed).** `npm run dist:win -w @minisumma/desktop` on Linux, with Wine for the Windows
-resource editing, produced `Mini-Summa-Setup-0.1.0-x64.exe`: 122,528,579 bytes (about 117 MiB), SHA-256 `457304c866a594dbbef5b73d4331c7301f4104d3f964170dc830e1146051a00b`, built in the fresh clone of `540585e` in 70 seconds, a Nullsoft installer for 64-bit Windows, per-user,
+resource editing, produced `Mini-Summa-Setup-0.1.0-x64.exe`: 122,553,112 bytes (about 117 MiB), SHA-256 `a8e048380fd3f6b8846252c00f07bde2ab0fd9969ae5344be1eb453c72b83b2c`, built in the fresh clone of `b78488b` in 72 seconds, a Nullsoft installer for 64-bit Windows, per-user,
 no administrator rights, **not code-signed**. Inside it: `Mini-Summa.exe` (a 64-bit Windows executable, GUI subsystem), the app
 archive, the hook script as a separate resource, and the Windows terminal components of the PTY library (`conpty.node`,
 `conpty.dll`, `OpenConsole.exe`) outside the archive where they can load. The installer script registers `minisumma://`, refuses
@@ -209,8 +218,8 @@ shortcuts and registry entries, the uninstall, and the refusal on emulated Windo
 main window aborts the process under Wine (a Wine limit), so first paint was not observed, and Wine's pseudo console is not
 ConPTY, so no terminal was tried. None of this is evidence about Windows. The hash identifies this build only; a rebuild embeds timestamps and will differ.
 
-**Packaged app on Linux (run).** `npm run dist:dir` builds the same app unpacked for Linux, and the smoke test was run against that
-packaged build (not against the sources): 13 of 13 checks passed. They include that the test seams are inert in a packaged build (the data
+**Packaged app on Linux (run).** `npm run dist:dir -w @minisumma/desktop` builds the same app unpacked for Linux (278 MB, 8 seconds), and
+`smoke-real-core.mjs --packaged` was run against that packaged build in the fresh clone of `b78488b` (not against the sources): 13 of 13 checks passed. They include that the test seams are inert in a packaged build (the data
 directory is the profile's, not the one an environment variable asked for), that the PTY library loads from where the package puts
 it, that the hook script the core will install is the packaged one and runs the packaged executable, and that quitting asks about
 the running terminal and exits cleanly.
@@ -265,6 +274,11 @@ Everything in the bold rows of the table above, and in particular:
 * **Real Tailscale** (`tailscale serve`) and real Firebase delivery.
 * **Windows notification toasts** and clicking them (Linux has no notification service).
 * `/resume` and `/clear` while Claude is working, in the real window; the real window with the real Claude.
+* **The real claude.ai** in the Cloud tab, sign-in there, GitHub's authorisation flow, and any Claude cloud session (no claude.ai login was
+  available). A local stand-in plays `claude.ai`. Nothing was claimed about cloud execution.
+* **The real chatgpt.com layout**: whether the narrow-pane overlap exists and whether the page size setting removes it.
+* **A real ChatGPT Project address**: the stand-in serves the shape seen in a browser; OpenAI does not document it.
+* **The Windows taskbar badge** and a click on a real toast.
 * Continuous integration: the repository has no CI workflow, so nothing runs automatically on a push or on the pull request.
 
 ## 11. Reproduce
@@ -278,3 +292,21 @@ npm run verify:claude-external      # a Claude you started yourself, followed th
 npm run verify:protocol             # does your Claude write the report marker unprompted
 npm run e2e -w @minisumma/desktop   # needs xvfb-run; regenerates docs/ACCEPTANCE.md
 ```
+
+## 12. Round 3: what is new and how it was checked
+
+| Change | Evidence that ran (Linux) | Not covered |
+| --- | --- | --- |
+| **The folder defect** (Browse only filled a field, Save saw no change, the header kept "No folder yet") | Root cause found and fixed; the project settings now apply each change as it is made. Renderer tests for every way a folder gets in and for closing with text pending; **X07** in the real app (a GitHub-only project, Browse, Done, restart, a local session starts in the folder), which fails when Browse is put back to the old behaviour | The Windows folder picker and WSL paths |
+| **Folders optional; five independent associations** (name, GitHub repository, local folders, ChatGPT Project link, conversations and sessions); migration v2; a folder must exist and be a folder | Storage upgrade test of a round 2 database; core tests; A02 creates a project from each of four sources against the real core; X10 | A real installation's database (only a synthetic older one was upgraded) |
+| **Linking an existing ChatGPT Project** (no official listing exists: [CHATGPT_PROJECTS.md](CHATGPT_PROJECTS.md)) | Parser tests (query and fragment dropped, refusals with reasons, unknown forms kept as pasted); dialog and pane tests; **X10** against a stand-in. A mutation that kept the pasted query makes X10 fail | Real address shapes; OpenAI's terms were unreadable to the research tool and are unread |
+| **Claude Code on the web in a Cloud tab** (browser based; local and cloud chosen per session and never swapped: [CLOUD_SESSIONS.md](CLOUD_SESSIONS.md)) | Address and navigation-policy tests; the view's own tests; **X09** (5 scenarios; 8 deliberately broken builds were all caught) and **X10** against a claude.ai stand-in: one GET with the repository preselected, nothing typed or submitted, no local session started instead, hide and show keep the page, a profile separate from ChatGPT's | The real claude.ai, sign-in, GitHub flow, any cloud session; Anthropic's terms for embedding are not answered by their documentation |
+| **ChatGPT page size** (the overlap mitigation: the view's own zoom follows its pane; [CHATGPT_PANE.md](CHATGPT_PANE.md)) | Pure function tests; view tests; **X08** (4 scenarios; 4 broken builds caught): the page gets the width the table promises, clicks, selection, scrolling and its own Copy button still work while zoomed, the zoom survives navigation to another host | **The overlap was never reproduced.** Whether zoom removes it on the real site is unknown; Windows and display scaling (a Linux 150% run is a proxy) |
+| **Workspace**: one slim header, Split, ChatGPT and Claude views, Cloud tab, explicit local and cloud entries | Renderer tests (about 110 for the workspace); X08, X09 and X10 prove the same two native views, the same draft and no new request across view changes | A native page's square corners over the panel's rounded corner (cosmetic) |
+| **Notifications**: "Claude finished" (once per turn, never together with a report), no toast for what you are looking at, a test notification, a taskbar badge | Core and main tests incl. 13 live-core scenarios and a latency test (spool to notification: median about 300 ms, at most about 690 ms with the fake Claude); A21 in the real app (click goes to the right project and session); the **real Claude**: one "Claude finished" 2.7 to 4.3 s after the prompt including the model's reply, none after a report | Windows toasts and Focus assist, the hook's start-up time on Windows, Firebase delivery, the taskbar badge, a click on a real toast |
+| **Summa-UI**: the vendored bundle's tokens with no override, a flat sidebar and quick switcher, no second navigation column | The reference collector's checks (CHK-001 to 022) over 25 screens in a real browser, 149 keyboard focus stops, a contrast table ([UI_PRINCIPLE_EXCEPTIONS.md](UI_PRINCIPLE_EXCEPTIONS.md)); the real Electron window looked at under a virtual display at 1440x900, 1280x720, 960x600 and 960x1200 (split, each view, GitHub-only, the Cloud tab, the switcher, settings) | Windows rendering; the shortcuts do not reach the app while an embedded page has the keyboard focus |
+
+Defects that verification found in round 3, all fixed: the test certificate helper wrote an empty line into its PEM for certain sizes (found when
+the stand-in served two host names, 29 of 40 certificates failed); the taskbar badge was never fed by anything; a setup order that opened a
+conversation early (found by the cross-project test); the verifiers counting the machine's own Claude session; a stale scratch copy a worker left
+inside the repository (removed from the tree in `8ad35b7`, it remains in earlier snapshot commits of this branch and holds no secrets).

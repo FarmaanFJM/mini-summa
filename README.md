@@ -5,11 +5,17 @@
 Mini-Summa is a personal workspace for AI-assisted development. It sits between the ChatGPT conversations you already
 use to plan and review work and the real Claude Code sessions that implement it:
 
-* A Windows desktop app (Electron + React) shows your existing ChatGPT conversation next to a real Claude Code terminal,
-  per project, with a draggable divider that follows the window's orientation.
+* A Windows desktop app (Electron + React) shows your existing ChatGPT conversation (or a ChatGPT Project you link by its address)
+  next to a real Claude Code terminal, or next to Claude Code on the web, per project, with a draggable divider that follows the
+  window's orientation, and a control that shows both, ChatGPT alone or Claude alone without reloading anything. A project needs
+  only a name: a ChatGPT Project, a GitHub repository and local folders are optional and independent. Local or cloud is chosen for
+  each Claude session and one is never started in place of the other.
 * When Claude finishes a task and writes a report, Mini-Summa captures it, ties it to the right project and session,
   freezes the ChatGPT conversation it belongs to, tells you, and gets it onto your clipboard and in front of that
   conversation with one click. You press Send in ChatGPT yourself; Mini-Summa never submits for you.
+* Desktop notifications tell you when a local Claude session needs permission, asks something, fails, declares a report or simply
+  finished its turn, and a click opens that project and session. Cloud sessions cannot notify (Anthropic documents no way for an
+  application to follow one).
 * An Android companion shows project status, activity and reports, delivers notifications, and lets you approve or send
   user-authored text to the right managed Claude session, always behind an explicit approval boundary.
 
@@ -19,14 +25,17 @@ It is not an agent loop. Nothing is sent to ChatGPT or typed into Claude unless 
 
 | | |
 | --- | --- |
-| [docs/SETUP.md](docs/SETUP.md) | Install, launch, register projects, map ChatGPT conversations, use Claude Code |
+| [docs/SETUP.md](docs/SETUP.md) | Install, launch, add projects, map ChatGPT conversations, use Claude Code locally and in the cloud |
+| [docs/CLOUD_SESSIONS.md](docs/CLOUD_SESSIONS.md) | What Anthropic documents about Claude Code cloud sessions, what is not documented, and what Mini-Summa does with each |
+| [docs/CHATGPT_PROJECTS.md](docs/CHATGPT_PROJECTS.md) | Why existing ChatGPT Projects are linked by pasted address, and what is and is not known about OpenAI's side |
+| [docs/CHATGPT_PANE.md](docs/CHATGPT_PANE.md) | The embedded ChatGPT page, the page size setting against overlapping controls, and the 10-minute check on your PC |
 | [docs/HANDOFF.md](docs/HANDOFF.md) | Exactly what is automated in the ChatGPT handoff and what stays manual |
-| [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md) | Which notifications exist, what depends on external setup |
+| [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md) | Which notifications exist, how each is known (event, polled or inferred), how fast, and what needs Mini-Summa running |
 | [docs/ANDROID.md](docs/ANDROID.md) | Build, install, pair and connect the Android companion |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, data flow and the product rules the code enforces |
 | [docs/SECURITY.md](docs/SECURITY.md) | Threat model, what is stored where, public-repository policy |
 | [docs/VERIFICATION.md](docs/VERIFICATION.md) | What was tested, at which layer, and what was not |
-| [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) | The 25 desktop behaviours and the four-project scenario, one row each, generated from the run |
+| [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) | The 25 desktop behaviours, the four-project scenario and the extra checks, one row each, generated from the run |
 | [docs/WINDOWS_VERIFICATION.md](docs/WINDOWS_VERIFICATION.md) | The 40-minute checklist for what only a Windows PC can confirm, and the deeper lists behind it ([core](docs/audit/windows-core.md), [desktop](docs/audit/windows-desktop.md)) |
 | [docs/PHONE_VERIFICATION.md](docs/PHONE_VERIFICATION.md) | The 30-minute first-run checklist for the Android app on your phone |
 | [docs/LIMITATIONS.md](docs/LIMITATIONS.md) | Prioritised remaining limitations |
@@ -66,17 +75,23 @@ unsigned). See [docs/SETUP.md](docs/SETUP.md).
 
 ## Status
 
-The base application is implemented end to end and was verified on Linux at every layer that could run there, in a fresh clone of
-the pushed branch: about 4,300 unit, service and integration tests; the real core with real terminals; the real Claude Code CLI
-driven through the core (20 of 20 steps, including approving and rejecting a real permission dialog, a phone's prompt, a
-several-line follow-up, `/clear` and `/resume` inside the terminal), and a Claude started outside Mini-Summa followed through
-installed hooks; the real Electron app under a virtual display (the 25 desktop behaviours and the four-project scenario: 25 pass,
-and desktop notifications are partial because an operating-system toast cannot be observed on Linux, plus six extra checks that
-pass); and the browser extension in a real Chromium.
+The base application is implemented end to end and verified on Linux at every layer that could run there, in a fresh clone of the
+pushed branch: 4,917 unit, service and integration tests; the real core with real terminals; the real Claude Code CLI driven through
+the core (21 of 21 steps, including approving and rejecting a real permission dialog, a phone's prompt, `/clear` and `/resume`, and
+the new "Claude finished" notification), and a Claude started outside Mini-Summa followed through installed hooks (8 steps; 1 not
+exercised because Claude ran in a mode that never asks permission); the real Electron app under a virtual display (the 25 desktop
+behaviours and the four-project scenario: 25 pass, desktop notifications partial because an operating-system toast cannot be observed
+on Linux, plus ten extra checks that pass, among them a whole-journey test of a workspace made from an existing ChatGPT Project and a
+GitHub repository with no folder); and the browser extension in a real Chromium.
 
-**Built but never run on their target:** the Windows installer (assembled under Wine) and the Android APK (46 MB, arm64, signed with
-a throwaway key; 8 permissions). **Not exercised:** Windows, WSL2, an Android device or emulator, real push delivery, the real
-ChatGPT site, real Tailscale. A code audit of the Windows and WSL2 paths fixed 31 problems with simulated tests; it proves the
-logic, not Windows. [docs/VERIFICATION.md](docs/VERIFICATION.md) lists every layer with its real result,
-[docs/LIMITATIONS.md](docs/LIMITATIONS.md) what remains, [docs/WINDOWS_VERIFICATION.md](docs/WINDOWS_VERIFICATION.md) and
+**Round 3 added** GitHub-only and ChatGPT-only projects, a fix for the folder that Browse used to throw away, linking an existing
+ChatGPT Project by address, a Cloud tab (browser based) beside local Claude sessions, a page size setting against overlapping
+ChatGPT controls, Split, ChatGPT and Claude views, "Claude finished" notifications, and the interface rebuilt on the vendored Summa-UI.
+**Not verified:** the overlap itself was never reproduced and its fix is unproven on the real site; no Claude cloud session was ever
+started and the real claude.ai and chatgpt.com were never reached (local stand-ins played them); nothing ran on Windows.
+
+**Built but never run on their target:** the Windows installer (assembled under Wine) and the Android APK (46 MB, built in round 2 and
+not rebuilt since). **Not exercised:** Windows, WSL2, an Android device or emulator, real push delivery, the real ChatGPT and Claude
+sites, real Tailscale. [docs/VERIFICATION.md](docs/VERIFICATION.md) lists every layer with its real result,
+[docs/LIMITATIONS.md](docs/LIMITATIONS.md) what remains, [docs/WINDOWS_VERIFICATION.md](docs/WINDOWS_VERIFICATION.md) (Part 0 is new) and
 [docs/PHONE_VERIFICATION.md](docs/PHONE_VERIFICATION.md) what only your PC and your phone can confirm.
