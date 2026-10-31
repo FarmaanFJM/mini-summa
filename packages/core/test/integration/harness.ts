@@ -36,8 +36,12 @@ export interface Harness {
 }
 
 export function wrapperFor(dir: string, stateDir: string): string {
-  const file = path.join(dir, process.platform === 'win32' ? 'claude.cmd' : 'claude');
-  const body = `#!/bin/sh\nexec "${process.execPath}" "${FAKE_CLAUDE_SCRIPT}" --fake-state-dir "${stateDir}" "$@"\n`;
+  const win = process.platform === 'win32';
+  const file = path.join(dir, win ? 'claude.cmd' : 'claude');
+  // On Windows the stand-in is a .cmd shim, which is also how a real npm-installed claude is found there.
+  const body = win
+    ? `@echo off\r\n"${process.execPath}" "${FAKE_CLAUDE_SCRIPT}" --fake-state-dir "${stateDir}" %*\r\n`
+    : `#!/bin/sh\nexec "${process.execPath}" "${FAKE_CLAUDE_SCRIPT}" --fake-state-dir "${stateDir}" "$@"\n`;
   // A restart asks for the same wrapper again; on Windows the file can still be open (EBUSY seen on a real runner), so an identical one is left alone.
   if (!(fs.existsSync(file) && fs.readFileSync(file, 'utf8') === body)) fs.writeFileSync(file, body, { mode: 0o755 });
   return file;
@@ -53,7 +57,7 @@ export async function startHarness(opts: { dataDir?: string; root?: string; core
   const { overrides: extraOverrides, ...coreOptions } = opts.core ?? {};
   const overrides: NonNullable<CoreOptions['overrides']> = {
     claudeBin: bin, nodeRuntime: { command: process.execPath, runAsNode: false }, captureScript: CAPTURE_SCRIPT,
-    hostEnv: 'posix', discoveryIntervalMs: 60_000, spoolPollMs: opts.spoolPollMs ?? 60, homeDir: path.join(root, 'home'), ...extraOverrides,
+    hostEnv: process.platform === 'win32' ? 'win' : 'posix', discoveryIntervalMs: 60_000, spoolPollMs: opts.spoolPollMs ?? 60, homeDir: path.join(root, 'home'), ...extraOverrides,
   };
   // The tests must never reach the real Claude Code CLI (it is installed on developer machines and authenticated).
   if (overrides.claudeBin !== bin) throw new Error('integration tests must run against the fake Claude CLI');

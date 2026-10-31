@@ -16,13 +16,6 @@ const POSIX_FIXTURE_FILES = [
   'test/claude/managed-fake-claude.test.ts',
   'test/claude/managed-lifecycle.test.ts',
   'test/claude/managed-settings.test.ts',
-  'test/integration/notifications-live.test.ts',
-  'test/integration/notification-latency.test.ts',
-  'test/integration/session-continuity.test.ts',
-  'test/integration/lifecycle.test.ts',
-  'test/integration/remote.test.ts',
-  'test/integration/routing.test.ts',
-  'test/integration/event-order.test.ts',
   'test/cli-signals.test.ts',
 ];
 
