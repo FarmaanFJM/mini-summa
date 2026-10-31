@@ -17,6 +17,10 @@ function make(opts: { folderCheck?: ReturnType<typeof hostFolderCheck>; hostEnv?
   return createProjectsService({ base, settings, hostPlatform: opts.hostPlatform ?? 'linux', hostEnv: opts.hostEnv ?? 'posix', folderCheck: opts.folderCheck });
 }
 
+// the environment the test process itself runs on: temp folders are Windows paths on a Windows runner
+const HOST: EnvId = process.platform === 'win32' ? 'win' : 'posix';
+const HOST_PLATFORM = process.platform === 'win32' ? 'win32' : 'linux';
+
 const SCOPE = 'g-p-0123456789abcdef0123456789abcdef-caissa-trainer';
 
 describe('a project that has only a GitHub repository', () => {
@@ -84,7 +88,7 @@ describe('a linked ChatGPT Project', () => {
 
 describe('checking that a folder exists before it joins a project', () => {
   it('accepts a folder that is there', () => {
-    const projects = make({ folderCheck: hostFolderCheck('posix') });
+    const projects = make({ folderCheck: hostFolderCheck(HOST), hostEnv: HOST, hostPlatform: HOST_PLATFORM });
     const dir = tempDir();
     expect(projects.create({ name: 'a', roots: [{ path: dir }] }).roots.map((r) => r.path)).toEqual([dir]);
   });
@@ -98,7 +102,7 @@ describe('checking that a folder exists before it joins a project', () => {
   });
 
   it('says that a file is not a folder', () => {
-    const projects = make({ folderCheck: hostFolderCheck('posix') });
+    const projects = make({ folderCheck: hostFolderCheck(HOST), hostEnv: HOST, hostPlatform: HOST_PLATFORM });
     const file = path.join(tempDir(), 'a.txt');
     fs.writeFileSync(file, 'x');
     const p = projects.create({ name: 'a' });

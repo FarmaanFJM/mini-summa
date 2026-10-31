@@ -235,7 +235,7 @@ describe('PATH entries that are not absolute are not searched', () => {
 
 describe('the default command runner', () => {
   it('accepts the verbatim-arguments option (it only matters on Windows)', async () => {
-    const r = await defaultCommandRunner(process.execPath, ['-e', 'process.stdout.write("fine")'], { timeoutMs: 10_000, windowsVerbatimArguments: true });
+    const r = await defaultCommandRunner(process.execPath, ['-e', 'process.stdout.write(`fine`)'] /* verbatim means no quoting: no space, no double quote */, { timeoutMs: 10_000, windowsVerbatimArguments: true });
     expect(r).toMatchObject({ code: 0, stdout: 'fine' });
   });
 });

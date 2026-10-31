@@ -102,6 +102,15 @@ you run it from a browser download. Nothing in CI changes that.
 | Installer, per-user, protocol key, uninstall keeps data | Checks 1.x and 6.x on a clean image. | UAC behaviour as a standard user (the runner is an administrator), SmartScreen, the Start menu entry and tray icon, "Anyone who uses this computer" being greyed out, the uninstall message text, upgrade while running. |
 | Managed Claude sessions, ConPTY terminals | The ConPTY files are installed beside the exe and outside `app.asar`; `environments.list` and `claude --version` discovery. | Everything interactive: starting a session, typing, paste, Ctrl+C, resize, Stop session leaving no `claude.exe`/`node.exe`/`OpenConsole.exe`. The packaged build has its test seams off, so no fake Claude can be injected, and the real one is not authenticated on the runner. |
 
+## Core tests skipped on the Windows runner (UNTESTED ON WINDOWS)
+
+The first native run of `packages/core` failed 109 tests. After triage:
+
+* **Fixed, genuine product defect.** `createNodePtySpawner` let ConPTY's "File not found" throw escape when the program cannot start; POSIX reports an immediate exit. It is now reported as an exit with code 1 and the reason (test added, runs everywhere).
+* **Fixed, test assumptions.** The folder tests used a POSIX environment with a Windows temp path; the verbatim-arguments test used quotes that verbatim mode must not receive; the pty tests assumed `/usr`, signals and POSIX error text.
+* **Not verified on Windows: resize of a ConPTY child.** The first native run did not see a Node child report `resize`; that test is skipped on win32. Check it by hand (resize the terminal pane while Claude runs).
+* **Skipped on win32 (they run on Linux), 17 files.** They drive a POSIX shell-script fake `claude` or `tailscale`, POSIX signals or file modes, or make projects in a "posix" environment that a Windows host reports as unavailable. The list is `POSIX_FIXTURE_FILES` in `packages/core/vitest.config.ts`. **No claim is made about the behaviour they cover on Windows**: session start with a fake Claude, hook spool to notification, remote access over tailscale, signal shutdown of the CLI, and the multi-environment observer. Follow-up: port the fakes to a Node script behind a `.cmd` shim.
+
 ## Limitations of the runner
 
 `windows-latest` is a Windows **Server** image, driven by a service with no person at it. It has a desktop session, so an

@@ -68,6 +68,24 @@ function adapt(handle: NodePtyHandle): PtyProcess {
   };
 }
 
+/** A terminal that never started: it prints why and exits with code 1, like a shell that cannot find the program. */
+function failedToStart(reason: string): PtyProcess {
+  const dataListeners: Array<(data: string) => void> = [];
+  const exitListeners: Array<(info: PtyExitInfo) => void> = [];
+  let ended = false;
+  setTimeout(() => {
+    ended = true;
+    for (const l of dataListeners) l(`${reason}\r\n`);
+    for (const l of exitListeners) l({ exitCode: 1, signal: null });
+  }, 0);
+  return {
+    pid: 0,
+    onData: (l) => { dataListeners.push(l); return { dispose: () => { dataListeners.splice(dataListeners.indexOf(l), 1); } }; },
+    onExit: (l) => { if (ended) l({ exitCode: 1, signal: null }); else exitListeners.push(l); return { dispose: () => { exitListeners.splice(exitListeners.indexOf(l), 1); } }; },
+    write: () => {}, resize: () => {}, kill: () => {},
+  };
+}
+
 /**
  * `encoding: 'utf8'` is what makes node-pty hand out strings on Linux and macOS. On Windows the ConPTY agent always decodes
  * UTF-8 itself and prints "Setting encoding on Windows is not supported" to the console for every terminal it starts when the
@@ -77,14 +95,21 @@ export function createNodePtySpawner(load: () => NodePtyModule = loadNodePty, pl
   return {
     spawn(req) {
       const pty = load();
-      return adapt(pty.spawn(req.file, req.args, {
-        name: 'xterm-256color',
-        cols: req.cols,
-        rows: req.rows,
-        cwd: req.cwd,
-        env: req.env,
-        ...(platform === 'win32' ? {} : { encoding: 'utf8' }),
-      }));
+      try {
+        return adapt(pty.spawn(req.file, req.args, {
+          name: 'xterm-256color',
+          cols: req.cols,
+          rows: req.rows,
+          cwd: req.cwd,
+          env: req.env,
+          ...(platform === 'win32' ? {} : { encoding: 'utf8' }),
+        }));
+      } catch (error) {
+        // On POSIX node-pty forks first, so a program that cannot be executed is an immediate exit with a message. On Windows the
+        // ConPTY agent throws ("File not found") before any process exists. Both are reported the same way: as an exit.
+        if (platform !== 'win32') throw error;
+        return failedToStart(error instanceof Error ? error.message : String(error));
+      }
     },
   };
 }
