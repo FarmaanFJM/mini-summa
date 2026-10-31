@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ApiError, MiniSummaClient } from '@minisumma/shared';
 import type { Scope } from '@minisumma/shared';
 import { directive, readReceived, waitFor as waitUntil } from '../../src/testing/fake-claude/index.ts';
-import { cleanup, startHarness } from './harness.ts';
+import { cleanup, startHarness, HOST_ENV } from './harness.ts';
 import type { Harness } from './harness.ts';
 
 const CONV = { A: 'https://chatgpt.com/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' };
@@ -210,19 +210,19 @@ describe('hook installation is permission-gated', () => {
     const original = `${JSON.stringify({ theme: 'dark', hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo user-hook' }] }] } }, null, 2)}\n`;
     fs.writeFileSync(settingsFile, original);
 
-    const env = (await h.client.call('hooks.list')).find((s) => s.env === 'posix')!;
+    const env = (await h.client.call('hooks.list')).find((s) => s.env === HOST_ENV)!;
     expect(env.installed).toBe(false);
-    const plan = await h.client.call('hooks.plan', { body: { env: 'posix', action: 'install' } });
+    const plan = await h.client.call('hooks.plan', { body: { env: HOST_ENV, action: 'install' } });
     expect(plan.action).toBe('install');
     expect(plan.before).toBe(original);
     expect(plan.unifiedDiff).toContain('+');
     expect(plan.unifiedDiff).not.toMatch(/^-\s+"theme"/m);                       // nothing of the user's was removed
     expect(fs.readFileSync(settingsFile, 'utf8')).toBe(original);                // planning wrote nothing
 
-    expect(await status(h.client.call('hooks.apply', { body: { env: 'posix', action: 'install', planHash: `${'0'.repeat(64)}` } }))).toBe(409);
+    expect(await status(h.client.call('hooks.apply', { body: { env: HOST_ENV, action: 'install', planHash: `${'0'.repeat(64)}` } }))).toBe(409);
     expect(fs.readFileSync(settingsFile, 'utf8')).toBe(original);                // a wrong consent changes nothing
 
-    const installed = await h.client.call('hooks.apply', { body: { env: 'posix', action: 'install', planHash: plan.planHash } });
+    const installed = await h.client.call('hooks.apply', { body: { env: HOST_ENV, action: 'install', planHash: plan.planHash } });
     expect(installed.installed).toBe(true);
     const after = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
     expect(after.theme).toBe('dark');
@@ -233,10 +233,10 @@ describe('hook installation is permission-gated', () => {
     }
     expect(fs.readdirSync(path.join(h.dataDir, 'backups')).length).toBe(1);      // the original was backed up first
 
-    expect((await h.client.call('hooks.plan', { body: { env: 'posix', action: 'install' } })).action).toBe('noop');   // no duplicates
+    expect((await h.client.call('hooks.plan', { body: { env: HOST_ENV, action: 'install' } })).action).toBe('noop');   // no duplicates
 
-    const un = await h.client.call('hooks.plan', { body: { env: 'posix', action: 'uninstall' } });
-    await h.client.call('hooks.apply', { body: { env: 'posix', action: 'uninstall', planHash: un.planHash } });
+    const un = await h.client.call('hooks.plan', { body: { env: HOST_ENV, action: 'uninstall' } });
+    await h.client.call('hooks.apply', { body: { env: HOST_ENV, action: 'uninstall', planHash: un.planHash } });
     expect(JSON.parse(fs.readFileSync(settingsFile, 'utf8'))).toEqual(JSON.parse(original));   // exactly the user's own config again
 
     if (realBefore !== null) expect(fs.statSync(realClaudeDir).mtimeMs).toBe(realBefore);       // the real ~/.claude was never touched

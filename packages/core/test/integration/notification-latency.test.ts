@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { afterEach, describe, expect, it } from 'vitest';
 import { directive, readHookRuns } from '../../src/testing/fake-claude/index.ts';
-import { cleanup, startHarness } from './harness.ts';
+import { cleanup, startHarness, HOST_ENV } from './harness.ts';
 import type { Harness } from './harness.ts';
 
 const SAMPLES = Math.max(1, Number(process.env.MS_LATENCY_SAMPLES ?? 5));
@@ -35,7 +35,7 @@ describe('latency of "Claude finished"', () => {
     h = await startHarness({ core: { overrides: { spoolPollMs: undefined } } });
     const a = await h.project('GitManager');
     const session = await h.start(a.project.id);
-    const layout = await h.core.services.environments.layout('posix');
+    const layout = await h.core.services.environments.layout(HOST_ENV);
 
     // When each spool file first showed up, to a millisecond or two (listing the directory is far finer than the 700 ms poll).
     const listed = new Map<string, number>();
@@ -108,7 +108,7 @@ describe('latency of "Claude finished"', () => {
     h = await startHarness({ core: { overrides: { spoolPollMs: undefined } } });
     const a = await h.project('GitManager', { conversations: ['https://chatgpt.com/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'] });
     const session = await h.start(a.project.id);
-    const layout = await h.core.services.environments.layout('posix');
+    const layout = await h.core.services.environments.layout(HOST_ENV);
     const listed = new Map<string, number>();
     const watcher = setInterval(() => {
       let names: string[];

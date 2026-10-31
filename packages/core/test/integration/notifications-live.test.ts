@@ -13,7 +13,7 @@ import type { NativeNotification, SessionKey } from '@minisumma/shared';
 import { buildSettings } from '@minisumma/claude-integration';
 import { directive, readHookRuns } from '../../src/testing/fake-claude/index.ts';
 import { runHook } from '../claude/helpers/observer-hook.ts';
-import { cleanup, startHarness } from './harness.ts';
+import { cleanup, startHarness, HOST_ENV } from './harness.ts';
 import type { Harness } from './harness.ts';
 
 const CONV = 'https://chatgpt.com/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -25,9 +25,9 @@ const OUTSIDE = '99999999-9999-4999-8999-999999999999';
 
 /** One hook of a Claude session that is not Mini-Summa's (a terminal somewhere inside a folder), run through the REAL capture script. */
 async function hookOf(h: Harness, sessionId: string, cwd: string, event: string, extra: Record<string, unknown> = {}): Promise<void> {
-  const layout = await h.core.services.environments.layout('posix');
+  const layout = await h.core.services.environments.layout(HOST_ENV);
   const r = runHook({
-    spool: layout.spoolDirHost, registry: layout.registryFileHost, env: 'posix', handler: 'outside', event,
+    spool: layout.spoolDirHost, registry: layout.registryFileHost, env: HOST_ENV, handler: 'outside', event,
     payload: { session_id: sessionId, transcript_path: path.join(h.root, `${sessionId}.jsonl`), cwd, permission_mode: 'default', hook_event_name: event, ...extra },
   });
   expect(r.status).toBe(0);
@@ -181,10 +181,10 @@ describe('one turn, one notification (the real reducer, hooks as Claude Code fir
     const h = await boot();
     const a = await h.project('GitManager', { conversations: [CONV] });
     // The user installed Mini-Summa's hooks in their Claude settings as well: Claude Code runs both registrations for every event.
-    const layout = await h.core.services.environments.layout('posix');
+    const layout = await h.core.services.environments.layout(HOST_ENV);
     const runtime = layout.runtime ?? { command: process.execPath, runAsNode: false };
     const userSettings = buildSettings({
-      env: 'posix', node: runtime.command, capture: layout.captureScriptInEnv, spool: layout.spoolDirInEnv, registry: layout.registryFileInEnv,
+      env: HOST_ENV, node: runtime.command, capture: layout.captureScriptInEnv, spool: layout.spoolDirInEnv, registry: layout.registryFileInEnv,
       handlers: ['ms-user'], runAsNode: runtime.runAsNode,
     });
     fs.mkdirSync(path.join(h.stateDir, 'config'), { recursive: true });

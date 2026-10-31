@@ -17,6 +17,9 @@ import { FAKE_CLAUDE_SCRIPT } from '../../src/testing/fake-claude/index.ts';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CAPTURE_SCRIPT = path.resolve(here, '../../../claude-integration/src/hook/capture.mjs');
 
+/** The environment the machine running the tests is: tests that name it must not hard-code 'posix'. */
+export const HOST_ENV = process.platform === 'win32' ? 'win' : 'posix';
+
 export interface Harness {
   core: Core;
   client: MiniSummaClient;
@@ -57,7 +60,7 @@ export async function startHarness(opts: { dataDir?: string; root?: string; core
   const { overrides: extraOverrides, ...coreOptions } = opts.core ?? {};
   const overrides: NonNullable<CoreOptions['overrides']> = {
     claudeBin: bin, nodeRuntime: { command: process.execPath, runAsNode: false }, captureScript: CAPTURE_SCRIPT,
-    hostEnv: process.platform === 'win32' ? 'win' : 'posix', discoveryIntervalMs: 60_000, spoolPollMs: opts.spoolPollMs ?? 60, homeDir: path.join(root, 'home'), ...extraOverrides,
+    hostEnv: HOST_ENV, discoveryIntervalMs: 60_000, spoolPollMs: opts.spoolPollMs ?? 60, homeDir: path.join(root, 'home'), ...extraOverrides,
   };
   // The tests must never reach the real Claude Code CLI (it is installed on developer machines and authenticated).
   if (overrides.claudeBin !== bin) throw new Error('integration tests must run against the fake Claude CLI');

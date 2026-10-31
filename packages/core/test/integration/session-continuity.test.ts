@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { MiniSummaClient } from '@minisumma/shared';
 import type { SessionKey, SessionView } from '@minisumma/shared';
 import { directive, readReceived, typedCommand, waitFor as waitUntil } from '../../src/testing/fake-claude/index.ts';
-import { cleanup, startHarness } from './harness.ts';
+import { cleanup, startHarness, HOST_ENV } from './harness.ts';
 import type { Harness } from './harness.ts';
 
 const CONV = { A: 'https://chatgpt.com/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', B: 'https://chatgpt.com/c/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' };
@@ -254,14 +254,14 @@ describe('evidence', () => {
     const old = await h.start(a.project.id, { name: 'work' });
     await h.client.call('sessions.refresh', { body: {} });
     const stranger = '99999999-9999-4999-8999-999999999999';
-    const spool = path.join(h.dataDir, 'spool', 'posix');
+    const spool = path.join(h.dataDir, 'spool', HOST_ENV);
     const forge = (event: string, sessionId: string, extra: Record<string, unknown>, n: number) => {
       const id = `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
       const record = {
         schema: 'mini-summa.spool/1',
         transport: {
           transport_id: id, received_at: new Date().toISOString(), wall_ms: Date.now(), monotonic_ns: String(Date.now()) + '000000', capture_version: 1, hook_arg: event,
-          handler_id: 'ms-managed', env_id: 'posix', clock_domain: null, pid: 1, ppid: 1, platform: 'linux', claude_project_dir: old.cwd, claude_config_dir: null,
+          handler_id: 'ms-managed', env_id: HOST_ENV, clock_domain: null, pid: 1, ppid: 1, platform: 'linux', claude_project_dir: old.cwd, claude_config_dir: null,
           claude_code_remote: null, redactions: 0, truncations: 0, truncated_chars: 0, parse_error: null,
         },
         payload: { session_id: sessionId, transcript_path: '/x/y.jsonl', cwd: old.cwd, hook_event_name: event, ...extra },
