@@ -20,7 +20,7 @@ dialog (`--s3`) with its contents one step further (`--s4`). Text a person must 
 | `Button` | `variant`: `primary` (one per view, emerald), `secondary`, `ghost`, `destructive` (solid red, name the verb), `destructive-quiet` | `loading` keeps the label and ignores presses |
 | `IconButton` | A control that is only an icon | `label` is required: it is the accessible name and the tooltip |
 | `Dialog`, `ConfirmDialog` | One decision at a time. `ConfirmDialog` takes `confirmLabel` (a verb), `destructive`, `requireText`, `busy`, `error`. `Dialog` also takes `placement="top"` and `hideTitle` for a palette (the quick switcher), which is named by its title without drawing it | Focus is trapped and restored, Esc closes unless `busy`, `alertdialog` starts on Cancel, stacked dialogs only react at the top |
-| `Menu` | Commands. Items: `label`, `icon`, `danger`, `checked` (+ `radio`), `shortcut`, separators, headings. `trigger` renders the opener, or pass `anchorPoint` for a context menu | Arrow keys, type-ahead, Esc returns focus to the opener |
+| `Menu` | Commands. Items: `label`, `icon`, `description` (a quiet second line, read as the item's description: why it is disabled, say), `danger`, `checked` (+ `radio`), `shortcut`, separators, headings. `trigger` renders the opener, or pass `anchorPoint` for a context menu | Arrow keys, type-ahead, Esc returns focus to the opener |
 | `Select` | A value from a list (search appears above 7 options) | Same keyboard model as `Menu`, works inside `Field` |
 | `Field`, `TextInput`, `TextArea`, `Switch`, `Checkbox`, `Radio` | Forms. `Field` wires label, hint and error to its control | An error replaces the hint and is announced |
 | `Tabs`, `tabPanelProps` | A row of views of one thing. Arrow keys, Home, End, Delete closes | The selected tab is a quiet fill, not an accent |
@@ -37,6 +37,9 @@ The embedded ChatGPT page is a native layer drawn above all web content. A float
 Everything in the kit that floats (`Dialog`, `Menu`, `Select`, `Tooltip`, `Toaster`) already handles this: it moves away from the view
 when there is room, and otherwise asks the host to hide the view while it is open (`useNativeOverlay`, reference counted, so
 several overlays at once are fine). If you build your own floating element, call `useNativeOverlay(open)` while it is open.
+There are two such views: the ChatGPT page and Claude Code on the web (the Cloud tab of the Claude pane). `getNativeBounds()` is the one
+rectangle that covers whichever are on screen (a box that is too big only hides them sooner, it never draws underneath one), and
+`overlapsNativeView(rect)` checks each of them on its own (`app/nativeBounds.ts`).
 
 ## Using the app around the kit
 

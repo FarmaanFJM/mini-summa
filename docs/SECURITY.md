@@ -151,7 +151,8 @@ Mini-Summa does and does not do with it.
   microphone, screen capture, clipboard-read, notifications, geolocation and device access are refused, with no prompt.
 * **Four classes of navigation**, applied the same way to links, redirects and `window.open`. `claude` (claude.ai, claude.com,
   anthropic.com and their subdomains) loads in the view. `auth` (Google, Microsoft and Apple sign-in, Cloudflare's check,
-  GitHub's authorisation pages) loads in the view too, so that signing in and connecting GitHub can finish. `external` (any
+  and on GitHub only its sign-in, authorisation and app-installation pages, by path) loads in the view too, so that signing in and
+  connecting GitHub can finish; every other GitHub page opens in your browser. `external` (any
   other https site) is not loaded: it opens in your default browser, through the same https-only check as links from ChatGPT.
   `blocked` (plain http, `file:`, `javascript:`, `data:`, an app protocol, an address that could be read two ways) is refused,
   with a line in the log and nothing else. A page that asks for a new window gets this view or your browser, never a window of

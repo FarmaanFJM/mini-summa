@@ -60,6 +60,17 @@ describe('where the embedded Claude view may go', () => {
     expect(classifyClaudeNavigation('https://evil-claude.ai.example.com/')).toBe('external');
   });
 
+  it('lets GitHub in only for signing in, authorising Claude and installing its GitHub App; every other GitHub page goes to the browser', () => {
+    for (const path of ['/login', '/login/oauth/authorize?client_id=x', '/sessions/two-factor', '/session', '/apps/claude/installations/new', '/settings/installations/123', '/organizations/acme/settings/installations/9']) {
+      expect(classifyClaudeNavigation(`https://github.com${path}`), path).toBe('auth');
+    }
+    for (const path of ['/', '/acme/webapp', '/acme/webapp/pull/12', '/acme/webapp/commit/abc123', '/acme/login', '/loginx', '/apps/other-app', '/settings/profile']) {
+      expect(classifyClaudeNavigation(`https://github.com${path}`), path).toBe('external');
+    }
+    expect(classifyClaudeNavigation('https://gist.github.com/login')).toBe('external');
+    expect(classifyClaudeNavigation('https://github.com.evil.example/login')).toBe('external');
+  });
+
   it('refuses anything that could be read two ways, other schemes and nothing', () => {
     expect(classifyClaudeNavigation('https://evil.example\\@claude.ai/')).toBe('blocked');
     expect(classifyClaudeNavigation('http://claude.ai/')).toBe('blocked');

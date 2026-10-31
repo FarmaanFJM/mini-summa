@@ -84,7 +84,6 @@ describe('ChatGPT', () => {
     const spy = vi.spyOn(app.demo, 'call');
     const group = screen.getByRole('radiogroup', { name: 'How ChatGPT opens' });
     expect(within(group).getByRole('radio', { name: /Inside Mini-Summa/ })).toHaveProperty('checked', true);
-    
     await user.click(within(group).getByRole('radio', { name: /In your browser/ }));
     await waitFor(() => expect(patchOf(spy)).toEqual([{ chatgpt: { mode: 'external' } }]));
     expect(await screen.findByText('Saved')).toBeTruthy();
@@ -94,6 +93,35 @@ describe('ChatGPT', () => {
     await user.click(within(tab).getByRole('radio', { name: /Use the Mini-Summa browser extension/ }));
     await waitFor(() => expect(patchOf(spy).at(-1)).toEqual({ chatgpt: { externalBrowser: 'extension' } }));
     expect(app.runtime.store.getState().settings?.chatgpt).toEqual({ mode: 'external', externalBrowser: 'extension', pageScale: 'auto' });
+  });
+
+  it('has a Page size choice (Automatic, 100%, 90%, 80%, 70%) saved through the core, with one short sentence of help', async () => {
+    const user = userEvent.setup();
+    const app = await open('chatgpt');
+    const spy = vi.spyOn(app.demo, 'call');
+    const field = screen.getByRole('button', { name: 'Page size' });
+    expect(textOf(field)).toBe('Automatic');
+    const help = screen.getByText('Automatic zooms out only when the pane is narrow.');
+    expect(help.textContent).not.toMatch(/[\u2013\u2014]/);
+    expect(textOf(help.parentElement).split('.').filter(Boolean)).toHaveLength(1); // one sentence, no more
+    await user.click(field);
+    expect(within(screen.getByRole('listbox')).getAllByRole('option').map((o) => textOf(o))).toEqual(['Automatic', '100%', '90%', '80%', '70%']);
+    await user.click(screen.getByRole('option', { name: '80%' }));
+    await waitFor(() => expect(patchOf(spy)).toEqual([{ chatgpt: { pageScale: '80' } }]));
+    expect(await screen.findByText('Saved')).toBeTruthy();
+    expect(textOf(screen.getByRole('button', { name: 'Page size' }))).toBe('80%');
+    expect(app.runtime.store.getState().settings?.chatgpt.pageScale).toBe('80');
+    await user.click(screen.getByRole('button', { name: 'Page size' }));
+    await user.click(screen.getByRole('option', { name: 'Automatic' }));
+    await waitFor(() => expect(patchOf(spy).at(-1)).toEqual({ chatgpt: { pageScale: 'auto' } }));
+  });
+
+  it('keeps Page size where it applies: while ChatGPT opens inside Mini-Summa, not when it opens in the browser', async () => {
+    const user = userEvent.setup();
+    await open('chatgpt');
+    expect(screen.getByRole('button', { name: 'Page size' })).toBeTruthy();
+    await user.click(within(screen.getByRole('radiogroup', { name: 'How ChatGPT opens' })).getByRole('radio', { name: /In your browser/ }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Page size' })).toBeNull());
   });
 
   it('shows the embedded view as it is, live, and offers the browser when sign-in or the page is refused', async () => {

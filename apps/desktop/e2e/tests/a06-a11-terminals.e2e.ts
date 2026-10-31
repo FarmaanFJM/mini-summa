@@ -11,7 +11,7 @@ import { isRunning, liveSessionsOf, readReceived, readTerminalSize } from '../he
 import { setWindowSize } from '../helpers/main-process.ts';
 import { scenario } from '../helpers/scenario.ts';
 import { observe, screenSize, screenText, terminalInput, typeLikeAPerson, waitForScreen } from '../helpers/terminal.ts';
-import { claudeTabs, createProjectInUi, openEditProject, projectRowWith, selectProject, startSessionInUi } from '../helpers/ui.ts';
+import { claudeTabs, closeSettings, createProjectInUi, openEditProject, projectRowWith, selectProject, startSessionInUi } from '../helpers/ui.ts';
 import { makeRepo } from '../helpers/sandbox.ts';
 import { until } from '../helpers/wait.ts';
 
@@ -22,7 +22,7 @@ scenario('[A06] Claude Code launches in the correct directory', async () => {
   // A folder name with a space and brackets, because those are what break command lines.
   const folder = makeRepo(h.sandbox, 'My App (v2)', { verbatim: true });
   await createProjectInUi(h.page, { name: 'My App', folder });
-  await openEditProject(h.page, 'My App').then((d) => d.getByRole('button', { name: 'Cancel' }).click());
+  await closeSettings(await openEditProject(h.page, 'My App')); // looked at, nothing changed
 
   // Start it the way a person does: the button in the Claude pane.
   await startSessionInUi(h.page);

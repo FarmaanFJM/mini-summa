@@ -213,3 +213,71 @@ with why none is needed.
 - P12: the sections of the settings are separated by space, with no divider line.
 - P21: "New sessions start in", the Save and Cancel buttons of the old edit dialog, and the draft are gone. Which folder (and so which
   environment) a session starts in is asked when a session starts.
+
+## Workspace (round 3)
+
+The workspace (`features/workspace`) is the screen the person spends the day on. Four places depart from a principle or from the draft
+workspace pattern; each states the reason and where it applies. Ids start with W so that they never collide with the X numbers.
+
+### W1. One permanent sentence in the Cloud tab (P05, AP-010)
+
+Scope: the Cloud tab of the Claude pane (`CloudPanel`), both where Claude Code on the web is embedded and where it is not.
+
+"Mini-Summa shows Claude Code on the web but cannot see whether a cloud session is working, done or waiting, so it sends no
+notifications for cloud sessions." stays on screen. Anthropic documents no way to list a person's cloud sessions or to follow one, so
+Mini-Summa cannot notify about them, and everywhere else in the application a finished session produces a notification. Without the
+sentence a person would wait for one that never comes. It is one sentence, in `--text-2`, above the page, never over it, and the only
+explanatory text of the tab. Where the page cannot be embedded the same fact is said without the first half
+(`CLOUD_LINE_BROWSER`), next to the reason the page is not embedded.
+
+### W2. A control that cannot act is shown disabled, with its reason and the fix (P10)
+
+Scope: the "+" menu of the Claude pane and the empty Claude pane (`claudeStart`, `ClaudeEmpty`).
+
+P10 and the project dialogs hide a control that does not apply. Here "New local session" without a folder and "New cloud session"
+without a GitHub repository stay, dimmed, with the reason beside them ("Local sessions need a folder on this computer.", "Cloud sessions
+need a GitHub repository.") and one way to the project settings ("Add a folder", "Add a GitHub repository"). Hiding them would leave no
+sign that the other environment exists or what is missing, and the person asked for exactly this: local and cloud are chosen for each
+session, neither is ever started in place of the other, and a choice that cannot be made says why. The reason is the item's accessible
+description (`aria-describedby`), not part of its name, and the text is `--text-2` (4.8:1 on the menu), not the dimmed colour of the label.
+This needed one addition to the kit: `MenuItem.description`, a second quiet line under the label.
+
+### W3. Two actions in an empty pane (preset.empty-state: "exactly one action")
+
+Scope: the empty ChatGPT pane ("Link a ChatGPT Project", "Add a conversation") and the empty Claude pane ("New local session",
+"New cloud session").
+
+The preset allows one action and says to put the others elsewhere. Each pair is two real alternatives of equal standing, not a main
+action and its variant: a project has a ChatGPT Project link and mapped conversations as independent associations, and a Claude session
+runs locally or in the cloud. Showing one would hide a choice the person has to make. The limit is kept in spirit: one sentence (none
+in the Claude pane beyond "No Claude session is open."), the two buttons in one row, and at most one of them emerald (the ChatGPT
+pane has none, so the screen's one main button is never taken from the handoff strip; the Claude pane's goes quiet too while the strip
+holds it, as it did before). When only one environment is possible the single main action opens the project settings.
+
+### W4. Showing one pane alone is a focus mode (workspace pattern, section 8: "No zen, fullscreen or focus mode")
+
+Scope: the "Workspace view" control in the header (Split, ChatGPT, Claude) and Ctrl+Shift+Arrow.
+
+`docs/WORKSPACE_PATTERN.md` in the Summa-UI repository is a draft and not approved guidance; it advises against a focus mode because it
+"adds a state and a way to get stuck". This one is asked for and has a concrete usability reason: at the smallest window (960 by 600)
+each pane of a split is about 330 pixels wide, which is too narrow for a terminal to be comfortable and below the 630 pixels under which
+the ChatGPT page gets less than its 900 CSS pixels even at the lowest zoom (`docs/CHATGPT_PANE.md`: "showing ChatGPT alone is the remedy
+there"). It does not create a way to get stuck: the control is
+always in the header and always shows which view is chosen, the same keys toggle back, and nothing is closed (the hidden pane stays
+mounted, its terminals keep their output and processes, its native view only loses its place on screen). That is the pattern's own
+rule 3: "A panel is never destroyed; it stays mounted so its state survives."
+
+## Checked and not exceptions (the workspace)
+
+- P13: no em dash or en dash in any word or comment of the workspace, its demo native or the files that remember the cloud page
+  (`test/renderer/workspace-copy.test.tsx`, which also reads every label, tooltip and notice on screen in each state).
+- P15, P17: the chosen view is a quiet `--s4` fill in a `--s2` track (the reference's raised tabs); the repository and the folder in the
+  header are text until the pointer or the keyboard is on them, then the row fill (`--s2`); no accent anywhere but the one main button.
+- P01, P12: the header has no fill and no line under it, and neither has a pane header. The only line in the workspace is the divider (X3).
+- P14: nothing in the workspace is navigation. The Cloud tab is a tab of the Claude pane, like a session; it is not another sidebar.
+- P20: nothing stands for a person or a repository but its name. The repository and the folder in the header are the owner's own words
+  (`acme/git-manager`, a path), not generated.
+- Colours: the Cloud tab's notices use the two status colours of X5 on their icon only (amber for "asking you to sign in", red for "could
+  not be loaded"), always beside their words.
+- The demo build draws a plain rectangle where each native view would be (`dev/demoNative.ts`: ChatGPT and Claude Code on the web). It is
+  a test stand-in with its own colours, not product interface.

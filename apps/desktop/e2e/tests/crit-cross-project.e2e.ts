@@ -26,7 +26,9 @@ scenario('[CRIT] A report from A is handed off to A\'s conversation while B is s
   // --- Configure the four projects in the real dialog.
   await createProjectInUi(h.page, { name: NAMES.A, folder: makeRepo(h.sandbox, 'GitManager'), conversations: [conversationUrl(CONV.A)] });
   await createProjectInUi(h.page, { name: NAMES.B, folder: makeRepo(h.sandbox, 'Hercs_Adventure'), conversations: [conversationUrl(CONV.B)] });
-  await createProjectInUi(h.page, { name: NAMES.C, folder: makeRepo(h.sandbox, 'Chess_Player_Integrity'), conversations: [conversationUrl(CONV.C1), conversationUrl(CONV.C2)], preferred: 1 });
+  // C is made through the core. In the dialog a project's conversations are added in its settings once it exists, and the first one added would
+  // be the page in front for a moment; this scenario is about what the handoff opens, so C's second conversation must not have been loaded by setup.
+  await createProject(h, NAMES.C, { conversations: [conversationUrl(CONV.C1), conversationUrl(CONV.C2)], preferred: 1 });
   await createProjectInUi(h.page, { name: NAMES.D, folder: makeRepo(h.sandbox, 'Markdown_Studio') });
   const projects = await h.api.call('projects.list');
   const byName = (name: string) => projects.find((p) => p.name === name)!;

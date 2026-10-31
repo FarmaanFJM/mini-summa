@@ -508,6 +508,28 @@ try {
     assert.deepEqual(state, { mode: 'embedded', status: 'idle', url: null, title: null, canGoBack: false, canGoForward: false, note: null });
   });
 
+  await check('the Claude Code view does not exist until a page is asked for, starts idle, and refuses addresses that are not claude.ai/code', async () => {
+    const count = () => app.evaluate(({ session, webContents }) => webContents.getAllWebContents().filter((w) => !w.isDestroyed() && w.session === session.fromPartition('persist:claude')).length);
+    assert.equal(await count(), 0);
+    await page.evaluate((r) => window.miniSumma.claudeWeb.setBounds(r), RECT);
+    assert.equal(await count(), 0);
+    assert.deepEqual(await page.evaluate(() => window.miniSumma.claudeWeb.getState()), { status: 'idle', url: null, title: null, canGoBack: false, canGoForward: false, note: null });
+    const refused = await page.evaluate(async () => {
+      const fail = async (p) => { try { await p; return 'ACCEPTED'; } catch (e) { return e.message; } };
+      return {
+        bounds: await fail(window.miniSumma.claudeWeb.setBounds({ x: 'a', y: 0, width: 1, height: 1 })),
+        other: await fail(window.miniSumma.claudeWeb.navigate('https://example.org/code')),
+        http: await fail(window.miniSumma.claudeWeb.navigate('http://claude.ai/code')),
+        chat: await fail(window.miniSumma.claudeWeb.navigate('https://claude.ai/chat/abc')),
+        chatgpt: await fail(window.miniSumma.claudeWeb.navigate('https://chatgpt.com/')),
+      };
+    });
+    for (const [k, v] of Object.entries(refused)) assert.match(v, /Invalid/, `${k}: ${v}`);
+    assert.equal(await count(), 0, 'a refused address creates no view');
+    await page.evaluate(() => window.miniSumma.claudeWeb.setBounds(null));
+    assert.deepEqual(await opened(app), []);
+  });
+
   // The renderer side of the contract: record pushed states, and answer a request to show the workspace by placing the pane.
   await page.evaluate((r) => {
     window.__states = [];

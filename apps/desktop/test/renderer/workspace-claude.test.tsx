@@ -9,6 +9,7 @@ import { createMemoryStorage } from '../../src/renderer/src/app/storage';
 import { createSeed, IDS } from '../../src/renderer/src/dev/demo/seed';
 import { CLOUD_LINE, CLOUD_LINE_BROWSER, CLOUD_NEEDS_REPOSITORY, LOCAL_NEEDS_FOLDER } from '../../src/renderer/src/features/workspace/claudeCloud';
 import type { RenderedApp } from './helpers';
+import { toast } from '../../src/renderer/src/ui';
 import { createFakeNative, renderApp, stubWorkspaceGeometry } from './helpers';
 
 // The activity, reports and settings views belong to other workers: the shell is tested with stand-ins (stubViews.tsx).
@@ -377,6 +378,26 @@ describe('the Cloud tab', () => {
     await waitFor(() => expect(inClaude().getByRole('tab', { name: new RegExp(`^Session ${newId.slice(0, 8)}`) })).toBeTruthy());
     expect(cloudTab().getAttribute('aria-selected')).toBe('true');
     expect(app.runtime.route.getState().sessionByProject[IDS.gitManager]).toBe(`win|${newId}`); // what it goes back to follows the terminal
+  });
+
+  it('puts a toast over the part of the tab above the page, never over the page, and over the pane again for a session', async () => {
+    const pane = { x: 860, y: 44, width: 560, height: 700 };
+    const top = { x: 860, y: 110, width: 560, height: 90 };
+    stubWorkspaceGeometry({ byClass: { 'ms-pane--claude': pane, 'ms-cloud__top': top } });
+    const user = userEvent.setup();
+    await renderApp({ native: createFakeNative() });
+    const region = () => document.querySelector('.sm-toast-region') as HTMLElement;
+    const bottomOf = (r: { y: number; height: number }) => `${Math.max(16, Math.round(window.innerHeight - (r.y + r.height) + 16))}px`;
+    const showToast = async (title: string) => { act(() => toast({ title })); await waitFor(() => expect(screen.getByText(title)).toBeTruthy()); };
+
+    await user.click(cloudTab());
+    await showToast('Over the controls');
+    expect(region().style.bottom).toBe(bottomOf(top));
+    expect(region().style.bottom).not.toBe(bottomOf(pane)); // the pane's own bottom is where the page is
+
+    await user.click(inClaude().getAllByRole('tab', { name: /^Session / })[0]);
+    await showToast('Over the pane');
+    await waitFor(() => expect(region().style.bottom).toBe(bottomOf(pane)));
   });
 
   it('is chosen for each project on its own, and kept when the person looks at another project', async () => {

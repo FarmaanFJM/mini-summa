@@ -223,6 +223,8 @@ export interface WorkspaceGeometry {
   chatgpt?: Rect;
   /** Where the Claude Code page's empty slot is. */
   claude?: Rect;
+  /** Any other element, found by one of its class names. */
+  byClass?: Record<string, Rect>;
 }
 
 /**
@@ -235,10 +237,11 @@ export function stubWorkspaceGeometry(g: WorkspaceGeometry = {}): { chatgpt: Rec
   const claude = g.claude ?? { x: 860, y: 150, width: 560, height: 740 };
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
     const label = this.getAttribute?.('aria-label');
+    const other = Object.entries(g.byClass ?? {}).find(([name]) => this.classList?.contains(name))?.[1];
     const r = this.classList?.contains('ms-workspace__area') ? { x: 260, y: 44, ...area }
       : label === 'Embedded ChatGPT view' ? chatgpt
         : label === 'Embedded Claude Code view' ? claude
-          : { x: 0, y: 0, width: 0, height: 0 };
+          : other ?? { x: 0, y: 0, width: 0, height: 0 };
     return { ...r, left: r.x, top: r.y, right: r.x + r.width, bottom: r.y + r.height, toJSON: () => ({}) } as DOMRect;
   });
   return { chatgpt, claude };

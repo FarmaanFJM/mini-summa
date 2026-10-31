@@ -21,10 +21,15 @@ export interface CloudPanelProps {
   owner: MutableRefObject<string | null>;
   /** Another main button is on screen (a report waits for its handoff), so the one here is not the emphasised one. */
   quiet: boolean;
+  /**
+   * Hands over the part of the tab that is above the page: toasts are placed over it, because over the page a toast would be drawn
+   * under the native view, which then has to be hidden for as long as the toast is there.
+   */
+  onTop?: (el: HTMLElement | null) => void;
 }
 
 /** The body of the Cloud tab: Claude Code on the web in its native view, one row of controls above it, and one honest line. */
-export function CloudPanel({ project, active, owner, quiet }: CloudPanelProps) {
+export function CloudPanel({ project, active, owner, quiet, onTop }: CloudPanelProps) {
   const native = useNative();
   const web = native.claudeWeb;
   const { route } = useRuntime();
@@ -119,24 +124,26 @@ export function CloudPanel({ project, active, owner, quiet }: CloudPanelProps) {
 
   return (
     <div className="ms-claude__body ms-cloud" {...tabPanelProps('claude', CLOUD_TAB_ID)}>
-      <div className="ms-cloud__bar">
-        <IconButton label="Back" icon="arrow-left" size="sm" tooltipPlacement="top" disabled={!view?.canGoBack} onClick={() => { void web.back(); }} />
-        <IconButton label="Forward" icon="arrow-right" size="sm" tooltipPlacement="top" disabled={!view?.canGoForward} onClick={() => { void web.forward(); }} />
-        <IconButton label="Reload" icon="refresh" size="sm" tooltipPlacement="top" onClick={() => { void web.reload(); }} />
-        <IconButton label="Open in your browser" icon="external" size="sm" tooltipPlacement="top" onClick={openInBrowser} />
-        {sessionId ? (
-          <IconButton label="Copy command to continue in a terminal" icon={copied ? 'check' : 'terminal'} size="sm" tooltipPlacement="top" onClick={() => { void copyCommand(); }} />
-        ) : null}
-        {view?.status === 'loading' ? <Spinner className="ms-cloud__busy" /> : null}
-        {address ? <span className="ms-cloud__address ms-truncate" title={view?.url ?? address}>{address}</span> : null}
-      </div>
-      {notice ? (
-        <div className="ms-notice ms-cloud__notice" data-tone={notice.tone} role="status">
-          <Icon name={notice.tone === 'error' ? 'circle-alert' : 'info'} />
-          <span className="ms-notice__text">{notice.text}</span>
+      <div className="ms-cloud__top" ref={onTop}>
+        <div className="ms-cloud__bar">
+          <IconButton label="Back" icon="arrow-left" size="sm" tooltipPlacement="top" disabled={!view?.canGoBack} onClick={() => { void web.back(); }} />
+          <IconButton label="Forward" icon="arrow-right" size="sm" tooltipPlacement="top" disabled={!view?.canGoForward} onClick={() => { void web.forward(); }} />
+          <IconButton label="Reload" icon="refresh" size="sm" tooltipPlacement="top" onClick={() => { void web.reload(); }} />
+          <IconButton label="Open in your browser" icon="external" size="sm" tooltipPlacement="top" onClick={openInBrowser} />
+          {sessionId ? (
+            <IconButton label="Copy command to continue in a terminal" icon={copied ? 'check' : 'terminal'} size="sm" tooltipPlacement="top" onClick={() => { void copyCommand(); }} />
+          ) : null}
+          {view?.status === 'loading' ? <Spinner className="ms-cloud__busy" /> : null}
+          {address ? <span className="ms-cloud__address ms-truncate" title={view?.url ?? address}>{address}</span> : null}
         </div>
-      ) : null}
-      <p className="ms-cloud__line">{CLOUD_LINE}</p>
+        {notice ? (
+          <div className="ms-notice ms-cloud__notice" data-tone={notice.tone} role="status">
+            <Icon name={notice.tone === 'error' ? 'circle-alert' : 'info'} />
+            <span className="ms-notice__text">{notice.text}</span>
+          </div>
+        ) : null}
+        <p className="ms-cloud__line">{CLOUD_LINE}</p>
+      </div>
       <div className="ms-cloud__view" ref={slot} data-native-slot aria-label="Embedded Claude Code view" />
     </div>
   );

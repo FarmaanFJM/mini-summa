@@ -70,10 +70,17 @@ export const cloudRepoPage = (repo: string): string => githubRepoUrl(repo);
 export type ClaudeNavigationClass = 'claude' | 'auth' | 'external' | 'blocked';
 
 const CLAUDE_HOST = /(^|\.)(claude\.ai|claude\.com|anthropic\.com)$/i;
-// Sign-in providers and the places a person connects GitHub. Google refuses embedded browsers: that is reported, not worked around.
+// Sign-in providers. Google refuses embedded browsers: that is reported, not worked around.
 const CLAUDE_AUTH_HOSTS = [
   /(^|\.)accounts\.google\.com$/i, /(^|\.)login\.microsoftonline\.com$/i, /(^|\.)appleid\.apple\.com$/i,
-  /(^|\.)challenges\.cloudflare\.com$/i, /^github\.com$/i,
+  /(^|\.)challenges\.cloudflare\.com$/i,
+];
+// GitHub is let into the view only for the pages where a person signs in to GitHub, authorises Claude and installs its GitHub App (the
+// documented way to connect a repository). Any other GitHub page, a pull request or a commit linked from a session, is not part of
+// that and opens in the person's browser. Checked on the path; the query is not read.
+const GITHUB_CONNECT_PATHS = [
+  /^\/login(\/|$)/i, /^\/session(s)?(\/|$)/i, /^\/apps\/claude(\/|$)/i, /^\/settings\/(installations|connections|apps)(\/|$)/i,
+  /^\/organizations\/[^/]+\/settings\/(installations|apps)(\/|$)/i,
 ];
 
 export function classifyClaudeNavigation(url: string): ClaudeNavigationClass {
@@ -89,5 +96,9 @@ export function classifyClaudeNavigation(url: string): ClaudeNavigationClass {
   if (!host) return 'blocked';
   if (CLAUDE_HOST.test(host)) return 'claude';
   if (CLAUDE_AUTH_HOSTS.some((re) => re.test(host))) return 'auth';
+  if (host === 'github.com') {
+    const path = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*([^?#]*)/i.exec(url.trim())?.[1] ?? '';
+    return GITHUB_CONNECT_PATHS.some((re) => re.test(path)) ? 'auth' : 'external';
+  }
   return 'external';
 }

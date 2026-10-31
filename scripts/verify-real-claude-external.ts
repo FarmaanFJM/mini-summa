@@ -221,7 +221,14 @@ async function main(): Promise<void> {
       await check('external session: the permission request is announced in the feed and a notification, and is NOT offered for approval from Mini-Summa', async () => {
         const v = await until('the permission state', async () => {
           const s = await client.call('sessions.get', { params: { key: key as never } });
-          return s.state === 'needs_permission' ? s : null;
+          if (s.state === 'needs_permission') return s;
+          // Claude may run in a permission mode that never asks (auto, acceptEdits, bypass; Claude Code 2.1.314 starts in auto here and its
+          // hooks say permission_mode "auto"). It then writes the file and finishes without a PermissionRequest hook: a property of the
+          // session, not a defect, so the dialog is NOT TESTED rather than failed.
+          if (['turn_ended', 'report_ready'].includes(s.state) && existsSync(join(repoDir, 'external.txt'))) {
+            throw new NotExercised('Claude created the file without asking (its permission mode does not ask: auto, acceptEdits or bypass), so the permission request was not exercised');
+          }
+          return null;
         });
         expect(v.attention?.kind === 'permission', `attention is ${v.attention?.kind}`);
         const feed = await client.call('activity.list', { query: { projectId: project.id, limit: 50 } });

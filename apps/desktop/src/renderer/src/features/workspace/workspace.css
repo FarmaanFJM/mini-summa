@@ -101,6 +101,7 @@
 /* ---------------------------------------------------------------- Cloud tab: Claude Code on the web */
 /* One row of controls, the one honest line, then the page. The page is a native view laid over the empty slot (like ChatGPT's), so
    everything that is text or a control sits above it, never over it. */
+.ms-cloud__top { flex: none; display: flex; flex-direction: column; }
 .ms-cloud__bar { flex: none; display: flex; align-items: center; gap: 2px; min-height: 36px; padding: 0 6px 0 8px; }
 .ms-cloud__busy { margin-left: 8px; color: var(--text-2); }
 .ms-cloud__address { flex: 1 1 auto; min-width: 0; margin-left: var(--sp-2); color: var(--text-2); font-size: var(--fs-sm); }

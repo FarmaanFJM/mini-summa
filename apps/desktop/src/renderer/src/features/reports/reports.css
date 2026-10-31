@@ -73,8 +73,8 @@
 .ms-rep-state__when { color: var(--text-2); font-weight: 400; }
 .ms-rep-state__body { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.55; }
 
-.ms-rep-buttons { display: flex; flex-direction: column; gap: var(--sp-2); align-items: stretch; }
-.ms-rep-buttons > .sm-btn { width: 100%; }
+/* The main button is as wide as its words, like every other button: the accent marks the action, its width does not need to (P06). */
+.ms-rep-buttons { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
 .ms-rep-fallback { min-height: 96px; }
 
 .ms-rep-more { display: flex; flex-direction: column; gap: var(--sp-2); }

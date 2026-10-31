@@ -71,12 +71,14 @@ export function ClaudePane({ project, visible }: ClaudePaneProps) {
     selectSession(project.id, selected.key);
   }, [cloudShown, selected, chosen, sessions, project.id, selectSession]);
 
-  // Toasts sit over this pane, so the native ChatGPT view never covers them.
+  // Toasts sit over this pane, so the native ChatGPT view never covers them. While the Cloud tab shows Claude Code on the web, that page
+  // fills the pane, so they sit over the part of the tab above it.
+  const [cloudTop, setCloudTop] = useState<HTMLElement | null>(null);
   useEffect(() => {
     if (!visible || !root.current) return undefined;
-    setToastAnchor(root.current);
+    setToastAnchor(cloudShown && cloudTop ? cloudTop : root.current);
     return () => setToastAnchor(null);
-  }, [visible]);
+  }, [visible, cloudShown, cloudTop]);
 
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [stopping, setStopping] = useState<SessionView | null>(null);
@@ -196,7 +198,7 @@ export function ClaudePane({ project, visible }: ClaudePaneProps) {
       </header>
 
       {cloudShown ? (
-        <CloudPanel key={project.id} project={project} active={visible} owner={cloudOwner} quiet={stripShown} />
+        <CloudPanel key={project.id} project={project} active={visible} owner={cloudOwner} quiet={stripShown} onTop={setCloudTop} />
       ) : shownSession ? (
         <>
           <InputBanner
