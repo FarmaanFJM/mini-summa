@@ -72,6 +72,15 @@ export async function startHarness(opts: { dataDir?: string; root?: string; core
   const client = new MiniSummaClient({ baseUrl: core.baseUrl, token: core.desktopToken, clientName: 'integration-test', WebSocket: WebSocket as never });
   client.events.connect();
 
+  /** What a person would look at when a wait times out: the sessions as the core sees them and the tail of its log. */
+  const diagnose = async (): Promise<string> => {
+    let sessions = '';
+    try { sessions = JSON.stringify((await client.call('sessions.list', { query: {} })).map((x) => ({ key: x.key, origin: x.origin, availability: x.availability, state: x.state, pid: x.pid, generation: x.generation, exited: x.terminal?.exited }))); } catch (e) { sessions = `(sessions.list failed: ${String(e)})`; }
+    let log = '';
+    try { log = fs.readFileSync(path.join(dataDir, 'logs', 'core.log'), 'utf8').split('\n').slice(-40).join('\n'); } catch { /* no log */ }
+    return `\n--- sessions: ${sessions}\n--- core.log tail:\n${log}`;
+  };
+
   const waitFor: Harness['waitFor'] = async (what, fn, timeoutMs = 15_000) => {
     const deadline = Date.now() + timeoutMs;
     let last: unknown;
@@ -79,7 +88,7 @@ export async function startHarness(opts: { dataDir?: string; root?: string; core
       try { const v = await fn(); if (v) return v as never; } catch (err) { last = err; }
       await new Promise((r) => setTimeout(r, 40));
     }
-    throw new Error(`Timed out waiting for ${what}${last ? ` (last error: ${String(last)})` : ''}`);
+    throw new Error(`Timed out waiting for ${what}${last ? ` (last error: ${String(last)})` : ''}${process.env.CI ? await diagnose() : ''}`);
   };
 
   const attached = new Map<SessionKey, { input(data: string): boolean }>();

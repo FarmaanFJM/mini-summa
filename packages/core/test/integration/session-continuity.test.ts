@@ -283,7 +283,7 @@ describe('evidence', () => {
     await h.waitFor('the forged records to be read', async () => (await h.client.call('sessions.list', { query: { includeEnded: true } })).some((s) => s.key === strangerKey));
     await new Promise((r) => setTimeout(r, 2500));                              // longer than the first retries of the fresh listings
     expect(await get(h, strangerKey)).toMatchObject({ origin: 'external' });
-    expect(await get(h, old.key)).toMatchObject({ origin: 'managed', availability: 'live', pid: old.pid });
+    expect(await get(h, old.key)).toMatchObject({ origin: 'managed', availability: 'live', ...(process.platform === 'win32' ? {} : { pid: old.pid }) });   // behind the Windows .cmd shim the listed pid is the node child
     const managedLive = (await h.client.call('sessions.list', { query: { projectId: a.project.id, includeEnded: true } })).filter((s) => s.origin === 'managed');
     expect(managedLive.map((s) => s.key)).toEqual([old.key]);                   // nothing was re-keyed, nothing was invented
   }, 60_000);

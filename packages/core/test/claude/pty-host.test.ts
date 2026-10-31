@@ -40,7 +40,9 @@ describe('createNodePtySpawner (real PTY)', () => {
     const r = run(`${READY} let last = ''; setInterval(() => { const [c, r] = process.stdout.getWindowSize(); const now = c + "x" + r; if (now !== last) { last = now; process.stdout.write("size " + now + "\\n"); } }, 100);`, { cols: 91, rows: 27 });
     await waitFor(() => r.out().includes('size 91x27'), 'initial size');
     r.pty.resize(77, 21);
-    await waitFor(() => r.out().includes('size 77x21'), 'resized size');
+    // On failure say what the child saw, so the log shows whether ConPTY changed nothing or only part of the size.
+    await waitFor(() => r.out().includes('size 77x21') || r.out().split('size ').length > 3, `resized size (the child printed: ${JSON.stringify(r.out())})`).catch((e) => { throw new Error(`${e.message}; the child printed ${JSON.stringify(r.out())}`); });
+    expect(r.out()).toContain('size 77x21');
     r.pty.kill();
   });
 
