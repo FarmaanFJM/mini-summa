@@ -642,9 +642,12 @@ async function phaseUninstall() {
   });
   await check('6.2', 'Install directory is gone', () => fs.existsSync(installDir) ? fail(`${installDir} still exists: ${safeList(installDir).join(', ')}`) : pass(`${installDir} removed`));
   await check('6.3', 'minisumma:// protocol key is removed', () => regFound('HKCU\\Software\\Classes\\minisumma') ? fail('HKCU\\Software\\Classes\\minisumma still exists.') : pass('HKCU\\Software\\Classes\\minisumma is gone'));
-  await check('6.4', 'Uninstall entry is removed', () => {
-    const r = run('reg.exe', ['query', 'HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', PRODUCT, '/d']);
-    return r.code === 0 ? fail(`An uninstall entry for ${PRODUCT} remains:\n${r.stdout.trim().slice(0, 500)}`) : pass('No HKCU uninstall entry for Mini-Summa remains');
+  await check('6.4', 'Uninstall entry is removed (polled for 60 s: the NSIS uninstaller finishes in a copy of itself)', async () => {
+    const query = () => run('reg.exe', ['query', 'HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall', '/s', '/f', PRODUCT, '/d']);
+    const t0 = Date.now();
+    const gone = await pollUntil(() => query().code !== 0, { timeoutMs: 60_000, intervalMs: 2000 });
+    const r = query();
+    return gone ? pass(`No HKCU uninstall entry for Mini-Summa remains (gone after ${Date.now() - t0} ms)`) : fail(`An uninstall entry for ${PRODUCT} still remained after 60 s:\n${r.stdout.trim().slice(0, 700)}`);
   });
   await check('6.5', 'User data in %APPDATA%\\Mini-Summa is KEPT (deleteAppDataOnUninstall is false)', () => {
     const db = path.join(DATA_DIR, 'mini-summa.db');
