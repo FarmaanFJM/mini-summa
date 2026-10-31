@@ -92,7 +92,7 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
   const shown = view?.url ? conversations.find((c) => sameChatGptPage(c.url, view.url ?? '')) ?? null : null;
   const current = shown ?? selected;
 
-  const { route: routeStore } = useRuntime();
+  const { route: routeStore, store: appStore } = useRuntime();
 
   // What the person does in the view is remembered per project, so that the project opens where it was left (the recorder decides
   // which pages count and guards the moment right after another project was selected, while the view still shows its page).
@@ -104,10 +104,12 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
     chat.getState().then((s) => { if (live) recorder.observe(s); }, () => {});
     const off = chat.onState((s) => {
       const hit = recorder.observe(s);
-      if (hit) routeStore.getState().selectChatGptUrl(hit.projectId, hit.url);
+      // A report handed off to another project's conversation opens in the view on screen: that page belongs to the other project.
+      const foreign = hit !== null && appStore.getState().conversations.some((c) => c.projectId !== hit.projectId && sameChatGptPage(c.url, hit.url));
+      if (hit && !foreign) routeStore.getState().selectChatGptUrl(hit.projectId, hit.url);
     });
     return () => { live = false; off(); };
-  }, [embedded, chat, recorder, routeStore]);
+  }, [embedded, chat, recorder, routeStore, appStore]);
   useEffect(() => {
     if (!embedded) return undefined;
     const token = recorder.begin({ id: project.id, scopeId });

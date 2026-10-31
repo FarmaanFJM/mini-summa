@@ -95,7 +95,9 @@ scenario('[CRIT] A report from A is handed off to A\'s conversation while B is s
   });
   // What the main process says is open, from webContents.getAllWebContents(): A's conversation, and none of B's, C's or D's.
   const urls = await allWebContentsUrls(h.app);
-  expect(urls.filter((u) => u.startsWith('https://'))).toEqual([conversationUrl(CONV.A)]);
+  // Intentional change (live views): A's own view may still be alive from when A was selected, so the same page can be open twice (the view
+  // on screen and A's); what must never be open is any other project's conversation.
+  expect([...new Set(urls.filter((u) => u.startsWith('https://')))]).toEqual([conversationUrl(CONV.A)]);
   for (const other of [CONV.B, CONV.C1, CONV.C2]) expect(urls.some((u) => u.includes(other))).toBe(false);
 
   // The system clipboard holds A's message: A's project, A's task, A's report, verbatim, and nothing of B, C or D.

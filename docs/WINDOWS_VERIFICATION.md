@@ -1,32 +1,90 @@
-# Verifying Mini-Summa on your Windows PC
+# Verifying Mini-Summa on Windows
 
-Mini-Summa was built and tested on Linux. **Nothing here has been run on Windows or WSL2**: the Windows installer was assembled under
-Wine, and everything that depends on Windows (ConPTY terminals, PowerShell hooks, the tray, toasts, `minisumma://` links) is covered
-only by tests that simulate Windows paths, quoting and failures. This page is the order in which to check it on your PC. The first
-part (steps 1 to 20) takes about 40 minutes and answers one question: *is Mini-Summa usable on this machine?* Part 0, after it, checks what
-round 3 added (30 minutes). The last two parts are optional and deeper.
+This page has three tiers, so that your time goes only to what a machine cannot check.
 
-For each step, "Expect" says what a correct result looks like. If something differs, write down the step number and what you saw,
-and keep the two log folders: `%APPDATA%\Mini-Summa\logs` (the application shell, `main.log`) and `%APPDATA%\Mini-Summa\data\logs`
-(the local service, `core.log`). They contain no tokens and no report text. Do not paste tokens, pairing codes or report text anywhere.
+| Tier | Who runs it | What it covers | Time |
+| --- | --- | --- | --- |
+| **1. Automated** | GitHub Actions, a real Windows runner, on every push | build, tests, installer, silent install and uninstall, launch, restart persistence, PowerShell hook, test toast request | 0 |
+| **2. Essential manual** | **You**, on your PC | R1, R3, R4, R5, R7, the PowerShell hook (step 11), and the project/conversation continuity checks (P1 to P4) | about 45 minutes |
+| **3. Optional** | You, if you want more | the rest of Part 0, Part 1, WSL2, phone, real-Claude developer checks | as you like |
 
-You need: Windows 10 21H2 or newer, or Windows 11 (the installer itself refuses anything older than Windows 10 version 1809), a
-standard user account, Claude Code installed and logged in (`claude --version` works in PowerShell), Git for Windows (Claude Code
-needs it), and a ChatGPT account with at least one existing conversation. Optional: WSL2 with Claude Code installed inside it,
-Tailscale, an Android phone.
+**Nothing is claimed as verified beyond what a tier shows.** Tier 1 ran on a Windows Server image with an administrator account, one
+virtual display, no person at the screen and no ChatGPT or Claude login. It cannot show what a human sees, clicks or signs in to.
 
-## Get the installer
+## Tier 1: what CI already checked (details: [WINDOWS_CI.md](WINDOWS_CI.md))
 
-* **The file that came with the status report**: `Mini-Summa-Setup-0.1.0-x64.exe`. Compare its SHA-256 with the one in
-  [VERIFICATION.md](VERIFICATION.md), section 7 (`Get-FileHash -Algorithm SHA256 .\Mini-Summa-Setup-0.1.0-x64.exe`). If they differ,
-  do not run it.
-* **Or build it yourself on the PC** (never tried on Windows): Node.js 22.12 or newer, then `git clone https://github.com/FarmaanFJM/mini-summa`,
-  `cd mini-summa`, `git checkout feat/mini-summa-full-base`, `npm install`, `npm run dist:win`. The installer is written to
-  `apps\desktop\release\`. If this fails, send the last 30 lines of its output.
+First complete native run of the installed application (run 41176630640, runner image win25-vs2026, Windows build 10.0.26100, Node 22.23.4;
+the result files are the run's `windows-installed-report` artifact): **22 checks passed, 2 failed.**
 
-The installer is **not code-signed** (a certificate costs money and there is none), so SmartScreen warns.
+* **Passed:** the installer asks for no elevation; silent per-user install; files and ConPTY components on disk; the `minisumma://` key;
+  per-user uninstall entry, nothing in Program Files or HKLM; the installed app launches and shows its window; a project with a GitHub
+  repository and a ChatGPT link but no folder is accepted; a folder (spaces, accented letter) persists and is read back; a missing folder is
+  refused with a message and nothing is stored; the Windows host environment and the `claude` CLI are found; **the PowerShell hook (W-11):
+  PowerShell does not wait for the app without `| Write-Output` (0.01 s) and does with it (3.06 s), and the SessionStart and Stop commands
+  wrote their spool record before PowerShell returned**; `notifications.test`: Windows accepted the toast request; silent uninstall removes
+  the program and the protocol key and keeps your data.
+* **Failed, and why:** (a) the uninstall entry stayed: the check ran the uninstaller as `/S` instead of the registered
+  `/currentuser /S` (a fault in the check, changed and awaiting its next run); (b) after a restart the remembered ChatGPT address was the
+  project page instead of the conversation address the check had written: under investigation as a continuity defect (see P1 to P4).
+* **Also run natively by CI:** type check, unit tests of six packages (core with 17 POSIX-fixture files skipped on Windows, listed in
+  WINDOWS_CI.md), and the installer build. The installer is **not code-signed**.
 
-## Part 0: what changed in round 3 (about 30 minutes, after Part 1 works)
+Tier 1 does **not** show: a toast on a screen or a click on it, SmartScreen, anything needing a ChatGPT or Claude login, layout, display
+scaling, typing in the terminal, resize, Ctrl+C, a real Claude session on Windows, or behaviour as a standard (non-admin) user.
+
+## Get the installer, and check it before you run it
+
+Use the installer from the CI run you are told to test (the status report names the exact commit). Never run an installer whose origin
+and hash you have not compared.
+
+1. Download the artifact `mini-summa-windows-installer` from the run's page on GitHub (Actions, the run, Artifacts) while signed in to
+   GitHub, and unzip it. It holds the `.exe`, `BUILD-INFO.txt` (commit, runner image, size, SHA-256) and `SHA256SUMS.txt`.
+2. In PowerShell in that folder: `Get-FileHash -Algorithm SHA256 .\Mini-Summa-Setup-0.1.0-x64.exe`. The hash must equal the one in
+   `SHA256SUMS.txt` **and** the one in the status report. The commit in `BUILD-INFO.txt` must be the commit named in the report.
+3. If any of these differ, **do not run it** and say so.
+4. Only after the origin (your own GitHub run of this repository) and the hash match, Windows SmartScreen may say "Windows protected your
+   PC" because the file is unsigned and unknown. That is expected here: choose More info, then Run anyway. If the hash or origin did not
+   match, that choice is not safe and you should stop.
+
+The installer installs for your user only and asks for no administrator rights. Alternatively build it yourself: Node.js 22.12 or newer,
+`git clone https://github.com/FarmaanFJM/mini-summa`, `git checkout feat/mini-summa-full-base`, `npm ci`, `npm run dist:win`.
+
+## Tier 2: the essential manual checks (about 45 minutes)
+
+You need: Windows 10 1809 or newer or Windows 11 as a standard user, Claude Code installed and logged in (`claude --version` works in PowerShell), Git for Windows, and a ChatGPT account with at least one ChatGPT Project and a few conversations in it. R6 (the Cloud tab) additionally needs a claude.ai plan that can use Claude Code on the web.
+
+Do these in order. For each: *Expect* is the correct result; **Evidence** is what to send back. A screenshot should not show tokens,
+pairing codes or report text. Logs: `%APPDATA%\Mini-Summa\logs\main.log` and `%APPDATA%\Mini-Summa\data\logs\core.log` (no tokens).
+
+| # | Check | Where the steps are | Evidence to send |
+| --- | --- | --- | --- |
+| R1 | The folder: Browse adds it at once, it survives restart, a GitHub-only project works | Part 0, R1 and R2 | pass or fail per step; if fail, a screenshot of the settings dialog |
+| R3 | Link one of your real ChatGPT Projects by address | Part 0, R3 | pass or fail; **the address shape with the long ids replaced by `xxx`**; whether the project page opened |
+| R4 | The overlapping ChatGPT controls | Part 0, R4 and CHATGPT_PANE.md | window size, display scaling, which of the three outcomes; one screenshot at the size where it overlaps |
+| R5 | View modes keep what is there | Part 0, R5 | pass or fail; whether a half-written ChatGPT message survived |
+| R7 | A Windows toast, and its click | Part 0, R7 | whether the test toast appeared; whether clicking opened the right project and session; seconds from Claude's last output to its toast |
+| H | PowerShell waits for the app (hook, step 11) and a report arrives | Part 1, steps 11 to 13 | the two numbers from step 11; whether a report appeared under the right project |
+| P1 to P4 | Persistent workspaces and ChatGPT conversation continuity | the next section | pass or fail per step |
+
+### P1 to P4: persistent workspaces (status: see the status report; the steps below are the acceptance test)
+
+One Mini-Summa project is one workspace. Several ChatGPT conversations belong to it without creating more projects.
+1. **P1.** Link a ChatGPT Project to project A. Open conversation A1, then start a new conversation A2 inside that ChatGPT Project and
+   write two lines in it. *Expect:* no new Mini-Summa project appears.
+2. **P2.** Make projects B and C the same way (B1, C1). Switch A, B, C, A. *Expect:* each shows its own last conversation; none shows
+   another project's.
+3. **P3.** Quit and start Mini-Summa. *Expect:* each project reopens its last conversation (A2, B1, C1). An unsent draft is **not**
+   promised across a restart.
+4. **P4.** In a project without a ChatGPT link, and with a local Claude session, switch projects, notify, and use Split/ChatGPT/Claude.
+   *Expect:* everything still works and no conversation is auto-associated with a project you did not link.
+
+If a step fails, send the step number, what you saw, and the newest `main.log`.
+
+## Tier 3: optional and extended
+
+Everything below is the earlier, longer checklist. Run what interests you; none of it is required for a first decision.
+
+## Part 0: what changed in round 3 (R1 to R8; Tier 2 uses R1, R3, R4, R5, R7)
 
 Round 3 added a GitHub-only project, linking an existing ChatGPT Project, the Cloud tab, view modes, the ChatGPT page size, a
 "Claude finished" notification and a test notification. All of it was tested on Linux with local stand-ins for ChatGPT and
