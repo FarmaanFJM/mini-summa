@@ -29,10 +29,45 @@ function psParent(pid: number): number | undefined {
   } catch { return undefined; }
 }
 
-/** Linux reads /proc, macOS asks ps; Windows has no cheap and reliable way from here, so it never claims anything. */
+const WINDOWS_TABLE_TTL_MS = 4000;
+const WINDOWS_TABLE_MIN_REFRESH_MS = 1000;
+
+/**
+ * Windows: one query for the whole process table (Win32_Process through the system's Windows PowerShell), kept for a few seconds, so a
+ * burst of questions costs one call. The call blocks for a moment (about a second), which is why it is only made when a process other than
+ * the terminal's own has to be placed (an npm `claude.cmd` shim runs node under cmd.exe). Any failure answers "cannot be told" (undefined).
+ */
+function windowsParent(env: NodeJS.ProcessEnv = process.env): ParentPid {
+  let table = new Map<number, number>();
+  let loadedAt = 0;
+  const load = (): void => {
+    loadedAt = Date.now();
+    try {
+      const root = env.SystemRoot ?? env.windir ?? 'C:\\Windows';
+      const out = execFileSync(`${root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`, [
+        '-NoProfile', '-NonInteractive', '-Command',
+        'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId)" }',
+      ], { encoding: 'utf8', timeout: 10_000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+      const next = new Map<number, number>();
+      for (const line of out.split(/\r?\n/)) {
+        const m = /^(\d+) (\d+)$/.exec(line.trim());
+        if (m) next.set(Number(m[1]), Number(m[2]));
+      }
+      if (next.size > 0) table = next;
+    } catch { /* keep what is known */ }
+  };
+  return (pid) => {
+    const age = Date.now() - loadedAt;
+    if ((!table.has(pid) && age > WINDOWS_TABLE_MIN_REFRESH_MS) || age > WINDOWS_TABLE_TTL_MS) load();
+    return table.get(pid);
+  };
+}
+
+/** Linux reads /proc, macOS asks ps, Windows asks Win32_Process (see above); anything else never claims anything. */
 export function defaultParentPid(platform: NodeJS.Platform = process.platform): ParentPid {
   if (platform === 'linux') return linuxParent;
   if (platform === 'darwin') return psParent;
+  if (platform === 'win32') return windowsParent();
   return () => undefined;
 }
 

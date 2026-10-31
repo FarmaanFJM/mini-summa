@@ -34,10 +34,10 @@ describe('createNodePtySpawner (real PTY)', () => {
     expect(r.pty.pid).toBeGreaterThan(0);
   });
 
-  // The child reports the size it SEES, by polling. (The earlier version waited for Node's 'resize' event, which a child under ConPTY did not
-  // emit in the first native run; whether the size really changes is what matters, not how the child hears about it.)
+  // The child reports the size it SEES, by polling. (The first version waited for Node's 'resize' event, and the second read process.stdout.columns, which Node
+  // caches until that event; neither moved under ConPTY in native runs. getWindowSize() asks the console each time.)
   it('gives the child a terminal of the requested size and applies resize()', async () => {
-    const r = run(`${READY} let last = ''; setInterval(() => { const now = process.stdout.columns + "x" + process.stdout.rows; if (now !== last) { last = now; process.stdout.write("size " + now + "\\n"); } }, 100);`, { cols: 91, rows: 27 });
+    const r = run(`${READY} let last = ''; setInterval(() => { const [c, r] = process.stdout.getWindowSize(); const now = c + "x" + r; if (now !== last) { last = now; process.stdout.write("size " + now + "\\n"); } }, 100);`, { cols: 91, rows: 27 });
     await waitFor(() => r.out().includes('size 91x27'), 'initial size');
     r.pty.resize(77, 21);
     await waitFor(() => r.out().includes('size 77x21'), 'resized size');

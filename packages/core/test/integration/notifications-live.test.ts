@@ -237,7 +237,7 @@ describe('when Mini-Summa is not running', () => {
   it('a turn that ended in the meantime is in the feed at the next start, and is never shown as a toast; the next live one is', async () => {
     const first = await boot();
     const a = await first.project('GitManager');
-    const key = `posix|${OUTSIDE}` as SessionKey;
+    const key = `${HOST_ENV}|${OUTSIDE}` as SessionKey;
     await first.stop(); // closing the window quits the app: nothing watches the spool any more
 
     // Claude goes on in its own terminal and finishes a turn while nobody is watching.

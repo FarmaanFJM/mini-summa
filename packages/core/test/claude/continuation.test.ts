@@ -262,7 +262,9 @@ describe('isSameOrBelow (parent links)', () => {
     expect(isSameOrBelow(process.pid, process.ppid, parentOf)).toBe(true);
     expect(isSameOrBelow(process.ppid, process.pid, parentOf)).toBe(false);
     expect(parentOf(2 ** 22 + 12345)).toBeUndefined();             // a process that does not exist cannot be traced
-    expect(defaultParentPid('win32')(process.pid)).toBeUndefined();   // other platforms never claim anything
+    if (process.platform !== 'win32') expect(defaultParentPid('win32')(process.pid)).toBeUndefined();   // no Windows PowerShell here: it cannot tell
+    else expect(defaultParentPid('win32')(process.pid)).toBeGreaterThan(0);                               // a real Windows host knows its own parent
+    expect(defaultParentPid('freebsd' as NodeJS.Platform)(process.pid)).toBeUndefined();                  // other platforms never claim anything
   });
 
   const tree = new Map<number, number>([[4321, 100], [5555, 4321], [6666, 5555], [7000, 1]]);

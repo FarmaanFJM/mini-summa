@@ -66,7 +66,7 @@ describe('pairing and scopes', () => {
     await h.client.call('settings.update', { body: { layout: { landscapeRatio: 0.4 } } });
     await h.waitFor('project event on the phone', () => seen.includes('project.upserted'));
     expect(seen).not.toContain('settings.changed');
-    phone.terminal.attach('posix|11111111-1111-4111-8111-111111111111', { cols: 80, rows: 24 }, { onAttached() {}, onData() {}, onExit() {}, onError: (c) => termErrors.push(c) });
+    phone.terminal.attach(`${HOST_ENV}|11111111-1111-4111-8111-111111111111`, { cols: 80, rows: 24 }, { onAttached() {}, onData() {}, onExit() {}, onError: (c) => termErrors.push(c) });
     await h.waitFor('terminal refusal', () => termErrors.length > 0);
 
     // Revoking cuts the phone off at once: requests fail and the socket is closed.
