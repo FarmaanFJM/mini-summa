@@ -445,7 +445,13 @@ async function phaseSmoke() {
     let before = null;
     if (api && ctx.projectId) {
       try {
-        before = { project: await api('GET', `/projects/${ctx.projectId}`), route: ctx.wrote?.route ?? null, perProject: ctx.wrote?.perProject ?? null };
+        // Read the state again just before quitting, after a pause: the running window owns some of these fields (it records the ChatGPT page it
+        // shows) and may legitimately have changed them since this script wrote them. What must survive a restart is what the app held when it quit.
+        await sleep(3000);
+        const fresh = await api('GET', '/settings');
+        before = { project: await api('GET', `/projects/${ctx.projectId}`), route: fresh.ui?.route ?? null, perProject: fresh.ui?.perProject?.[ctx.projectId] ?? null };
+        if (JSON.stringify(before.perProject) !== JSON.stringify(ctx.wrote?.perProject)) log(`The running app changed perProject after it was written: wrote ${JSON.stringify(ctx.wrote?.perProject)}, app held ${JSON.stringify(before.perProject)}`);
+        ctx.heldBeforeQuit = before.perProject;
       } catch (error) { log(`Could not take the snapshot: ${error.message}`); }
     }
     let quit1 = null;
@@ -474,6 +480,7 @@ async function phaseSmoke() {
       const diffs = deepDiff(before, after);
       const lines = [`project ${project.id}: githubRepo ${project.githubRepo}, chatgptProject ${project.chatgptProject?.url}, roots ${JSON.stringify(project.roots.map((r) => r.path))}`, `ui.route ${JSON.stringify(after.route)}`, `ui.perProject ${JSON.stringify(after.perProject)}`];
       if (!fs.existsSync(folderDir)) lines.push('(the temp folder itself vanished from disk; that would be this script, not the app)');
+      if (ctx.heldBeforeQuit && JSON.stringify(ctx.heldBeforeQuit) !== JSON.stringify(ctx.wrote?.perProject)) lines.push(`NOTE: before quitting the running app already held ${JSON.stringify(ctx.heldBeforeQuit)} instead of what this script wrote (${JSON.stringify(ctx.wrote?.perProject)}); the comparison is against what the app held.`);
       lines.push(chatgptUrlPresent ? 'chatgptUrl per project compared with the rest of perProject.' : 'chatgptUrl per project: NOT YET PRESENT in packages/shared; not compared.');
       return diffs.length ? fail('Read back differently after the restart:', ...diffs, ...lines) : pass('Everything read back identically after quit and relaunch.', ...lines);
     });
