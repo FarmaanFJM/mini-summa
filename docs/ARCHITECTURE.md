@@ -129,8 +129,10 @@ reaches back the server answers `resync: true` and the client reloads snapshots 
 
 The desktop shell starts the core on the same port every time (47811, or the next free one when it is taken) and the window keeps
 the choices that matter in the core, not in the browser profile that belongs to that port: the selected project and view, per
-project the selected session and the selected conversation, and the dismissed setup hints (`Settings.ui`, validated by the
-route's schema; ids only). The renderer sends changes after 0.6 s of quiet and, as the page closes, with a request that
+project the selected session, the selected conversation and the last page of Claude Code on the web (`cloudUrl`, only an address on
+claude.ai/code, stored without its query), and the dismissed setup hints (`Settings.ui`, validated by the route's schema; ids and
+addresses only). While a project's Cloud tab is the one shown, its remembered session is sent as null, so the host knows no local
+session is on screen (a "Claude finished" notification is held back only for a session that is). The renderer sends changes after 0.6 s of quiet and, as the page closes, with a request that
 outlives it (`app/uiSync.ts`, `app/keepalive.ts`). The window's size, position and maximised state are the shell's own
 (`apps/desktop/src/main/windowState.ts`); the open tabs and the divider stay in the renderer. When a managed terminal goes on under another session id (`/clear`,
 `/resume`) the core names the successor in `SessionView.replacedBy` and the renderer moves the tab and the remembered choice to it
@@ -144,6 +146,17 @@ outlives it (`app/uiSync.ts`, `app/keepalive.ts`). The window's size, position a
 * **External**: opens the mapped URL in the default browser. The optional MV3 extension (tabs/windows APIs only, no
   content scripts, no page access) lets Mini-Summa focus an already-open tab instead of opening a duplicate.
 * In both modes the clipboard handoff is the reliable path; no mode reads from or writes into the ChatGPT page.
+* The view's own browser zoom follows its pane (Settings, ChatGPT, Page size; `main/pageScale.ts`), the only thing the shell does to the
+  page. Why, and what is hypothesis: [CHATGPT_PANE.md](CHATGPT_PANE.md). A workspace can be linked to an existing ChatGPT Project by its
+  address (nothing imported; [CHATGPT_PROJECTS.md](CHATGPT_PROJECTS.md)); with no mapped conversation the embedded view shows that page.
+
+## Claude Code on the web (the Cloud tab)
+
+A second native view, `persist:claude`, the same hardening as the ChatGPT view, shown by the Cloud tab of the Claude pane
+(`main/claudeView.ts`, `claudeElectronView.ts`; policy `classifyClaudeNavigation` in `packages/shared/src/claude-web.ts`). It is the
+page of Claude Code on the web and nothing more: Mini-Summa cannot list, follow or notify about cloud sessions because Anthropic
+documents no way to ([CLOUD_SESSIONS.md](CLOUD_SESSIONS.md)). Local and cloud are chosen for each session and one is never started in
+place of the other. One overlay switch hides both native views while a menu or dialog is over the window; hiding never destroys a view.
 
 ## Testing layers
 

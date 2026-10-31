@@ -8,46 +8,46 @@
 
 | | |
 | --- | --- |
-| Date | 2026-10-30 21:13 UTC |
+| Date | 2026-10-31 00:38 UTC |
 | Platform | Linux 6.18.44-fc-v185 x64 under Xvfb :99 (1280x1024x24), as root (Electron is started with --no-sandbox, which Playwright adds for root) |
 | Electron | 45.1.0 (Chromium inside it; Node v22.22.0 runs the tests; Playwright 1.64.1 drives the window) |
-| Source | commit 540585e in a fresh clone (the one difference from the commit was the executable bit that `npm ci` sets on `packages/core/src/cli.ts`, which is now tracked) |
+| Source | commit c63d44f |
 | App build | built for this run: `electron-vite build` into a private temporary directory, plus the hook bundle; the run launches that build, never `apps/desktop/out` |
-| Duration | 2 min 54 s for the whole run (build, tests, clean-up); the tests themselves took 2 min 43 s added together |
+| Duration | 3 min 43 s for the whole run (build, tests, clean-up); the tests themselves took 3 min 31 s added together |
 | Behaviours (26: A01 to A25 and the critical scenario) | **25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED** |
-| Extra checks (not among the 25) | 6 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED |
-| Tests executed | 38 in all: 37 passed, 0 failed, 1 not tested |
+| Extra checks (not among the 25) | 10 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED |
+| Tests executed | 51 in all: 50 passed, 0 failed, 1 not tested |
 
 ## Results
 
 | ID | Behaviour | Status | NOT TESTED reason, or what failed |
 | --- | --- | --- | --- |
-| A01 | Mini-Summa launches successfully | PASS | — |
-| A02 | A new project can be registered | PASS | — |
-| A03 | Its repository directory can be selected | PASS | — |
-| A04 | Its ChatGPT conversation URL can be configured | PASS | — |
-| A05 | The linked existing conversation can be opened | PASS | — |
-| A06 | Claude Code launches in the correct directory | PASS | — |
-| A07 | Terminal input and output work | PASS | — |
-| A08 | Terminal resize works | PASS | — |
-| A09 | Switching projects does not terminate unrelated sessions | PASS | — |
-| A10 | Multiple projects can be active | PASS | — |
-| A11 | Multiple sessions can belong to one project | PASS | — |
-| A12 | Portrait layout works | PASS | — |
-| A13 | Landscape layout works | PASS | — |
-| A14 | Pane resizing works (draggable divider; proportions persist) | PASS | — |
-| A15 | Claude activity appears in the feed | PASS | — |
-| A16 | A completion report can be captured | PASS | — |
-| A17 | The report remains linked to the correct project | PASS | — |
-| A18 | The report can be copied in full | PASS | — |
-| A19 | The correct ChatGPT conversation can be opened for handoff | PASS | — |
-| A20 | A report cannot be accidentally routed to another project's mapped conversation | PASS | — |
-| A21 | Desktop notifications work | **PARTIAL** | Executed and asserted: A finished task and a permission request become notifications that the main process asks the platform to show; With a notification service (platform simulated), the notification has the right words and a click opens what it is about. NOT TESTED: An operating-system toast appears on screen and clicking it works: Not executed: this machine has no notification service (Electron answers Notification.isSupported() = false under Xvfb) and no API observes an operating-system toast, so whether a toast appears on screen, how it looks, and whether clicking a REAL toast brings the app forward was not observed. Verified instead: the core's records and the main process's attempts (real), and the click-to-navigation path with the platform layer simulated. Windows toasts (AppUserModelID com.minisumma.app) were not exercised. |
-| A22 | Project and session records persist after restart | PASS | — |
-| A23 | Pending reports persist after restart | PASS | — |
-| A24 | Hook installation is permission-gated | PASS | — |
-| A25 | Runtime secrets remain outside the repository | PASS | — |
-| CRIT | Critical cross-project scenario: a report from A is handed off to A's conversation while B is selected | PASS | — |
+| A01 | Mini-Summa launches successfully | PASS | - |
+| A02 | A new project can be registered | PASS | - |
+| A03 | Its repository directory can be selected | PASS | - |
+| A04 | Its ChatGPT conversation URL can be configured | PASS | - |
+| A05 | The linked existing conversation can be opened | PASS | - |
+| A06 | Claude Code launches in the correct directory | PASS | - |
+| A07 | Terminal input and output work | PASS | - |
+| A08 | Terminal resize works | PASS | - |
+| A09 | Switching projects does not terminate unrelated sessions | PASS | - |
+| A10 | Multiple projects can be active | PASS | - |
+| A11 | Multiple sessions can belong to one project | PASS | - |
+| A12 | Portrait layout works | PASS | - |
+| A13 | Landscape layout works | PASS | - |
+| A14 | Pane resizing works (draggable divider; proportions persist) | PASS | - |
+| A15 | Claude activity appears in the feed | PASS | - |
+| A16 | A completion report can be captured | PASS | - |
+| A17 | The report remains linked to the correct project | PASS | - |
+| A18 | The report can be copied in full | PASS | - |
+| A19 | The correct ChatGPT conversation can be opened for handoff | PASS | - |
+| A20 | A report cannot be accidentally routed to another project's mapped conversation | PASS | - |
+| A21 | Desktop notifications work | **PARTIAL** | Executed and asserted: A finished task and a permission request become notifications that the main process asks the platform to show; With a notification service (platform simulated), the notification has the right words and a click opens what it is about; A click on a notification of any kind opens its own project and session, and a project that is not selected still produces them; "Claude finished" is not shown for the session the person is looking at, is recorded as such, and is shown as soon as they look elsewhere. NOT TESTED: An operating-system toast appears on screen and clicking it works: Not executed: this machine has no notification service (Electron answers Notification.isSupported() = false under Xvfb) and no API observes an operating-system toast, so whether a toast appears on screen, how it looks, and whether clicking a REAL toast brings the app forward was not observed. Verified instead: the core's records and the main process's attempts (real), and the click-to-navigation path with the platform layer simulated. Windows toasts (AppUserModelID com.minisumma.app) were not exercised. |
+| A22 | Project and session records persist after restart | PASS | - |
+| A23 | Pending reports persist after restart | PASS | - |
+| A24 | Hook installation is permission-gated | PASS | - |
+| A25 | Runtime secrets remain outside the repository | PASS | - |
+| CRIT | Critical cross-project scenario: a report from A is handed off to A's conversation while B is selected | PASS | - |
 
 PASS means executed and asserted. FAIL means executed and an assertion did not hold (a product defect or a test defect; the evidence says which). PARTIAL means part of the behaviour was executed and held and part is NOT TESTED. NOT TESTED means it was not executed, with the reason. There is no status for "assumed to work".
 
@@ -57,12 +57,16 @@ Not among the 25 behaviours. Each guards a defect that this suite found in the p
 
 | ID | Check | Status | NOT TESTED reason, or what failed |
 | --- | --- | --- | --- |
-| X01 | The Handoff card follows the delivery after "Copy and open" and "I sent it" | PASS | — |
-| X02 | The window reopens on the project that was selected when it was closed | PASS | — |
-| X03 | A session that ended says why in words, not as an internal code | PASS | — |
-| X04 | The test sandbox is closed: the app reaches the chatgpt.com stand-in and no other host | PASS | — |
-| X05 | A report is handed over and confirmed from the workspace, without going back to Reports | PASS | — |
-| X06 | After /clear inside a managed terminal the Claude pane follows to the new session, and a restart reopens on it | PASS | — |
+| X01 | The Handoff card follows the delivery after "Copy and open" and "I sent it" | PASS | - |
+| X02 | The window reopens on the project that was selected when it was closed | PASS | - |
+| X03 | A session that ended says why in words, not as an internal code | PASS | - |
+| X04 | The test sandbox is closed: the app reaches the chatgpt.com stand-in and no other host | PASS | - |
+| X05 | A report is handed over and confirmed from the workspace, without going back to Reports | PASS | - |
+| X06 | After /clear inside a managed terminal the Claude pane follows to the new session, and a restart reopens on it | PASS | - |
+| X07 | A folder picked for a project that has none is saved, shown, and still there after a restart | PASS | - |
+| X08 | The embedded ChatGPT page is zoomed to follow its pane (Automatic keeps about 900 CSS pixels), fixed sizes apply, layout changes never replace the page, and the page still takes clicks, selection, scrolling and its own Copy button | PASS | - |
+| X09 | Claude Code on the web opens in a native view of its own, on demand, with one GET and nothing typed in the page; hiding keeps the page, links and sign-in follow the policy, and its profile is separate from ChatGPT's | PASS | - |
+| X10 | A workspace made from an existing ChatGPT Project and a GitHub repository, with no folder, opens the project in ChatGPT, offers cloud but not local, opens Claude Code on the web with the repository preselected, switches views without losing anything, and keeps every association across a restart | PASS | - |
 
 ## What was observed
 
@@ -74,15 +78,15 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A02. A new project can be registered (PASS)
 
-- empty form refused ("Give the project a name."), nothing created; "Alpha" created through the dialog, selected in the sidebar, stored with id prj_352029d317768097 and root /tmp/ms-e2e-8vC5vS/repos/Alpha
+- empty form refused ("Give the project a name." and the address for the default ChatGPT Project source), nothing created; four projects created through the dialog, one from each way to start (folder /tmp/ms-e2e-as0g4l/repos/Alpha, GitHub repository normalised to FarmaanFIM/Beta, a ChatGPT Project address linked as "Caissa trainer" after a single conversation was refused, nothing), each selected on creation and stored with exactly the fields of its source
 
 ### A03. Its repository directory can be selected (PASS)
 
-- Browse asked the native picker ("Choose the repository folder", openDirectory+createDirectory); a cancelled pick changed nothing; the picked folder /tmp/ms-e2e-mIZ7vN/repos/Picked was listed, a duplicate was refused, and the project was stored with exactly that root
+- Browse asked the native picker ("Choose the project folder", openDirectory+createDirectory); a cancelled pick changed nothing; the picked folder /tmp/ms-e2e-M8tOWT/repos/Picked became the project's folder with no second button, named the project, and was stored as exactly that root; in another project's settings the real core refused a folder that does not exist, a file and a folder that belongs to "Picked" (each in its own words beside the field, the typed path kept), and a Browse pick was added at once and removed at once
 
 ### A04. Its ChatGPT conversation URL can be configured (PASS)
 
-- refused example.org, http and javascript: addresses with a reason; accepted a messy pasted address as https://chatgpt.com/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa; two conversations stored in order, preferred chosen in the dialog (stored: the second); rename and removal edited through the same dialog
+- refused example.org, http and javascript: addresses with a reason; accepted a messy pasted address as https://chatgpt.com/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa; refused the same conversation twice in the core's words; two conversations stored in order, preferred chosen in the settings (stored: the second) with no Save; rename, removal and a title typed and left unconfirmed (sent by Done) each reached the core
 
 ### A05. The linked existing conversation can be opened (PASS)
 
@@ -90,7 +94,7 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A06. Claude Code launches in the correct directory (PASS)
 
-- project folder "/tmp/ms-e2e-HokAtf/repos/My App (v2)" (space and brackets); core cwd, /proc/27823/cwd, the process's own registration and the banner on screen all name that folder; session c9527c66 is managed and bound to the project
+- project folder "/tmp/ms-e2e-EFiQJT/repos/My App (v2)" (space and brackets); core cwd, /proc/29956/cwd, the process's own registration and the banner on screen all name that folder; session 429e0a4e is managed and bound to the project
 
 ### A07. Terminal input and output work (PASS)
 
@@ -98,43 +102,43 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A08. Terminal resize works (PASS)
 
-- window 1000x1300 -> terminal 91x26; window 1500x800 -> 75x33; at each size the core's PTY record, the size the fake process reads from its terminal, and the xterm on screen (measured 91x26 and 75x33, columns within one of the PTY's) agree; the process printed "[terminal resized to 75x33]"
+- window 1000x1300 -> terminal 90x26; window 1500x800 -> 74x32; at each size the core's PTY record, the size the fake process reads from its terminal, and the xterm on screen (measured 90x26 and 74x32, columns within one of the PTY's) agree; the process printed "[terminal resized to 74x32]"
 
 ### A09. Switching projects does not terminate unrelated sessions (PASS)
 
-- Alpha's session (pid 28325) stayed live, same pid and generation, while Beta was selected and used; output typed into Alpha during that time arrived; switching back showed one terminal with both the earlier and the background text; Beta's screen never showed Alpha's text
+- Alpha's session (pid 30459) stayed live, same pid and generation, while Beta was selected and used; output typed into Alpha during that time arrived; switching back showed one terminal with both the earlier and the background text; Beta's screen never showed Alpha's text
 
 ### A10. Multiple projects can be active (PASS)
 
-- three projects, three live managed sessions (pids 28561, 28581, 28604) in three folders at once; the sidebar showed "1 live session" on each; each project showed its own terminal and received only its own typed message
+- three projects, three live managed sessions (pids 30688, 30708, 30728) in three folders at once; the sidebar showed "1 live session" on each; each project showed its own terminal and received only its own typed message
 
 ### A11. Multiple sessions can belong to one project (PASS)
 
-- two managed sessions of one project (pids 28813 and 28833) in the same folder, two tabs; typed text reached only the selected tab's process; each tab showed its own session id; closing a tab left its process running
+- two managed sessions of one project (pids 30935 and 30955) in the same folder, two tabs; typed text reached only the selected tab's process; each tab showed its own session id; closing a tab left its process running
 
 ### A12. Portrait layout works (PASS)
 
-- window 1000x1300: ChatGPT pane on top (624px tall), Claude below (624px), horizontal divider at 50%; the native view (740x586) equals its slot and stays out of the Claude pane; resizing to 1400x850 (view 566x768) and back re-arranged the panes and the view each time; "Side by side" chosen by hand beat the window shape and was saved
+- window 1000x1300: ChatGPT pane on top (614px tall), Claude below (614px), horizontal divider at 50%; the native view (732x578) equals its slot and stays out of the Claude pane; resizing to 1400x850 (view 562x750) and back re-arranged the panes and the view each time; "Side by side" chosen by hand beat the window shape and was saved
 
 ### A13. Landscape layout works (PASS)
 
-- window 1400x850: ChatGPT pane left (566px wide), Claude pane right (566px), vertical divider at 50%; the native ChatGPT view at 260,82 566x768 equals its slot (566x768) and stays out of the Claude pane; terminal 68x36 inside its pane
+- window 1400x850: ChatGPT pane left (562px wide), Claude pane right (562px), vertical divider at 50%; the native ChatGPT view at 260,92 562x750 equals its slot (562x750) and stays out of the Claude pane; terminal 68x35 inside its pane
 
 ### A14. Pane resizing works (draggable divider; proportions persist) (PASS)
 
-- dragging the vertical divider to 30% of the area gave 30% (panes 337px / 794px), the native view followed and was visible again after release; past the edge it stopped at 85%; the horizontal divider dragged to 65% gave 65%; the core stored landscape 0.298 and portrait 0.651 independently, and after quitting and relaunching on the same data directory both were restored (65% stacked, 30% side by side)
+- dragging the vertical divider to 30% of the area gave 30% (panes 335px / 788px), the native view followed and was visible again after release; past the edge it stopped at 85%; the horizontal divider dragged to 65% gave 65%; the core stored landscape 0.298 and portrait 0.651 independently, and after quitting and relaunching on the same data directory both were restored (65% stacked, 30% side by side)
 
 ### A15. Claude activity appears in the feed (PASS)
 
-- with the Activity view open: "Claude session started", "Needs permission", "Needs your input", "Error in" and "Report ready: Ship the importer" appeared for Alpha / 555c07ab as Claude did each thing (kinds report_ready, error, turn_ended, needs_input, needs_permission, session_started); unread count shown in the sidebar; clicking the report entry opened the report
+- with the Activity view open: "Claude session started", "Needs permission", "Needs your input", "Error in" and "Report ready: Ship the importer" appeared for Alpha / 0936ea36 as Claude did each thing (kinds report_ready, error, turn_ended, needs_input, needs_permission, session_started); unread count shown in the sidebar; clicking the report entry opened the report
 
 ### A16. A completion report can be captured (PASS)
 
-- typing "Wrap up the storage layer ..." in the terminal produced one report (marker, declared complete, session 1ab15c6b); a turn without the marker made no report but was kept as an "other message"; partial and blocked were captured as declared; the queue row and the report page show the declaration, the project and the full text
+- typing "Wrap up the storage layer ..." in the terminal produced one report (marker, declared complete, session fc1f945d); a turn without the marker made no report but was kept as an "other message"; partial and blocked were captured as declared; the queue row and the report page show the declaration, the project and the full text
 
 ### A17. The report remains linked to the correct project (PASS)
 
-- Alpha's Claude finished while Beta was selected: the report is stored under Alpha (project id prj_f658acb7) and Alpha's session; Beta has none; the sidebar counted it on Alpha's row only; the report page's project and session links lead to Alpha; filtering by Beta shows nothing; after renaming Alpha the report still belongs to it (same project id) and its project button leads there (the report keeps the name it was captured under: "Alpha")
+- Alpha's Claude finished while Beta was selected: the report is stored under Alpha (project id prj_bfc831d1) and Alpha's session; Beta has none; the sidebar counted it on Alpha's row only; the report page's project and session links lead to Alpha; filtering by Beta shows nothing; after renaming Alpha the report still belongs to it (same project id) and its project button leads there (the report keeps the name it was captured under: "Alpha")
 
 ### A18. The report can be copied in full (PASS)
 
@@ -151,8 +155,10 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A21. Desktop notifications work (PARTIAL)
 
-- *A finished task and a permission request become notifications that the main process asks the platform to show*: real chain: a permission request (critical) and a finished task each produced a notification record with the right title ("Alpha: needs permission", "Alpha: report ready"), body and navigation target (workspace/session, reports/report/delivery); the main process asked the platform to show them 2 times and Electron answered isSupported()=false, so the records say native="unavailable" and the Notifications list in Activity says "Could not be shown: this PC cannot show notifications"; quiet mode recorded "suppressed_quiet" without asking the platform, and a project with reports switched off made no notification; the feed kept the entries unread
-- *With a notification service (platform simulated), the notification has the right words and a click opens what it is about*: with the platform layer simulated (show answered by the test): the permission notification carried title "Alpha: needs permission", critical urgency and "never" timeout, the report notification "Alpha: report ready" / "Report ready: Ship the importer" with normal urgency; both records say native="sent"; with the window hidden, a click on the report notification showed the window and opened that report's page, and a click on the permission notification opened Alpha's workspace on the asking session
+- *A finished task and a permission request become notifications that the main process asks the platform to show*: real chain: a permission request (critical) and a finished task each produced a notification record with the right title ("Alpha: needs permission", "Alpha: report ready"), body and navigation target (workspace/session, reports/report/delivery); the main process asked the platform to show them 3 times and Electron answered isSupported()=false, so the records say native="unavailable" and the Notifications list in Activity says "Could not be shown: this PC cannot show notifications"; quiet mode recorded "suppressed_quiet" without asking the platform, and a project with reports switched off made no notification; the feed kept the entries unread
+- *With a notification service (platform simulated), the notification has the right words and a click opens what it is about*: with the platform layer simulated (show answered by the test): the permission notification carried title "Alpha: needs permission", critical urgency and "never" timeout; the turn that followed ended without a report and produced exactly one "Alpha: Claude finished" (normal urgency, body "Turn ended: Alpha / <session>"); the report notification "Alpha: report ready" / "Report ready: Ship the importer" (normal urgency) was the only one for the turn that ended with a report, and nothing more arrived in the next 1.5 s (two polls of the spool); all three records say native="sent"; with the window hidden, a click on the report notification showed the window and opened that report's page, and a click on the permission notification opened Alpha's workspace on the asking session
+- *A click on a notification of any kind opens its own project and session, and a project that is not selected still produces them*: with Beta selected (and then Settings open), events in the second session of Alpha produced the notifications "Alpha: needs permission", "Alpha: needs your input", "Alpha: error", "Alpha: Claude finished", "Alpha: report ready"; clicking each one showed Alpha's workspace with the second session's tab selected (the first stayed unselected), or, for the report, that report; every record belongs to Alpha and none to Beta
+- *"Claude finished" is not shown for the session the person is looking at, is recorded as such, and is shown as soon as they look elsewhere*: Xvfb answered isFocused()=true and system idle time 1 on its own, so the test said what a person at the PC would make true (window in front, keyboard used 3 s ago); with the window on Alpha's workspace and Alpha's session tab selected (written by the renderer into the core, read back by the main process), "Claude finished" produced a record native="suppressed_viewing" and no call to the platform, the feed kept the entry unread, and a permission request for the same session was still shown; with Beta selected, with the window not in front, and with ten minutes without input, the same event was shown (4 "sent", 2 "suppressed_viewing" records in all)
 - *An operating-system toast appears on screen and clicking it works*: **NOT TESTED.** Not executed: this machine has no notification service (Electron answers Notification.isSupported() = false under Xvfb) and no API observes an operating-system toast, so whether a toast appears on screen, how it looks, and whether clicking a REAL toast brings the app forward was not observed. Verified instead: the core's records and the main process's attempts (real), and the click-to-navigation path with the platform layer simulated. Windows toasts (AppUserModelID com.minisumma.app) were not exercised.
 - *An operating-system toast appears on screen and clicking it works*: Notification.isSupported() as answered by Electron 45.1.0 on this machine (Linux under Xvfb, no notification daemon): false
 
@@ -166,11 +172,11 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 ### A24. Hook installation is permission-gated (PASS)
 
-- the dialog named /tmp/ms-e2e-X4u26i/home/.claude/settings.json and listed 95 added lines, identical to the core's plan, with no line removed; before agreement the button was disabled, a forced click on it and the Enter key changed nothing, and the file, byte for byte, and the backups folder were untouched (also after Cancel); a file edited while the dialog was open produced "nothing was written" and withdrew the agreement; after reading and agreeing again, hooks were added next to the person's own Stop and PreToolUse hooks, theme, permissions and model, with a backup equal to the old file; removal asked the same way and restored the file byte for byte
+- the dialog named /tmp/ms-e2e-HCOtb7/home/.claude/settings.json and listed 95 added lines, identical to the core's plan, with no line removed; before agreement the button was disabled, a forced click on it and the Enter key changed nothing, and the file, byte for byte, and the backups folder were untouched (also after Cancel); a file edited while the dialog was open produced "nothing was written" and withdrew the agreement; after reading and agreeing again, hooks were added next to the person's own Stop and PreToolUse hooks, theme, permissions and model, with a backup equal to the old file; removal asked the same way and restored the file byte for byte
 
 ### A25. Runtime secrets remain outside the repository (PASS)
 
-- data directory data (0700) holds the database (0600), spool, logs and managed settings, and the report text; neither the desktop token nor a device token (msv_...) is on disk in the clear anywhere in the sandbox (152 files scanned); the project's repository was unchanged (29 entries, no .claude or CLAUDE.md); 1112 files of this repository's work tree were scanned for the tokens and the report text: none; the app was launched with the repository as its working directory
+- data directory data (0700) holds the database (0600), spool, logs and managed settings, and the report text; neither the desktop token nor a device token (msv_...) is on disk in the clear anywhere in the sandbox (178 files scanned); the project's repository was unchanged (29 entries, no .claude or CLAUDE.md); 1164 files of this repository's work tree were scanned for the tokens and the report text: none; the app was launched with the repository as its working directory
 
 ### CRIT. Critical cross-project scenario: a report from A is handed off to A's conversation while B is selected (PASS)
 
@@ -187,7 +193,7 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 *Why this check exists:* Regression check for a defect this suite found: the core listened on a random port, so every start had a new web origin and the window lost everything it keeps in localStorage. The core still has to take another port when 47811 is busy, so the check runs twice: on the same origin, and with 47811 held by another listener for the second launch (a different origin), where the window must restore itself from what the core remembers.
 
 - *The window reopens on the project that was selected when it was closed*: the window reopened on Beta, as it was left, on the same origin (http://127.0.0.1:47811)
-- *The window reopens where it was left when the origin changed (the core had to take another port)*: the core could not take its preferred port 47811 for the second launch (a throw-away listener held it) and listened on 33215, so the window's origin changed (http://127.0.0.1:47811 -> http://127.0.0.1:33215) and the localStorage of the old origin could not carry anything over; the window still reopened on Beta, kept Alpha's second conversation (its pane loaded it, not the first one) and kept the setup checklist hidden; the state came from the core's settings (ui.route, ui.perProject, ui.setup)
+- *The window reopens where it was left when the origin changed (the core had to take another port)*: the core could not take its preferred port 47811 for the second launch (a throw-away listener held it) and listened on 42295, so the window's origin changed (http://127.0.0.1:47811 -> http://127.0.0.1:42295) and the localStorage of the old origin could not carry anything over; the window still reopened on Beta, kept Alpha's second conversation (its pane loaded it, not the first one) and kept the setup checklist hidden; the state came from the core's settings (ui.route, ui.perProject, ui.setup)
 
 ### X03. A session that ended says why in words, not as an internal code (PASS)
 
@@ -200,21 +206,52 @@ One entry per test, written by the test itself from what it saw. Nothing here is
 
 *Why this check exists:* Not a product behaviour: it proves the suite's own promise that nothing a test does can reach a real host (other host names do not resolve, from either of the app's network sessions).
 
-- the app runs with host-resolver-rules "MAP chatgpt.com 127.0.0.1:40859, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost" and no proxy; 6 other host names (example.org, example.com, google.com, three openai.com names) all failed with net::ERR_NAME_NOT_RESOLVED from both of the app's network sessions, and none of the 12 attempts reached the stand-in; chatgpt.com answered with status 200 from the stand-in and was recorded as one GET. Host names only: an address typed as an IP number is not covered by host rules, and no test uses one
+- the app runs with host-resolver-rules "MAP chatgpt.com 127.0.0.1:36651, MAP claude.ai 127.0.0.1:36651, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost" and no proxy; 6 other host names (example.org, example.com, google.com, three openai.com names) all failed with net::ERR_NAME_NOT_RESOLVED from both of the app's network sessions, and none of the 12 attempts reached the stand-in; chatgpt.com answered with status 200 from the stand-in and was recorded as one GET. Host names only: an address typed as an IP number is not covered by host rules, and no test uses one
 
 ### X05. A report is handed over and confirmed from the workspace, without going back to Reports (PASS)
 
 *Why this check exists:* Regression check for a known imperfection: after "Copy and open" the report card was out of sight, and "I sent it" was only on the Reports screen. A strip above the two panes now carries both buttons for the selected project; this proves the whole loop in the real window, that the native ChatGPT view stays under the strip in every layout, and that nothing says "sent" before the person does.
 
-- *A report is handed over and confirmed from the workspace, without going back to Reports*: Claude finished "Strip the legacy endpoints" while Alpha was open: a strip "Report ready: ..." appeared above the panes (Copy and open, Open report) and the native view moved below it (view 506x767 equals its slot); "Copy and open" in the strip left the whole message on the clipboard, loaded https://chatgpt.com/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa in the embedded view (the stand-in saw only that GET, the composer stayed empty) and the delivery became awaiting_user_send while the strip said "Waiting for you to send ... It is not marked as sent until you press I sent it."; "I sent it" (keyboard, Enter) made it user_confirmed_sent with one confirmed_sent event after the part_copied one, the strip disappeared, and the queue ("Review awaiting you") and the card ("You confirmed it was sent") agreed; the window never left the workspace until the person opened Reports to look
-- *The strip fits portrait and landscape, a collapsed sidebar, several reports and a very long title*: the strip kept the native view under it in landscape (strip 1348px wide with the sidebar collapsed), in portrait (69px tall, buttons under the text, no horizontal scrolling) and with a 123-character title (cut to two lines, whole in its tooltip and accessible name, "+1 more" for the other report); "Not sure" took the long report out of the strip and the other one took its place
+- *A report is handed over and confirmed from the workspace, without going back to Reports*: Claude finished "Strip the legacy endpoints" while Alpha was open: a strip "Report ready: ..." appeared above the panes (Copy and open, Open report) and the native view moved below it (view 502x747 equals its slot); "Copy and open" in the strip left the whole message on the clipboard, loaded https://chatgpt.com/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa in the embedded view (the stand-in saw only that GET, the composer stayed empty) and the delivery became awaiting_user_send while the strip said "Waiting for you to send ... It is not marked as sent until you press I sent it."; "I sent it" (keyboard, Enter) made it user_confirmed_sent with one confirmed_sent event after the part_copied one, the strip disappeared, and the queue ("Review awaiting you") and the card ("You confirmed it was sent") agreed; the window never left the workspace until the person opened Reports to look
+- *The strip fits portrait and landscape, a collapsed sidebar, several reports and a very long title*: the strip kept the native view under it in landscape (strip 1374px wide with the sidebar collapsed), in portrait (72px tall, buttons under the text, no horizontal scrolling) and with a 123-character title (cut to two lines, whole in its tooltip and accessible name, "+1 more" for the other report); "Not sure" took the long report out of the strip and the other one took its place
 - *A long report is copied part by part from the strip, and "I sent it" comes after the last part*: a 20698-character report (made a report from an unmarked message) showed a strip with "Copy and open" and no prepared message (showing it prepared nothing); each press copied the next part exactly as the core holds it (2 parts, "Part k of 2 is on your clipboard", "k of 2 parts are copied"), "I sent it" appeared only after the last part, and after it the delivery was user_confirmed_sent
 
 ### X06. After /clear inside a managed terminal the Claude pane follows to the new session, and a restart reopens on it (PASS)
 
 *Why this check exists:* Regression check for a known gap: when Claude replaces the conversation inside a running terminal (/clear, /resume) the core keeps the terminal managed under a new session id and the old session becomes history, but the window used to leave the person on the old, ended tab. This proves, in the real window with the fake Claude CLI, that the pane ends on the new session's tab, that it is the same terminal and typing still reaches the process, that the old session stays reachable as ended history, and that a restart reopens on the new session.
 
-- in a managed session 00439f3e the person typed /clear: the fake CLI ended it and started 5ff3ee45 in the same process (pid 31745); the core kept the terminal managed (old session replacedBy 5ff3ee45, new one live and managed), the Claude pane showed exactly one tab, the new session's, selected and not ended, with no "session ended" notice; the screen kept the earlier output and showed the new conversation; typing "after the clear" reached the new session (the old one received nothing more); the Sessions menu listed "00439f3e, managed, Session ended, went on as 5ff3ee45"; the core's settings remembered 5ff3ee45 as the project's tab; after quitting and starting again on the same data directory the pane reopened on 5ff3ee45 (ended, with Resume) and not on 00439f3e
+- in a managed session 369a6a93 the person typed /clear: the fake CLI ended it and started b7952141 in the same process (pid 6751); the core kept the terminal managed (old session replacedBy b7952141, new one live and managed), the Claude pane showed exactly one tab, the new session's, selected and not ended, with no "session ended" notice; the screen kept the earlier output and showed the new conversation; typing "after the clear" reached the new session (the old one received nothing more); the Sessions menu listed "369a6a93, managed, Session ended, went on as b7952141"; the core's settings remembered b7952141 as the project's tab; after quitting and starting again on the same data directory the pane reopened on b7952141 (ended, with Resume) and not on 369a6a93
+
+### X07. A folder picked for a project that has none is saved, shown, and still there after a restart (PASS)
+
+*Why this check exists:* Regression check for a reported defect: in the old project dialog Browse only filled the "Add a folder" field, the folder joined the project through a second button, and Save then said "No changes to save" and discarded it while the header kept saying "No folder yet". This does what the report did in the real window (Browse in the settings of a project made from a GitHub repository alone, then Done, nothing in between), checks the folder is listed at once, stored and shown, then restarts the app and checks it is still there and that a local session starts in it. The settings now apply every change as it is made, so the class of defect (a draft that is compared and discarded) no longer exists; this test keeps the behaviour pinned.
+
+- a GitHub-only project had no folder; Browse listed /tmp/ms-e2e-c0KQ3L/repos/CaissaTrainer at once and the core held it before the dialog was closed; Done then closed with no "No changes to save", the header showed the folder, and after a quit and a start on the same data directory the folder was still there and a local session started in it
+
+### X08. The embedded ChatGPT page is zoomed to follow its pane (Automatic keeps about 900 CSS pixels), fixed sizes apply, layout changes never replace the page, and the page still takes clicks, selection, scrolling and its own Copy button (PASS)
+
+*Why this check exists:* Mitigation check for a reported overlap of ChatGPT's floating controls with the writing blocks. The cause is a hypothesis that could not be checked against the real site: a split pane gives ChatGPT only about 500 to 650 CSS pixels, where a responsive site tends to switch to its compact layout. Mini-Summa answers by zooming the view out, never by touching the page. This proves the mechanism in the real window against a stand-in page that reports its own window.innerWidth: Automatic gives a narrow pane a wider page (at least the narrower of 900 and what the 70 percent floor allows) at several window sizes and divider positions, fixed sizes apply exactly, a wide pane stays at 100 percent; hiding, maximizing the other pane, Settings, a dialog and a window resize keep the same web contents, the same page and a typed draft; a real click, double click, wheel and the page's own Copy button still work while zoomed, and a page on another origin (Chromium keeps zoom per host, so it would start at 100 percent) has the zoom put back at once. It proves nothing about ChatGPT's real layout, and the overlap itself was not reproduced.
+
+- *Automatic gives a narrow pane a wider page, fixed sizes apply, and a wide pane stays at 100 percent*: the stand-in page reported window.innerWidth through the real window. Automatic by window and pane: 960x600 side-by-side: pane 342 DIP, zoom 70%, page 488 CSS px; 1280x720 side-by-side: pane 502 DIP, zoom 70%, page 717 CSS px; 1440x900 side-by-side: pane 582 DIP, zoom 70%, page 831 CSS px; 1920x1080 side-by-side: pane 822 DIP, zoom 91%, page 903 CSS px; 1000x1300 stacked: pane 732 DIP, zoom 81%, page 903 CSS px; 1600x900 divider 30%: pane 397 DIP, zoom 70%, page 567 CSS px; 1600x900 divider 50%: pane 662 DIP, zoom 73%, page 906 CSS px; 1600x900 divider 70%: pane 926 DIP, zoom 100%, page 926 CSS px; 1600x900 divider 85%: pane 1125 DIP, zoom 100%, page 1125 CSS px. A pane narrower than 630 DIP was held at 70 percent, one between 630 and 900 DIP got a zoom in between, and from 900 DIP the page stayed at 100 percent with innerWidth equal to the pane. In the 502 DIP pane the fixed sizes applied exactly: 100 percent gives 502 CSS px, 90 percent gives 557 CSS px, 80 percent gives 627 CSS px, 70 percent gives 717 CSS px; 80 percent also held in a 822 DIP pane; Automatic came back at 91 percent. The native view equalled its pane slot at every size, the Mini-Summa window itself stayed at zoom 1, the page was fetched once and never reloaded. This proves the mechanism against a stand-in page, not ChatGPT's own layout: the overlap was not reproduced
+- *Changing the layout, opening Settings or a dialog and changing the page size keep the same ChatGPT page*: a draft typed into the stand-in's text area and the page's own id (set once per document) stayed the same, and the view kept its web contents id (2) and was the only one in the ChatGPT session, through: both panes (visible 562 DIP, zoom 70%); ChatGPT alone (visible 1132 DIP, zoom 100%); Claude alone (hidden); both panes again (visible 562 DIP, zoom 70%); Settings open (hidden); back from Settings (visible 562 DIP, zoom 80%); a dialog open (hidden); dialog closed (visible 562 DIP, zoom 70%); tall window (visible 732 DIP, zoom 81%); big window (visible 822 DIP, zoom 91%); smallest window (visible 342 DIP, zoom 70%). The page size was changed in Settings while the view was hidden and was in force when the workspace returned. The log shows one "chatgpt view created" and the stand-in served the page once, so nothing recreated or reloaded it
+- *While zoomed out, the page still takes clicks, text selection, scrolling and its own Copy button (the one clipboard permission)*: at 70 percent (a 502 DIP pane in Automatic, the page seeing 717 CSS px) a real mouse click at the zoomed position of the page's Copy button put its Markdown (76 characters) on the clipboard, a double click selected the word under it, the wheel scrolled the page by 200 CSS px; the page was told that clipboard-write is granted and that clipboard-read, camera, microphone, location and notifications are denied, and a readText() call was rejected. The one permission the view grants is clipboard-sanitized-write
+- *A page on another origin starts at 100 percent in Chromium, and the zoom is applied to it at once*: the view was sent to a page on another origin (a data: page standing in for the sign-in host) and back to the conversation. Chromium committed the other page at zoom 1 (it keeps zoom per host and starts a host it has not seen at 1) and the conversation at 0.7; by the time did-navigate and dom-ready had been handled the zoom was 70 percent again each time, so the other page saw 717 CSS px in the 502 DIP pane instead of 502
+
+### X09. Claude Code on the web opens in a native view of its own, on demand, with one GET and nothing typed in the page; hiding keeps the page, links and sign-in follow the policy, and its profile is separate from ChatGPT's (PASS)
+
+*Why this check exists:* Browser based integration check for the Cloud tab of the Claude pane: Mini-Summa shows the page, it does not control the session. The renderer's tab is not part of it. The test calls window.miniSumma.claudeWeb through the real preload and IPC, as the tab does, and reads the result from the main process and from a local stand-in for claude.ai. It proves the view is created on demand; that claude.ai/code?repositories=acme/webapp makes exactly one GET with the query and no cookie and that the page records no input, key, paste, submit or click; that the state goes loading to ready with the title; that hiding, moving, resizing the window, the overlay switch and a real dialog keep the same web contents, the same document and a half written draft, with no second request and no second view; that other sites go to the default browser, refused addresses go nowhere and Claude pages stay in the view; that one overlay switch hides and restores both native views and never shows a hidden one; that a signed-out visit is login_required; that only https claude.ai/code addresses are accepted; that a cookie in one profile is never sent by the other view and a cookie with an expiry survives a quit and a start. It proves nothing about the real claude.ai (its markup, its sign-in, whether it accepts an embedded browser): that needs a real sign-in on Windows.
+
+- *Claude Code on the web opens in a view of its own on demand: one GET of the address given, nothing typed or clicked, hidden and shown without losing the page*: before any navigate no Claude view existed, and a rectangle alone created none; navigate(https://claude.ai/code?repositories=acme/webapp) created one in the persist:claude profile at 640x520, the stand-in received exactly one request (GET /code?repositories=acme/webapp, no cookie, the profile's own user agent), the page recorded no input, key, paste, submit or click, and the state went loading then ready with the page title; hiding (null rectangle) and showing again kept the same web contents, address and document and made no request; asking again for the shown page made none; a second page, back, forward and reload stayed in the same view; the page had no Node, preload or Mini-Summa API
+- *Links and windows opened by the Claude page: other sites go to the default browser, refused addresses go nowhere, Claude and sign-in pages stay in the view; one overlay switch covers both native views*: from the Claude page: location set to and window.open of another site were handed to shell.openExternal exactly once each and never loaded (the view, the window count and the stand-in log did not change); mailto:, ms-settings:, plain http, file: and about:blank went nowhere; window.open of a session address (claude.ai/code followed by the session id) loaded in the same view and made no window; one setOverlayActive switch hid and restored the ChatGPT and Claude views together and never showed a view whose rectangle was null
+- *A signed-out visitor is reported as login_required, addresses that are not claude.ai/code are refused, and the Claude and ChatGPT views keep separate profiles*: signed out, claude.ai/code redirected to /login and the state was login_required with a note that calls itself a guess (GET /code?repositories=acme/webapp then GET /login, nothing typed); signed in again it was ready; 13 addresses that are not https claude.ai/code (other sites, http, no scheme, javascript:, file:, another part of claude.ai, credentials, a space, empty, a number) were rejected with "Invalid Claude Code address" and reached neither the view nor the stand-in; bad bounds and a bad overlay flag were rejected; the page was denied geolocation, notifications, camera, microphone and clipboard-read and granted clipboard-write; with a cookie for each host in each profile, each view sent only its own (jar=claude-profile, jar=chatgpt-profile) and the two profiles are different sessions
+- *The Claude page, its web contents and a half written draft survive hiding, moving, resizing the window, the overlay switch and a dialog of the window*: after the person typed a draft into the Claude page, the same web contents (id 2), the same document (a marker set in it) and the same draft were still there, with no second request, no second "view created" line in the main log, no new window and no state change, after: hiding and showing, three rectangles, four window sizes (960x600 to 1000x1300, the view clamped into the content area), the overlay switch, and a real New project dialog (its overlay request hid the view and closing the dialog brought it back); the person could then carry on typing, and the page recorded only that typing
+- *The sign-in of each site stays in its own profile across a quit and a start, and only the Claude view sends the Claude cookie*: a cookie with an expiry in each profile (persist:claude for claude.ai, persist:chatgpt for chatgpt.com) was still there after a quit through the app's own quit flow and a start on the same data directory, each profile held only its own, the Claude view did not exist until a page was asked for, and its first request carried exactly the cookie of its own profile
+
+### X10. A workspace made from an existing ChatGPT Project and a GitHub repository, with no folder, opens the project in ChatGPT, offers cloud but not local, opens Claude Code on the web with the repository preselected, switches views without losing anything, and keeps every association across a restart (PASS)
+
+*Why this check exists:* The round-3 journey end to end in the real window: Add project from a pasted ChatGPT Project address (query and fragment dropped, nothing imported), the GitHub repository added in settings, no folder; the linked project page in the embedded ChatGPT with the page size mechanism at work; the Cloud entry opening claude.ai/code?repositories=owner/repo with nothing typed, clicked or submitted and no local session started in its place; Split, Claude and ChatGPT views switched with the same two native views, the same draft and no new request; a restart that keeps the project, its repository, its ChatGPT Project link, the absence of a folder and the Cloud tab's page. Both sites are local stand-ins, so this says nothing about the real chatgpt.com or claude.ai, nor about Windows.
+
+- against local stand-ins for chatgpt.com and claude.ai only (NOT the real sites, NOT Windows): a workspace made from an existing ChatGPT Project address (query and fragment dropped, nothing imported) with a GitHub repository and no folder showed the project page in the embedded ChatGPT (page 717 CSS px wide in a 502 DIP pane), offered cloud but not local, opened Claude Code on the web at ?repositories=acme/caissa-trainer with nothing typed, clicked or submitted and no local session started in its place, switched Split, Claude only, ChatGPT only and Split with the same two views, the same draft and no new request, and after a quit and a start kept every association and reopened the Cloud tab on its page
 
 ## Not tested
 
@@ -249,3 +286,16 @@ npm run e2e:report           # rebuild this file from the last run's results
 ```
 
 A failed test keeps a screenshot, the app's output and its logs under `apps/desktop/e2e/results/artifacts/`. `e2e/results/` is not committed.
+
+## Recent complete runs on the machine that produced this report
+
+One line per `npm run e2e` that ran every test. Runs are recorded by `e2e/run.mjs` in `apps/desktop/e2e/results/runs.jsonl` (not committed).
+
+| Started | Duration (build included) | Behaviours (A01 to A25 and CRIT) | Extra checks | Exit code |
+| --- | --- | --- | --- | --- |
+| 2026-10-30 18:04 UTC | 2 min 23 s | 25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED | 4 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED | 0 |
+| 2026-10-30 18:06 UTC | 2 min 27 s | 25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED | 4 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED | 0 |
+| 2026-10-30 20:10 UTC | 3 min 39 s | 24 PASS, 1 FAIL, 1 PARTIAL, 0 NOT TESTED | 4 PASS, 1 FAIL, 0 PARTIAL, 0 NOT TESTED | 1 |
+| 2026-10-30 20:21 UTC | 2 min 51 s | 25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED | 5 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED | 0 |
+| 2026-10-30 20:57 UTC | 3 min 03 s | 25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED | 6 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED | 0 |
+| 2026-10-31 00:38 UTC (this report) | 3 min 43 s | 25 PASS, 0 FAIL, 1 PARTIAL, 0 NOT TESTED | 10 PASS, 0 FAIL, 0 PARTIAL, 0 NOT TESTED | 0 |

@@ -43,24 +43,39 @@ The first screen is a checklist built from facts Mini-Summa reads, not from boxe
 another way.
 
 1. **Claude Code is installed.** Mini-Summa looks in Windows and in every WSL2 distribution and shows the version it found.
-   If it found none, install Claude Code and press **Refresh**. A message names what is missing; it does not guess.
-2. **Create your first project.** A project is a name plus one or more repository folders.
+   If it found none, install Claude Code and press **Refresh**. A message names what is missing; it does not guess. This step, and
+   the two that need a folder (a conversation, a session), are optional while every project is a GitHub-only or ChatGPT-only one.
+2. **Create your first project.** A project needs only a name. Everything else is optional and independent: a ChatGPT Project, a
+   GitHub repository, local folders.
 3. **Add its ChatGPT conversation.** See below.
 4. **Choose how ChatGPT opens.** Inside Mini-Summa, or in your browser.
 5. **Install Claude hooks** (optional). See below.
-6. **Start a Claude session.**
+6. **Start a Claude session.** Local (needs a folder) or cloud (needs a GitHub repository).
 
-## Register a project
+## Add a project
 
-**New project** (the plus next to Projects in the sidebar) asks for:
+**New project** (the button at the top of the sidebar) asks how the project starts. Choose one of four, give the one thing it needs,
+check the name and press **Create project**:
 
-* a **name** (shown everywhere, so choose the one you would say aloud: "GitManager");
-* the **repository folder**, picked with the Windows folder picker. For work inside WSL2, choose the folder in the distribution
-  (`\\wsl$\Ubuntu\home\you\project` or the Linux path); Windows and WSL2 folders are kept apart and are never merged;
-* optionally the GitHub repository (`owner/repo`) and a description;
-* where **new sessions start**: Windows or a WSL2 distribution.
+* **ChatGPT Project**: paste the address of a ChatGPT Project you already have (open it in ChatGPT and copy the address bar). The
+  title is read from the words in the address. Only the address is saved; nothing in the project is imported or synced, and an
+  invitation token pasted with it is dropped. OpenAI offers no way to list your projects, so pasting is the way
+  ([CHATGPT_PROJECTS.md](CHATGPT_PROJECTS.md)).
+* **GitHub repository**: `owner/repo`, or any way of pasting it (a link, a clone address). No folder, no clone.
+* **Local folder**: **Browse** or type a path (for work inside WSL2 choose the folder in the distribution; Windows and WSL2 folders
+  are kept apart and never merged). The path must exist.
+* **Empty project**: just a name. Add the rest later.
 
-A project can have several folders (a monorepo with a separate docs folder, say). A Claude session belongs to the project
+The name suggests itself from what you gave (the project's title, the repository name or the folder name); type another if you
+like. A project that has only a GitHub repository is complete, not unfinished.
+
+**Project settings** (the pencil in the workspace header, or the project's menu in the sidebar) holds the rest, in order: Name,
+ChatGPT Project (link, change, open, unlink), GitHub repository, Local folders (Browse adds the folder at once; a typed path with
+Enter) and the ChatGPT conversations used for reports. **Every change is applied as you make it** and shows "Saved"; there is no Save
+button and nothing is thrown away: **Done** (or Esc) first finishes whatever you typed, and keeps the dialog open to tell you if
+something cannot be saved.
+
+A project can have several folders (a monorepo with a separate docs folder, say). A local Claude session belongs to the project
 whose folder it runs in.
 
 ## Map ChatGPT conversations
@@ -70,8 +85,10 @@ to which project, once:
 
 1. Open the existing conversation in ChatGPT (in the app or in your browser).
 2. Copy its address from the address bar. It looks like `https://chatgpt.com/c/0a1b2c3d-...`.
-3. In the project, **Add conversation** and paste it. Mini-Summa checks the address, shows the cleaned-up form it will use
-   and warns if it is a project page or a landing page rather than one conversation.
+3. In the project's settings, under ChatGPT conversations, paste it into **Conversation address** and press **Add conversation**.
+   Mini-Summa checks the address, shows the cleaned-up form it will use and warns if it is a project page or a landing page rather
+   than one conversation. If the ChatGPT pane is showing a conversation of a linked ChatGPT Project, **Use this conversation for
+   reports** does the same in one press.
 
 A project can have several conversations: give them titles and mark one **preferred**. A report goes to the conversation bound
 to its Claude session, then to the project's preferred conversation, then to the project's only conversation. If none of these
@@ -93,10 +110,22 @@ later does not move reports already waiting. Changing a waiting delivery's desti
 
 Either way the handoff itself is the same: the message is on your clipboard and you paste it.
 
+**Page size** (Settings, ChatGPT, only for the embedded view): Automatic (default), 100%, 90%, 80% or 70%. It is the view's own
+browser zoom, what Ctrl and minus do in a browser. In a narrow pane Automatic zooms out so that ChatGPT gets about 900 CSS pixels
+(never below 70%); it was added against ChatGPT's floating controls overlapping the writing blocks, a report that could not be
+reproduced here. Choose 100% if you want the text large and do not see the overlap. Details and the check to run on your PC:
+[CHATGPT_PANE.md](CHATGPT_PANE.md).
+
 ## Use Claude Code
 
-Select a project and press **New session**. A real Claude Code terminal starts on the right (or below, in portrait) in the
-project's folder. Type in it as you would anywhere else.
+Select a project. In the Claude pane, **New local session** (the button of an empty pane, or the **+** next to the tabs) starts a real
+Claude Code terminal on the right (or below, in portrait) in the project's folder. Type in it as you would anywhere else.
+
+**Local or cloud is chosen for each session, and one is never started in place of the other.** A local session needs a folder; a
+cloud session needs a GitHub repository. When one is not possible the menu says why and offers the way to fix it. **New cloud
+session** opens the **Cloud** tab: the page of Claude Code on the web with your repository preselected. Nothing starts until you
+write the task and submit on that page. Mini-Summa only shows the page; it cannot see whether a cloud session is working, done or
+waiting, and sends no notification for one. Read [CLOUD_SESSIONS.md](CLOUD_SESSIONS.md) before relying on it.
 
 * The line above the terminal always says where your keystrokes go: "Input goes to: GitManager / Session a1b2c3d4 (managed,
   Windows)". Sessions you started in another terminal are shown as **observed**: you can read their state, not type into them.
@@ -112,8 +141,11 @@ project's folder. Type in it as you would anywhere else.
   ("Quit and end terminals" or Cancel), then hides the window, ends the terminals, stops the local service and exits. The tray icon
   offers Open, Quiet mode and Quit.
 * The window follows its shape: ChatGPT on the left and Claude on the right when it is wide, ChatGPT above Claude when it is
-  tall. Drag the divider to change the proportion (it is remembered per orientation), double-click a pane header or use
-  Ctrl+Shift+arrow to maximize one pane, and choose the orientation yourself in the view menu if you do not want automatic.
+  tall. Drag the divider to change the proportion (it is remembered per orientation) and choose the orientation yourself in the
+  layout menu if you do not want automatic. The **Workspace view** control in the header shows **Split**, **ChatGPT** only or
+  **Claude** only (Ctrl+Shift+Left and Ctrl+Shift+Right do the same while the keyboard is in the Mini-Summa window). Nothing is closed
+  or reloaded when you switch: the hidden pane keeps its page, its half-written message and its terminal.
+* **Search** (the entry under New project, or Ctrl+Shift+P) switches project by typing part of its name, repository or folder.
 
 ## Reports and the handoff
 
@@ -161,6 +193,10 @@ Sessions you start yourself are observed: reports, activity and notifications wo
 | ChatGPT will not sign in inside the app | Use email sign-in, or Settings, ChatGPT, open in your browser. |
 | Port in use at start | Another program uses 47811. Mini-Summa takes another free port. If Tailscale Serve was publishing the old port, Settings, Remote access says so and offers to re-point it; the phone address is not offered until it points at the right port. |
 | A report says "no destination" | The project has no conversation mapped. Add one and the report can be handed off. |
+| "Local sessions need a folder" | The project has no folder. Open its settings and add one, or use **New cloud session** if it has a repository. |
+| The Cloud tab asks you to sign in, or sign-in is refused | Sign in on the page. If your sign-in method (Google, say) is refused inside Mini-Summa, use an email address or **Open in your browser**. |
+| ChatGPT looks small | Settings, ChatGPT, Page size: choose 100%. |
+| "Send a test notification" shows nothing | Windows Settings, System, Notifications, Mini-Summa must be on and Focus assist off. |
 | No toasts | Windows Focus assist or Do not disturb is on, or Mini-Summa quiet mode is on. |
 
 Logs: `%APPDATA%\Mini-Summa\logs\main.log` (the application shell: start, quit, links, second launches) and
