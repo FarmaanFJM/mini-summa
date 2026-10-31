@@ -85,6 +85,44 @@ export const chatgptView = (app: ElectronApplication): Promise<ChatGptViewInfo |
   };
 });
 
+/**
+ * Every ChatGPT view the app has, one per project when live views are on (all in the persist:chatgpt session), oldest first. The views are
+ * told apart by their web contents id, which never changes for a view that lives and is new for a view that was unloaded and made again.
+ */
+export const chatgptViews = (app: ElectronApplication): Promise<ChatGptViewInfo[]> => app.evaluate(({ BrowserWindow, session, webContents }) => {
+  const partition = session.fromPartition('persist:chatgpt');
+  const win = BrowserWindow.getAllWindows()[0];
+  return webContents.getAllWebContents().filter((w) => !w.isDestroyed() && w.session === partition).map((contents) => {
+    const view = win.contentView.children.find((c) => (c as unknown as { webContents?: unknown }).webContents === contents);
+    return {
+      id: contents.id, url: contents.getURL(), title: contents.getTitle(), loading: contents.isLoading(),
+      bounds: view ? view.getBounds() : null, visible: view ? view.getVisible() : null, focused: contents.isFocused(), userAgent: contents.getUserAgent(),
+    };
+  }).sort((a, b) => a.id - b.id);
+});
+
+/** Plays the PAGE of one ChatGPT view (by web contents id): the product never runs a script in it. */
+export const inChatgptView = <T = unknown>(app: ElectronApplication, contentsId: number, code: string): Promise<T> => app.evaluate(async ({ webContents }, args) => {
+  const contents = webContents.fromId(args.contentsId);
+  if (!contents || contents.isDestroyed()) throw new Error(`There is no web contents ${args.contentsId}.`);
+  return await contents.executeJavaScript(args.code, true);
+}, { contentsId, code });
+
+/** The PERSON types into the text area of one ChatGPT view (by web contents id). */
+export const typeIntoView = (app: ElectronApplication, contentsId: number, text: string): Promise<void> => app.evaluate(async ({ webContents }, args) => {
+  const contents = webContents.fromId(args.contentsId);
+  if (!contents || contents.isDestroyed()) throw new Error(`There is no web contents ${args.contentsId}.`);
+  await contents.executeJavaScript('document.getElementById("composer").focus()', true);
+  contents.insertText(args.text);
+}, { contentsId, text });
+
+/** What is in the text area of one ChatGPT view right now. */
+export const composerOf = (app: ElectronApplication, contentsId: number): Promise<string> => app.evaluate(async ({ webContents }, id) => {
+  const contents = webContents.fromId(id);
+  if (!contents || contents.isDestroyed()) return '';
+  return String(await contents.executeJavaScript('(document.getElementById("composer") || {}).value || ""', true));
+}, contentsId);
+
 /** What the embedded Claude Code on the web view looks like from the main process; the same facts as for the ChatGPT view. */
 export type ClaudeWebViewInfo = ChatGptViewInfo;
 

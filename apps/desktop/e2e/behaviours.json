@@ -103,6 +103,11 @@
     {
       "id": "CRIT",
       "title": "Critical cross-project scenario: a report from A is handed off to A's conversation while B is selected"
+    },
+    {
+      "id": "X11",
+      "title": "A project reopens its ChatGPT pane on the last page used in it, through switching projects and a restart; each project keeps a live ChatGPT view within a bound, and an unloaded view is announced and loads again at its last address",
+      "why": "The persistent-workspace requirement in the real window: a conversation opened in ChatGPT (by an in-page navigation and by a link that loads a document) is remembered per project in the core, only when it belongs to the project (the linked ChatGPT Project's own pages; settings, the home page and another project's pages are not), and neither creates a project nor maps a conversation (projects.list identical); switching among three projects shows each one's own last address in its own web contents with no request; a restart reopens every project on its last address, not its project page; an unlinked project and a project with nothing keep working; the header action opens the linked project page. With five projects: a draft typed in one project's view survives switching away and back (same web contents id), the bound of four live views holds, the fifth view unloads the least recently used one with a notice that unsent text is gone and names the address it reloads at, the project then loads exactly that address into a new web contents with an empty draft; a local Claude session, a notification click and the Workspace view control still work. The pages are a local stand-in for chatgpt.com navigated by the test (pushState and a link), so this says nothing about how the real site navigates, nothing about drafts surviving a restart or an unload (they do not, and the docs say so), and nothing about Windows (NOT TESTED)."
     }
   ],
   "extras": [

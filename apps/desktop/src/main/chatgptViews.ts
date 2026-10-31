@@ -14,7 +14,7 @@
 // What this file keeps from chatgptView.ts: a view is never destroyed because of layout, hiding, an overlay or a window change. The
 // ONLY thing that destroys one is `evict`, called only when a new view is needed and the bound is reached.
 //
-// Calls without a key act on the active view (the one most recently placed, navigated or focused), and with nothing active on a default
+// Calls without a key act on the active view (the one most recently placed or focused), and with nothing active on a default
 // one, which is how the single view worked before there were keys.
 import type { ChatGptOpenResult, ChatGptViewState, Rect } from '@minisumma/shared';
 import { ChatGptView } from './chatgptView.ts';
@@ -77,7 +77,8 @@ export class ChatGptViews {
   private readonly maxLive: number;
 
   constructor(private readonly deps: ChatGptViewsDeps) {
-    this.maxLive = Math.max(1, deps.maxLive ?? MAX_LIVE_CHATGPT_VIEWS);
+    // At least two: the active view is never unloaded, and a new view needs room that is not the active one's.
+    this.maxLive = Math.max(2, deps.maxLive ?? MAX_LIVE_CHATGPT_VIEWS);
   }
 
   // ---- what the renderer controls (each call may name a project's view) ---------------------------------------------
@@ -110,7 +111,8 @@ export class ChatGptViews {
 
   async navigate(rawUrl: string, key?: string): Promise<void> {
     const k = this.resolve(key);
-    this.active = k;
+    // Loading a page does not make a view the active one: placing it on screen does (setBounds). A late navigation of the project that was
+    // just left must not take the active place, and so protection from eviction, away from the view that is on screen.
     this.touch(k);
     await this.entry(k).view.navigate(rawUrl);
   }
@@ -206,7 +208,7 @@ export class ChatGptViews {
     let oldest = Infinity;
     for (const [k, e] of this.entries) {
       if (k === except || k === this.active || !e.view.hasView) continue;
-      if (e.used < oldest) { oldest = e.used; victim = k; }
+      if (e.used > oldest || oldest === Infinity) { oldest = e.used; victim = k; }
     }
     if (victim === undefined) return false;
     this.evict(victim);

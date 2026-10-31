@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-${{ github.ref }}
-  cancel-in-progress: true
+  group: windows-${{ github.sha }}-${{ github.event_name }}
+  cancel-in-progress: false
 
 env:
   # No telemetry, no update prompts, quieter logs.

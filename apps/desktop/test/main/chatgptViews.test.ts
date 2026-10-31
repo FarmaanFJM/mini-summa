@@ -112,22 +112,41 @@ describe('the bound', () => {
     expect(s.notices.map((n) => n.key)).toEqual(['a', 'b', 'c']);
   });
 
-  it('never evicts the active view, even when it is the oldest', async () => {
+  it('never evicts the active view, even when it is the least recently used one', async () => {
+    const s = setup(2);
+    await s.show('a', page('1'));
+    await s.show('b', page('2'));
+    s.views.setBounds(RECT, 'a'); // a is on screen (active)
+    await s.views.navigate(page('2'), 'b'); // b is used after a, so a is now the least recently used
+    await s.views.navigate(page('3'), 'c'); // a late navigation of another project: it needs room
+    expect(s.notices.map((n) => n.key)).toEqual(['b']);
+    expect(s.views.activeKey).toBe('a');
+    expect(s.views.liveKeys().sort()).toEqual(['a', 'c']);
+    expect(s.made[0].destroyed).toBe(0);
+  });
+
+  it('a navigation does not take the active place from the view on screen', async () => {
+    const s = setup();
+    await s.show('a', page('1'));
+    await s.views.navigate(page('2'), 'b');
+    expect(s.views.activeKey).toBe('a');
+  });
+
+  it('the bound is never below two live views, so the active one and a new one always fit', async () => {
     const s = setup(1);
     await s.show('a', page('1'));
     await s.show('b', page('2'));
-    expect(s.notices.map((n) => n.key)).toEqual(['a']);
-    expect(s.views.liveKeys()).toEqual(['b']);
-    expect(s.views.activeKey).toBe('b');
-    expect(s.made[1].destroyed).toBe(0);
+    expect(s.notices).toEqual([]);
+    expect(s.views.liveKeys().sort()).toEqual(['a', 'b']);
   });
 
   it('a project that was unloaded gets a new view when it loads again, at the address it is given', async () => {
-    const s = setup(1);
+    const s = setup(2);
     await s.show('a', page('1'));
     await s.show('b', page('2'));
-    await s.show('a', page('1'));
-    expect(s.made).toHaveLength(3);
+    await s.show('c', page('3')); // a is unloaded
+    await s.show('a', page('1')); // a again: a new view, and b (the least recently used) makes room
+    expect(s.made).toHaveLength(4);
     expect(s.views.getState('a').url).toBe(page('1'));
     expect(s.notices.map((n) => n.key)).toEqual(['a', 'b']);
   });

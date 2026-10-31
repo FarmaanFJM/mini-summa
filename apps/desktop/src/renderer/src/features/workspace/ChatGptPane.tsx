@@ -159,7 +159,7 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
     const target = pageToOpen({ projectId: project.id, remembered: rememberedNow, selected, linked });
     if (target === null) { activated.current = project.id; return undefined; }
     const marker = target.from === 'last' ? `last|${project.id}|${target.url}` : normalMarker;
-    if (lastNavigated.current === marker) return undefined;
+    if (!activation && lastNavigated.current === marker) return undefined; // opening a project always looks; a repeat of the same request does not
     let cancelled = false;
     const token = owner.current;
     (async () => {
