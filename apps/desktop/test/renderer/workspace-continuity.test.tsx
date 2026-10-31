@@ -187,3 +187,86 @@ describe('the "Open project page" action', () => {
     expect(within(chatgpt()).queryByRole('button', { name: 'Open project page' })).toBeNull();
   });
 });
+
+describe('live views: a ChatGPT view for each project', () => {
+  const calls = (fn: unknown) => (fn as ReturnType<typeof vi.fn>).mock.calls;
+
+  it('names the project\'s view in every call: its bounds, its state, its navigation', async () => {
+    stubWorkspaceGeometry();
+    const fake = createFakeNative({ liveViews: true });
+    const app = await renderApp({ native: fake });
+    const a = await app.demo.call('projects.create', { body: { name: 'Alpha', roots: [], chatgptProject: { url: projectPage(SCOPE_A) } } });
+    act(() => app.runtime.route.getState().selectProject(a.id));
+    await waitFor(() => expect(calls(fake.native.chatgpt.navigate).at(-1)).toEqual([projectPage(SCOPE_A), a.id]));
+    await waitFor(() => expect(fake.boundsOf(a.id)).toBeTruthy());
+    expect(calls(fake.native.chatgpt.getState).every((c) => c.length === 1 || c[0] === undefined)).toBe(true);
+    expect(calls(fake.native.chatgpt.getState).some((c) => c[0] === a.id)).toBe(true);
+  });
+
+  it('hides the view of the project that was left and shows the view of the project selected, without closing anything', async () => {
+    stubWorkspaceGeometry();
+    const fake = createFakeNative({ liveViews: true });
+    const app = await renderApp({ native: fake });
+    const a = await app.demo.call('projects.create', { body: { name: 'Alpha', roots: [], chatgptProject: { url: projectPage(SCOPE_A) } } });
+    const b = await app.demo.call('projects.create', { body: { name: 'Beta', roots: [], chatgptProject: { url: projectPage(SCOPE_B) } } });
+    act(() => app.runtime.route.getState().selectProject(a.id));
+    await waitFor(() => expect(fake.boundsOf(a.id)).toBeTruthy());
+    act(() => app.runtime.route.getState().selectProject(b.id));
+    await waitFor(() => expect(fake.boundsOf(b.id)).toBeTruthy());
+    await waitFor(() => expect(fake.boundsOf(a.id)).toBeNull());
+    expect(fake.native.chatgpt.setOverlayActive).not.toHaveBeenCalled();
+  });
+
+  it('leaves a project\'s live view as it is when the project is selected again (no navigation), and loads the remembered page into a view that has none', async () => {
+    stubWorkspaceGeometry();
+    const fake = createFakeNative({ liveViews: true });
+    const app = await renderApp({ native: fake });
+    const a = await app.demo.call('projects.create', { body: { name: 'Alpha', roots: [], chatgptProject: { url: projectPage(SCOPE_A) } } });
+    const b = await app.demo.call('projects.create', { body: { name: 'Beta', roots: [], chatgptProject: { url: projectPage(SCOPE_B) } } });
+    const route = () => app.runtime.route.getState();
+    act(() => route().selectProject(a.id));
+    await waitFor(() => expect(calls(fake.native.chatgpt.navigate).at(-1)).toEqual([projectPage(SCOPE_A), a.id]));
+    act(() => fake.emitView({ url: chatIn(SCOPE_A, '1') }, a.id)); // the person is in a conversation of Alpha, with a draft
+    expect(route().chatgptUrlByProject[a.id]).toBe(chatIn(SCOPE_A, '1'));
+    act(() => route().selectProject(b.id));
+    await waitFor(() => expect(calls(fake.native.chatgpt.navigate).at(-1)).toEqual([projectPage(SCOPE_B), b.id]));
+    const before = calls(fake.native.chatgpt.navigate).length;
+    act(() => route().selectProject(a.id));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(calls(fake.native.chatgpt.navigate).length).toBe(before); // Alpha's view still has its page: nothing was loaded
+    // Alpha's view is unloaded (idle again): selecting it loads the remembered page, not the project page.
+    act(() => route().selectProject(b.id));
+    act(() => fake.emitView({ url: null, status: 'idle', title: null }, a.id));
+    act(() => route().selectProject(a.id));
+    await waitFor(() => expect(calls(fake.native.chatgpt.navigate).at(-1)).toEqual([chatIn(SCOPE_A, '1'), a.id]));
+  });
+
+  it('records each project\'s pages from its own view only: a page of one project\'s view is never taken for another\'s', async () => {
+    stubWorkspaceGeometry();
+    const fake = createFakeNative({ liveViews: true });
+    const app = await renderApp({ native: fake });
+    const free1 = await app.demo.call('projects.create', { body: { name: 'Free one', roots: [] } });
+    const free2 = await app.demo.call('projects.create', { body: { name: 'Free two', roots: [] } });
+    const route = () => app.runtime.route.getState();
+    act(() => { route().selectChatGptUrl(free1.id, plain('1')); route().selectChatGptUrl(free2.id, plain('2')); route().selectProject(free1.id); });
+    await waitFor(() => expect(fake.boundsOf(free1.id)).toBeTruthy());
+    act(() => route().selectProject(free2.id));
+    await waitFor(() => expect(fake.boundsOf(free2.id)).toBeTruthy());
+    act(() => fake.emitView({ url: plain('7') }, free1.id)); // the first project's view reports a page while the second is on screen
+    expect(route().chatgptUrlByProject[free2.id]).toBe(plain('2'));
+    act(() => fake.emitView({ url: plain('8') }, free2.id));
+    expect(route().chatgptUrlByProject[free2.id]).toBe(plain('8'));
+  });
+
+  it('says in a toast, with the project\'s name and the page it will reload at, that a view was unloaded and that unsent text is gone', async () => {
+    stubWorkspaceGeometry();
+    const fake = createFakeNative({ liveViews: true });
+    const app = await renderApp({ native: fake });
+    const a = await app.demo.call('projects.create', { body: { name: 'Alpha', roots: [], chatgptProject: { url: projectPage(SCOPE_A) } } });
+    act(() => { app.runtime.route.getState().selectChatGptUrl(a.id, chatIn(SCOPE_A, '1')); });
+    act(() => fake.emitNotice({ kind: 'unloaded', key: a.id, url: chatIn(SCOPE_A, '9') }));
+    const expected = `The ChatGPT page of Alpha was unloaded to save memory. Unsent text there is gone; the page will reload at ${chatIn(SCOPE_A, '1')}.`;
+    expect(await screen.findByText(expected)).toBeTruthy();
+    expect(expected).not.toContain(String.fromCharCode(8212));
+  });
+});

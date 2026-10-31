@@ -1,5 +1,5 @@
 // Shared test doubles and a harness that boots the whole renderer on the in-memory demo core.
-import type { ChatGptViewState, ClaudeWebViewState, NavigationTarget, Rect, SessionKey } from '@minisumma/shared';
+import type { ChatGptViewNotice, ChatGptViewState, ClaudeWebViewState, NavigationTarget, Rect, SessionKey } from '@minisumma/shared';
 import { render, screen, waitFor } from '@testing-library/react';
 import type { RenderResult } from '@testing-library/react';
 import { vi } from 'vitest';
@@ -73,8 +73,13 @@ export function adapterFactory(): { factory: (key: SessionKey) => FakeAdapter; a
 
 export interface FakeNative {
   native: RendererNative;
-  /** Emit a ChatGPT view state to onState listeners. */
-  emitView(state: Partial<ChatGptViewState>): void;
+  /** Emit a ChatGPT view state to onState listeners. With live views, `key` is the project's view (default: the one the pane last used). */
+  emitView(state: Partial<ChatGptViewState>, key?: string): void;
+  /** Live views only: the state of a project's view, and what the pane did to each project's view. */
+  viewOf(key: string): ChatGptViewState;
+  boundsOf(key: string): Rect | null | undefined;
+  /** Live views only: tell the window a project's view was destroyed to stay within the bound. */
+  emitNotice(notice: ChatGptViewNotice): void;
   /** Emit a Claude Code on the web state to its onState listeners (as the host does when the page moves or fails). */
   emitClaudeView(state: Partial<ClaudeWebViewState>): void;
   /** Deliver a navigation request, as the main process does for a notification click. */
@@ -93,13 +98,22 @@ export interface FakeNativeOptions {
    * host that cannot (the default in a browser).
    */
   claudeWeb?: boolean | Partial<ClaudeWebViewState>;
+  /** The desktop shell keeps one ChatGPT view per project (the calls take the project's key). Default false: one view. */
+  liveViews?: boolean;
 }
 
 export function createFakeNative(over: FakeNativeOptions = {}): FakeNative {
   let view: ChatGptViewState = { mode: 'embedded', status: 'ready', url: null, title: null, canGoBack: false, canGoForward: false, note: null, ...over.view };
   const listeners = new Set<(s: ChatGptViewState) => void>();
   let navigateListener: ((t: NavigationTarget) => void) | null = null;
-  const bounds = vi.fn(async (_rect: Rect | null) => {});
+  const bounds = vi.fn(async (_rect: Rect | null, _key?: string) => {});
+  const liveViews = over.liveViews === true;
+  const keyedViews = new Map<string, ChatGptViewState>();
+  const keyedListeners = new Map<string, Set<(s: ChatGptViewState) => void>>();
+  const keyedBounds = new Map<string, Rect | null>();
+  const noticeListeners = new Set<(n: ChatGptViewNotice) => void>();
+  let lastKey: string | undefined;
+  const IDLE: ChatGptViewState = { mode: 'embedded', status: 'idle', url: null, title: null, canGoBack: false, canGoForward: false, note: null };
   const embedded = over.embedded ?? true;
   const hasClaudeWeb = over.claudeWeb === undefined ? embedded : over.claudeWeb !== false;
   let claudeView: ClaudeWebViewState = { status: 'ready', url: null, title: null, canGoBack: false, canGoForward: false, note: null, ...(typeof over.claudeWeb === 'object' ? over.claudeWeb : {}) };
@@ -113,15 +127,26 @@ export function createFakeNative(over: FakeNativeOptions = {}): FakeNative {
     hasFolderPicker: embedded,
     connection: vi.fn(async () => ({ baseUrl: 'http://127.0.0.1:0', token: 'test' })),
     chatgpt: {
-      setBounds: bounds,
+      ...(liveViews ? { liveViews: true as const } : {}),
+      setBounds: vi.fn(async (rect: Rect | null, key?: string) => { if (key !== undefined) { keyedBounds.set(key, rect); if (rect) lastKey = key; } return bounds(rect, key); }),
       setOverlayActive: vi.fn(async () => {}),
-      navigate: vi.fn(async () => {}),
-      reload: vi.fn(async () => {}),
-      back: vi.fn(async () => {}),
-      forward: vi.fn(async () => {}),
-      focus: vi.fn(async () => {}),
-      getState: vi.fn(async () => view),
-      onState: vi.fn((l: (s: ChatGptViewState) => void) => { listeners.add(l); return () => { listeners.delete(l); }; }),
+      navigate: vi.fn(async (_url: string, _key?: string) => {}),
+      reload: vi.fn(async (_key?: string) => {}),
+      back: vi.fn(async (_key?: string) => {}),
+      forward: vi.fn(async (_key?: string) => {}),
+      focus: vi.fn(async (_key?: string) => {}),
+      getState: vi.fn(async (key?: string) => (liveViews && key !== undefined ? keyedViews.get(key) ?? IDLE : view)),
+      onState: vi.fn((l: (s: ChatGptViewState) => void, key?: string) => {
+        if (liveViews && key !== undefined) {
+          const set = keyedListeners.get(key) ?? new Set();
+          keyedListeners.set(key, set);
+          set.add(l);
+          return () => { set.delete(l); };
+        }
+        listeners.add(l);
+        return () => { listeners.delete(l); };
+      }),
+      ...(liveViews ? { onNotice: vi.fn((l: (n: ChatGptViewNotice) => void) => { noticeListeners.add(l); return () => { noticeListeners.delete(l); }; }) } : {}),
     },
     ...(hasClaudeWeb ? {
       claudeWeb: {
@@ -146,7 +171,20 @@ export function createFakeNative(over: FakeNativeOptions = {}): FakeNative {
   };
   return {
     native,
-    emitView(state) { view = { ...view, ...state }; for (const l of listeners) l(view); },
+    emitView(state, key) {
+      const k = key ?? lastKey;
+      if (liveViews && k !== undefined) {
+        const next = { ...(keyedViews.get(k) ?? IDLE), status: 'ready' as const, ...state };
+        keyedViews.set(k, next);
+        for (const l of [...(keyedListeners.get(k) ?? [])]) l(next);
+        return;
+      }
+      view = { ...view, ...state };
+      for (const l of listeners) l(view);
+    },
+    viewOf(key) { return keyedViews.get(key) ?? IDLE; },
+    boundsOf(key) { return keyedBounds.get(key); },
+    emitNotice(notice) { for (const l of [...noticeListeners]) l(notice); },
     emitClaudeView(state) { claudeView = { ...claudeView, ...state }; for (const l of claudeListeners) l(claudeView); },
     navigate(target) { navigateListener?.(target); },
     lastBounds() { return bounds.mock.calls.at(-1)?.[0]; },

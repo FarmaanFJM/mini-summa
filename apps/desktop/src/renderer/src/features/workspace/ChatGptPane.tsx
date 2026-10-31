@@ -128,6 +128,8 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
   // project's conversation, and takes it as the page the person is on, so the conversation does not replace it afterwards.
   const lastNavigated = useRef<string | null>(null);
   const activated = useRef<string | null>(null);
+  // Another project became the one on screen: its pane is being opened, even if the previous project's own opening never finished.
+  useEffect(() => () => { activated.current = null; }, [project.id]);
   const projectRequested = route.chatgptProjectOpen[project.id] === true;
   const linkedUrl = linked?.url ?? null;
   useEffect(() => {
