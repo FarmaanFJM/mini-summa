@@ -421,7 +421,8 @@ async function phaseSmoke() {
 
     // ----- 2.5 the window's remembered state ----------------------------------------------------------------------------
     const cloudUrl = 'https://claude.ai/code/ci-roundtrip';
-    const chatgptUrl = 'https://chatgpt.com/c/11111111-1111-4111-8111-111111111111';
+    // Scoped to the linked project (g-p-<id>): a bare /c/<uuid> is out of that project's scope and is rightly not restored (CONT worker, from the first native run).
+    const chatgptUrl = 'https://chatgpt.com/g/g-p-0123456789abcdef0123456789abcdef/c/11111111-1111-4111-8111-111111111111';
     const chatgptUrlPresent = (() => { try { return hasChatgptUrlField(fs.readFileSync(path.join(REPO, 'packages', 'shared', 'src', 'routes.ts'), 'utf8') + fs.readFileSync(path.join(REPO, 'packages', 'shared', 'src', 'entities.ts'), 'utf8')); } catch { return false; } })();
     await check('2.5', 'Write the window\'s remembered state (ui.route, ui.perProject cloudUrl) through settings.update', async () => {
       if (!api) return notRun('Needs the API token; see 2.1.');
