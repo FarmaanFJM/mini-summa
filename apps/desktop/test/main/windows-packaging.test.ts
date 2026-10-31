@@ -166,7 +166,7 @@ describe('native terminal files', () => {
       expect(wire, 'the fuse wire was not found in the executable').not.toBeNull();
       expect(wire![0]).toBe('1');
     } finally { fs.closeSync(fd); }
-  });
+  }, 60_000); // it reads a ~250 MB executable; under a loaded machine the default 5 s timed out once
 });
 
 describe('icons', () => {
