@@ -15,7 +15,7 @@ import { launchApp } from '../helpers/app.ts';
 import { acceptsInput } from '../helpers/core.ts';
 import { evidence } from '../helpers/evidence.ts';
 import { finishTask, sceneWithSession } from '../helpers/flow.ts';
-import { chatgptViews, clickNotification, composerOf, inChatgptView, notificationSpy, spyOnNotifications, typeIntoView } from '../helpers/main-process.ts';
+import { chatgptViewMemory, chatgptViews, clickNotification, composerOf, inChatgptView, notificationSpy, spyOnNotifications, typeIntoView } from '../helpers/main-process.ts';
 import { makeRepo } from '../helpers/sandbox.ts';
 import { scenario } from '../helpers/scenario.ts';
 import { conversationUrl, projectScope, projectUrl, uuidOf } from '../helpers/standin.ts';
@@ -196,6 +196,11 @@ scenario('[X11] A project keeps its live ChatGPT view (page and unsent draft) wi
   await visibleView(h, projectUrl(scope.Dmitri));
   expect(await chatgptViews(h.app)).toHaveLength(4);
   expect(await h.page.getByText(/was unloaded to save memory/).count()).toBe(0);
+  // Memory of the four live views (Electron's process metrics; the stand-in page, not the real site). Written to the evidence, not asserted.
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const memory = await chatgptViewMemory(h.app);
+  expect(memory).toHaveLength(4);
+  const perView = memory.map((m) => `${m.workingSetMB} MB working set / ${m.privateMB} MB private (pid ${m.pid})`).join('; ');
   expect(boris.id).toBeGreaterThan(0);
 
   // The fifth view: the least recently used one (Anna's) is unloaded, with a notice that says what was lost and where it comes back.
@@ -251,5 +256,5 @@ scenario('[X11] A project keeps its live ChatGPT view (page and unsent draft) wi
 
   expect(await projectsSnapshot(h)).toEqual(before);
   expect(h.standIn.submissions()).toEqual([]);
-  evidence('X11', `against a local stand-in for chatgpt.com only (NOT the real site, NOT Windows): five projects, each linked to its own ChatGPT Project; a draft typed in Anna's view was still there, in the same web contents (id ${annaFirst.id}), after Boris was shown and Anna again, with no request for her page; four live views were kept without any notice; the fifth view unloaded the least recently used one (Anna's), the window showed "${expected}", her web contents was gone, opening her again loaded exactly her last address (one request) into a new web contents (id ${annaAgain.id}) with an empty draft; a local Claude session finished a task, the (simulated) notification click opened that report with no ChatGPT view over it, and the Workspace view control hid and showed the views with the second draft intact; projects.list was unchanged`);
+  evidence('X11', `against a local stand-in for chatgpt.com only (NOT the real site, NOT Windows): five projects, each linked to its own ChatGPT Project; the four live views cost, as separate renderer processes (Electron process metrics, idle stand-in page): ${perView}; a draft typed in Anna's view was still there, in the same web contents (id ${annaFirst.id}), after Boris was shown and Anna again, with no request for her page; four live views were kept without any notice; the fifth view unloaded the least recently used one (Anna's), the window showed "${expected}", her web contents was gone, opening her again loaded exactly her last address (one request) into a new web contents (id ${annaAgain.id}) with an empty draft; a local Claude session finished a task, the (simulated) notification click opened that report with no ChatGPT view over it, and the Workspace view control hid and showed the views with the second draft intact; projects.list was unchanged`);
 }, { timeout: 300_000 });

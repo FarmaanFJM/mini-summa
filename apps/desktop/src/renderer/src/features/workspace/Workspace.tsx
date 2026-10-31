@@ -32,7 +32,7 @@ function useChatGptUnloadedToast(): void {
       if (notice.kind !== 'unloaded' || notice.key === null) return;
       const project = store.getState().projects.find((p) => p.id === notice.key);
       const address = route.getState().chatgptUrlByProject[notice.key] ?? notice.url;
-      toast({ id: `chatgpt-unloaded:${notice.key}`, title: 'A ChatGPT page was unloaded', body: unloadedNoticeText(project?.name ?? 'a project', address), kind: 'warning', durationMs: 20_000 });
+      toast({ id: `chatgpt-unloaded:${notice.key}`, title: 'A ChatGPT page was unloaded', body: unloadedNoticeText(project?.name ?? 'a project', address), kind: 'warning' });
     });
   }, [native, store, route]);
 }

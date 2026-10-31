@@ -101,6 +101,24 @@ export const chatgptViews = (app: ElectronApplication): Promise<ChatGptViewInfo[
   }).sort((a, b) => a.id - b.id);
 });
 
+export interface ViewMemory { id: number; pid: number; workingSetMB: number; privateMB: number }
+
+/**
+ * Memory of the renderer process of every ChatGPT view, from Electron's own process metrics (app.getAppMetrics). Under Xvfb with the
+ * stand-in page: it says what an idle view of THAT page costs, not what the real chatgpt.com costs. Views that share a process are
+ * listed with the same pid.
+ */
+export const chatgptViewMemory = (app: ElectronApplication): Promise<ViewMemory[]> => app.evaluate(({ app: electronApp, session, webContents }) => {
+  const partition = session.fromPartition('persist:chatgpt');
+  const metrics = electronApp.getAppMetrics();
+  return webContents.getAllWebContents().filter((w) => !w.isDestroyed() && w.session === partition).map((w) => {
+    const pid = w.getOSProcessId();
+    const m = metrics.find((x) => x.pid === pid);
+    const mb = (kb: number | undefined): number => Math.round(((kb ?? 0) / 1024) * 10) / 10;
+    return { id: w.id, pid, workingSetMB: mb(m?.memory.workingSetSize), privateMB: mb((m?.memory as { privateBytes?: number } | undefined)?.privateBytes) };
+  });
+});
+
 /** Plays the PAGE of one ChatGPT view (by web contents id): the product never runs a script in it. */
 export const inChatgptView = <T = unknown>(app: ElectronApplication, contentsId: number, code: string): Promise<T> => app.evaluate(async ({ webContents }, args) => {
   const contents = webContents.fromId(args.contentsId);

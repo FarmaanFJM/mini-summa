@@ -25,12 +25,13 @@ import { EMPTY_VIEW_STATE } from './viewState.ts';
 /**
  * How many ChatGPT views stay alive at once. Four.
  *
- * Why a bound at all: each live view keeps a full renderer process with the ChatGPT page, its scripts and its conversation in memory
- * even while hidden. Measured on Linux under Xvfb with the local stand-in page (docs/CHATGPT_PANE.md has the figures and how they were
- * taken), a view costs about the number given there; the real chatgpt.com page is much heavier than the stand-in, and OpenAI documents
- * nothing about it, so the figure to plan with for the real site is the 100 to 250 MB per view that Chromium renderers commonly use for a
- * single-page application of this kind. That is an estimate, not a measurement of the real site. Four live views are then roughly 0.4
- * to 1 GB, which a desktop that runs Claude Code beside it can afford; ten would not be. Raise it only with a measurement.
+ * Why a bound at all: every live view keeps a renderer process with the ChatGPT page, its scripts and its conversation in memory even
+ * while hidden. MEASURED (X11 in the real app on Linux under Xvfb, Electron's process metrics, four live views each in a process of its own):
+ * 88.7 to 93.5 MB of working set per view, with the local stand-in page, which is a nearly empty document. The real chatgpt.com page is far
+ * heavier and could not be measured (it needs a login and cannot be reached from where this was built), so for the real site this is only an
+ * ESTIMATE: 100 to 250 MB per view is what a renderer for a large single-page application commonly uses, which makes four live views
+ * roughly 0.4 to 1 GB. That is what a desktop that also runs Claude Code beside it can afford; ten would not. Raise the bound only with a
+ * measurement of the real site (docs/CHATGPT_PANE.md says how the figures were taken and what they do not show).
  */
 export const MAX_LIVE_CHATGPT_VIEWS = 4;
 
@@ -208,7 +209,7 @@ export class ChatGptViews {
     let oldest = Infinity;
     for (const [k, e] of this.entries) {
       if (k === except || k === this.active || !e.view.hasView) continue;
-      if (e.used > oldest || oldest === Infinity) { oldest = e.used; victim = k; }
+      if (e.used < oldest) { oldest = e.used; victim = k; }
     }
     if (victim === undefined) return false;
     this.evict(victim);
