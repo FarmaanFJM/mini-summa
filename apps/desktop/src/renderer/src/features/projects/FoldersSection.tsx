@@ -52,7 +52,8 @@ export function FoldersSection({ project }: { project: Project }) {
     if (!picked) return;
     const read = readFolder(picked, hostPlatform, null);
     if (read.kind === 'ok') {
-      add.setText(picked);
+      setProblem(null);
+      await add.send({ path: read.path, env: read.env }, picked);
       return;
     }
     setDistro(null);

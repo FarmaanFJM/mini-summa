@@ -66,6 +66,9 @@ export interface ClaudeWebViewDeps {
   log: Logger;
 }
 
+/** The scheme of an address, for a log line: never more than that, because the rest of an address can hold a prefilled prompt. */
+const schemeOf = (url: string): string => /^([a-z][a-z0-9+.-]{0,30}):/i.exec(url.trim())?.[1].toLowerCase() ?? 'none';
+
 /** Which page an address names: host without www, path without a trailing slash, and the query. The fragment is not part of it. */
 function pageKey(url: string): string | null {
   try {
@@ -141,6 +144,8 @@ export class ClaudeWebView {
   async navigate(rawUrl: string): Promise<void> {
     const url = validateClaudeWebUrl(rawUrl);
     const view = this.ensureView();
+    // A view that went with its window cannot load anything, and must not be left saying "loading".
+    if (view.contents.isDestroyed()) throw new Error('The Claude Code view is gone: its window was closed.');
     if (this.isShowingPage(url) || (this.obs.loading && this.pending !== null && samePage(this.pending, url))) return;
     this.pending = url;
     this.obs.loading = true;
@@ -219,7 +224,7 @@ export class ClaudeWebView {
     if (cls === 'claude' || cls === 'auth') return;
     event.preventDefault();
     if (cls === 'external') this.openOutside(url);
-    else this.deps.log.info('claude web navigation blocked', { scheme: url.split(':')[0] });
+    else this.deps.log.info('claude web navigation blocked', { scheme: schemeOf(url) });
   };
 
   private wire(c: ClaudeViewContents): void {
@@ -232,7 +237,7 @@ export class ClaudeWebView {
       // A page that asks for a new window (target=_blank, window.open) is shown in this view instead, or in the browser, never in a window of ours.
       if (cls === 'claude' || cls === 'auth') setImmediate(() => { if (!c.isDestroyed()) c.loadURL(details.url).catch(() => undefined); });
       else if (cls === 'external') this.openOutside(details.url);
-      else this.deps.log.info('claude web new window refused', { scheme: details.url.split(':')[0] });
+      else this.deps.log.info('claude web new window refused', { scheme: schemeOf(details.url) });
       return { action: 'deny' };
     });
     c.on('did-start-loading', () => { this.obs.loading = true; this.refresh(); });

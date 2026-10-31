@@ -106,14 +106,14 @@ export function looksLikeClaudeLogin(url: string | null): boolean {
   return !!u && u.protocol === 'https:' && CLAUDE_SITE_HOST.test(u.hostname) && u.pathname.toLowerCase().startsWith('/login');
 }
 
-// "Open in your browser" is the always available fallback of the Cloud tab (docs/CLOUD_SESSIONS.md); the notes name it by its label.
-const CLAUDE_BROWSER_HINT = '"Open in your browser" is always available.';
-
+// The note is the REASON and nothing else (the contract in packages/shared says "plain-language reason"). What to do about it is the
+// Cloud tab's to say: it puts its own sentence after this one ("Sign in on the page...", "Use Open in your browser", "Check your
+// connection, then reload"), so repeating the advice here would show it twice.
 const CLAUDE_NOTES = {
-  login: 'The address looks like the Claude sign-in page (Mini-Summa cannot read the page, so this is a guess from the address). Sign in here. Google sign-in is often refused in embedded browsers; if it is, sign in with an email address or use "Open in your browser".',
-  googleRefused: `Google refused to sign in inside an embedded browser. That is Google's decision and Mini-Summa does not work around it. Sign in with an email address instead, or use "Open in your browser".`,
-  blocked: (description: string) => `The page was blocked (${description || 'refused by a policy'}). Some sites refuse embedded browsers. ${CLAUDE_BROWSER_HINT}`,
-  error: (description: string) => `The page could not be loaded (${description || 'unknown error'}). Check your connection and use reload. ${CLAUDE_BROWSER_HINT}`,
+  login: 'The address looks like the Claude sign-in page. Mini-Summa cannot read the page, so this is a guess from the address.',
+  googleRefused: `Google refused to sign in inside an embedded browser. That is Google's decision, and Mini-Summa does not work around it.`,
+  blocked: (description: string) => `The page was blocked (${description || 'refused by a policy'}). Some sites refuse embedded browsers.`,
+  error: (description: string) => `The page could not be loaded (${description || 'unknown error'}).`,
 } as const;
 
 export function deriveClaudeViewState(obs: ViewObservation, nav: NavigationFlags): ClaudeWebViewState {

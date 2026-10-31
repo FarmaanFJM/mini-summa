@@ -1,6 +1,6 @@
 // The words and small calculations of the settings screens. Pure, so they are tested without React.
 import { buildReportMessage, envLabel } from '@minisumma/shared';
-import type { ChatGptViewState, Device, DevicePlatform, HookStatus, ProjectNotificationPrefs, PruneResult, QuietMode, RetentionSettings, Scope, TailscaleStatus } from '@minisumma/shared';
+import type { ChatGptViewState, DesktopNotificationTestResult, Device, DevicePlatform, HookStatus, ProjectNotificationPrefs, PruneResult, QuietMode, RetentionSettings, Scope, TailscaleStatus } from '@minisumma/shared';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Devices and what they may do
@@ -54,6 +54,20 @@ export const NOTIFICATION_SWITCHES: { key: Exclude<keyof ProjectNotificationPref
   { key: 'presenceLost', label: 'A session is no longer visible', column: 'Lost', description: 'Claude Code stopped listing a session. It may have ended; this is not confirmed.', hint: true },
   { key: 'push', label: 'Also send to my phone', column: 'Phone', description: 'Send a short push notification to paired phones, when push is set up.' },
 ];
+
+export interface TestNotificationOutcome { tone: 'ok' | 'error'; text: string }
+
+/**
+ * What to tell the person after a test notification. Only what is known: the system accepted it ("Sent") or said why not. Nothing here
+ * can see the screen, so it never says the notification appeared, and it says where to look when it did not.
+ */
+export function testNotificationWords(result: DesktopNotificationTestResult): TestNotificationOutcome {
+  if (!result.shown) return { tone: 'error', text: result.reason || 'The system did not accept the notification.' };
+  return {
+    tone: 'ok',
+    text: `Sent. If nothing appeared, check that notifications are allowed for Mini-Summa in Windows settings and that Focus assist is off.${result.quiet ? ' Quiet mode is on, so real notifications are held back.' : ''}`,
+  };
+}
 
 export const QUIET_CHOICES = [
   { value: 'forever', label: 'Until I turn it off' },

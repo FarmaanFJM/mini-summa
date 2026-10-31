@@ -28,17 +28,19 @@ export interface SwitchRowProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   disabled?: boolean;
+  /** One control that belongs with the switch (a test button), drawn just before it. */
+  extra?: ReactNode;
 }
 
 /** A label with what it does on the left and the switch on the right. */
-export function SwitchRow({ label, hint, checked, onChange, disabled }: SwitchRowProps) {
+export function SwitchRow({ label, hint, checked, onChange, disabled, extra }: SwitchRowProps) {
   return (
     <div className="ms-x-row">
       <div className="ms-x-row__text">
         <span className="ms-x-row__label">{label}</span>
         {hint ? <span className="ms-x-row__hint">{hint}</span> : null}
       </div>
-      <div className="ms-x-row__control"><Switch aria-label={label} checked={checked} onChange={onChange} disabled={disabled} /></div>
+      <div className="ms-x-row__control">{extra}<Switch aria-label={label} checked={checked} onChange={onChange} disabled={disabled} /></div>
     </div>
   );
 }

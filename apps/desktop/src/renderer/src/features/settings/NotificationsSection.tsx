@@ -2,11 +2,11 @@ import type { Project, ProjectNotificationPrefs, QuietMode as QuietModeSetting, 
 import { useEffect, useState } from 'react';
 import { useApi, useApp } from '../../app/runtime';
 import { activeProjects } from '../../app/selectors';
-import { Field, Select, Switch, TextInput } from '../../ui';
-import { useNow } from '../reports/support';
+import { Button, Field, Select, Switch, TextInput } from '../../ui';
+import { errorText, useNow } from '../reports/support';
 import { Group, PageStatus, SaveStatus, SwitchRow } from './controls';
-import { NOTIFICATION_SWITCHES, QUIET_CHOICES, quietSummary, quietUntil, TIME_RE } from './model';
-import type { QuietChoice } from './model';
+import { NOTIFICATION_SWITCHES, QUIET_CHOICES, quietSummary, quietUntil, testNotificationWords, TIME_RE } from './model';
+import type { QuietChoice, TestNotificationOutcome } from './model';
 import { useSaveTracker, useSettings } from './useSettings';
 
 type Save = (patch: SettingsPatch) => Promise<boolean>;
@@ -176,9 +176,30 @@ function ProjectTable() {
   );
 }
 
+/**
+ * Asks the core to show one marked notification through the same host call real ones use, and keeps the last answer. The answer is
+ * "sent" or the system's reason, never "seen": nothing here can look at the screen. A new press clears the old line first, so a stale
+ * "Sent" cannot be taken for the new one.
+ */
+function useTestNotification(): { send: () => void; busy: boolean; outcome: TestNotificationOutcome | null } {
+  const api = useApi();
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<TestNotificationOutcome | null>(null);
+  const send = () => {
+    setBusy(true);
+    setOutcome(null);
+    api.call('notifications.test').then(
+      (result) => setOutcome(testNotificationWords(result)),
+      (err) => setOutcome({ tone: 'error', text: errorText(err) }),
+    ).finally(() => setBusy(false));
+  };
+  return { send, busy, outcome };
+}
+
 export function NotificationsSection() {
   const { settings, save, status } = useSettings();
   const canShow = useApp((s) => s.system?.nativeCapabilities.notifications ?? false);
+  const test = useTestNotification();
   if (!settings) return <p className="ms-x-note">Settings are not loaded yet.</p>;
 
   return (
@@ -190,7 +211,9 @@ export function NotificationsSection() {
           label="Show desktop notifications"
           checked={settings.notifications.native}
           onChange={(v) => { void save({ notifications: { native: v } }); }}
+          extra={<Button size="sm" loading={test.busy} onClick={test.send}>Send a test notification</Button>}
         />
+        {test.outcome ? <p className="ms-x-result" data-tone={test.outcome.tone === 'error' ? 'error' : undefined} role={test.outcome.tone === 'error' ? 'alert' : 'status'}>{test.outcome.text}</p> : null}
         {!canShow ? <p className="ms-x-note">This window cannot show system notifications, so nothing appears even when this is on. The Activity feed still records everything.</p> : null}
       </Group>
 

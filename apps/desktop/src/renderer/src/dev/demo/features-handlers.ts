@@ -647,6 +647,14 @@ export function createFeatureHandlers(server: DemoServer): HandlerMap {
       return { ok: true as const };
     }),
 
+    // ----- a test notification: the same answers as the real core (a refusal says why; quiet mode is reported, not obeyed) -----
+    'notifications.test': guarded('notifications.test', () => {
+      const { native, quiet } = data().settings.notifications;
+      const quietNow = quiet.enabled && (quiet.until === null || Date.parse(quiet.until) > st().now());
+      if (!native) return { shown: false, reason: 'Desktop notifications are turned off in Settings.', quiet: quietNow };
+      return { shown: true, reason: null, quiet: quietNow };
+    }),
+
     // ----- push and tailscale -----
     'push.configure': guarded('push.configure', (i) => {
       let parsed: { client_email?: string; private_key?: string; project_id?: string };

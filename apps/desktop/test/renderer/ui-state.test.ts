@@ -3,7 +3,7 @@
 import type { Project, SessionKey, SessionView, UiPrefs } from '@minisumma/shared';
 import { UI_LIMITS } from '@minisumma/shared';
 import { describe, expect, it } from 'vitest';
-import { buildPatch, changedRouteFacts, changedSetupFacts, cloudFact, conversationFact, forgetFact, reconcile, sessionFact } from '../../src/renderer/src/app/uiState';
+import { buildPatch, changedRouteFacts, changedSetupFacts, cloudFact, conversationFact, forgetFact, reconcile, routeMemory, sessionFact, storedRouteMemory } from '../../src/renderer/src/app/uiState';
 import type { Memory, RouteMemory } from '../../src/renderer/src/app/uiState';
 import { pickConversation } from '../../src/renderer/src/features/workspace/ChatGptPane';
 import { newestSession, pickSelectedTab } from '../../src/renderer/src/features/workspace/tabs';
@@ -48,6 +48,42 @@ describe('which remembered facts changed', () => {
     expect(changedSetupFacts({ dismissed: false, seenEmpty: false }, { dismissed: false, seenEmpty: false })).toEqual([]);
     expect(changedSetupFacts({ dismissed: false, seenEmpty: false }, { dismissed: true, seenEmpty: true })).toEqual(['setup:dismissed', 'setup:seenEmpty']);
     expect(changedSetupFacts({ dismissed: true, seenEmpty: true }, { dismissed: false, seenEmpty: true })).toEqual(['setup:dismissed']);
+  });
+});
+
+describe('what the window tells the core it is showing', () => {
+  const stored = route({ projectId: 'prj_a', sessionByProject: { prj_a: KEY_A, prj_b: KEY_B }, cloudUrlByProject: { prj_a: SESSION_PAGE } });
+
+  it('names no session for a project whose Cloud tab is shown, and keeps the others', () => {
+    const memoryOf = routeMemory({ ...stored, cloudShown: { prj_a: true } });
+    expect(memoryOf.sessionByProject).toEqual({ prj_b: KEY_B });
+    expect(memoryOf.cloudUrlByProject).toEqual({ prj_a: SESSION_PAGE }); // the page is a fact of its own
+    expect(stored.sessionByProject).toEqual({ prj_a: KEY_A, prj_b: KEY_B }); // what the store holds is not touched
+  });
+
+  it('is the store\'s own copy when no Cloud tab is shown, or when it is shown for a project with no session', () => {
+    expect(routeMemory({ ...stored, cloudShown: {} }).sessionByProject).toBe(stored.sessionByProject);
+    expect(routeMemory(stored).sessionByProject).toBe(stored.sessionByProject);
+    expect(routeMemory({ ...stored, cloudShown: { prj_other: true } }).sessionByProject).toBe(stored.sessionByProject);
+  });
+
+  it('still has the stored copy for the window itself', () => {
+    expect(storedRouteMemory({ ...stored, cloudShown: { prj_a: true } } as RouteMemory).sessionByProject).toEqual({ prj_a: KEY_A, prj_b: KEY_B });
+  });
+
+  it('turns showing the Cloud tab into a change of that project\'s session, and going back into the change back', () => {
+    const local = routeMemory({ ...stored, cloudShown: {} });
+    const cloud = routeMemory({ ...stored, cloudShown: { prj_a: true } });
+    expect(changedRouteFacts(local, cloud)).toEqual([sessionFact('prj_a')]);
+    expect(buildPatch([sessionFact('prj_a')], { route: cloud, setup: { dismissed: false, seenEmpty: false } }).patch).toEqual({ perProject: { prj_a: { sessionKey: null } } });
+    expect(changedRouteFacts(cloud, local)).toEqual([sessionFact('prj_a')]);
+    expect(buildPatch([sessionFact('prj_a')], { route: local, setup: { dismissed: false, seenEmpty: false } }).patch).toEqual({ perProject: { prj_a: { sessionKey: KEY_A } } });
+  });
+
+  it('says nothing for a Cloud tab that is shown for a project that had no session to forget', () => {
+    const before = routeMemory({ ...stored, cloudShown: {} });
+    const after = routeMemory({ ...stored, cloudShown: { prj_without: true } });
+    expect(changedRouteFacts(before, after)).toEqual([]);
   });
 });
 

@@ -556,7 +556,7 @@ describe('the page each project was last on', () => {
     await waitFor(() => expect(app.runtime.route.getState().cloudUrlByProject[IDS.gitManager]).toBe(SESSION)); // without the query and the fragment
     await waitFor(() => expect(app.runtime.store.getState().settings?.ui?.perProject?.[IDS.gitManager]?.cloudUrl).toBe(SESSION), { timeout: 3000 });
     const writes = (calls.mock.calls as unknown[][]).filter((c) => c[0] === 'settings.update').map((c) => (c[1] as { body: { ui?: { perProject?: Record<string, unknown> } } }).body.ui?.perProject?.[IDS.gitManager]).filter(Boolean);
-    expect(writes).toContainEqual({ cloudUrl: SESSION });
+    expect(writes).toContainEqual(expect.objectContaining({ cloudUrl: SESSION }));
   });
 
   it('is opened again the next time the tab is shown for that project, instead of the start page', async () => {
@@ -618,7 +618,7 @@ describe('the page each project was last on', () => {
     stubWorkspaceGeometry();
     const app = await renderApp({ seed: seedWithPage(IDS.docs, SESSION), storage: createMemoryStorage() });
     expect(app.runtime.route.getState().cloudUrlByProject[IDS.docs]).toBe(SESSION);
-    await act(async () => { await app.demo.call('projects.remove', { params: { id: IDS.docs } }); });
+    await act(async () => { await app.demo.call('projects.remove', { params: { id: IDS.docs }, query: { mode: 'delete' } }); });
     await waitFor(() => expect(app.runtime.route.getState().cloudUrlByProject[IDS.docs]).toBeUndefined());
   });
 

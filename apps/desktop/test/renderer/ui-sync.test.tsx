@@ -365,3 +365,81 @@ describe('two windows on one core', () => {
     second.dispose();
   });
 });
+
+describe('what the core is told about the Claude pane', () => {
+  const gmFirst = IDS.s.gmWorking as SessionKey;
+  const gmSecond = IDS.s.gmPermission as SessionKey;
+  const gmWrites = (spy: Spy) => writesFor(spy, IDS.gitManager);
+  const tabOf = (id: RegExp) => screen.findByRole('tab', { name: id });
+
+  it('remembers no local session for a project while its Cloud tab is the one shown, and the last one again when a local tab is', async () => {
+    const user = userEvent.setup();
+    const storage = createMemoryStorage();
+    const seed = seedWith({ route: { projectId: IDS.gitManager, view: 'workspace' }, perProject: { [IDS.gitManager]: { sessionKey: gmSecond } } });
+    const app = await renderApp({ seed, storage, uiSync: FAST });
+    await tabOf(/b7c8d9e0/);
+    await app.runtime.uiSync.flush();
+    const spy = vi.spyOn(app.demo, 'call');
+    expect(app.runtime.store.getState().settings?.ui?.perProject?.[IDS.gitManager]?.sessionKey).toBe(gmSecond); // the session on screen is the one remembered
+
+    // The Cloud tab is shown: the core is told there is no session on screen.
+    await user.click(await tabOf(/^Cloud/));
+    await waitFor(() => expect(gmWrites(spy)).toContainEqual({ sessionKey: null }));
+    await waitFor(() => expect(app.runtime.store.getState().settings?.ui?.perProject?.[IDS.gitManager]?.sessionKey).toBeUndefined());
+    // Only the core's copy is cleared. The window keeps the last local choice, in memory and in its own storage, to go back to.
+    expect(app.runtime.route.getState().sessionByProject[IDS.gitManager]).toBe(gmSecond);
+    expect(stored(storage)).toMatchObject({ sessionByProject: { [IDS.gitManager]: gmSecond } });
+
+    // A local tab is shown again: the core is told which one.
+    await user.click(await tabOf(/a1b2c3d4/));
+    await waitFor(() => expect(gmWrites(spy).at(-1)).toEqual({ sessionKey: gmFirst }));
+    await waitFor(() => expect(app.runtime.store.getState().settings?.ui?.perProject?.[IDS.gitManager]?.sessionKey).toBe(gmFirst));
+    expect(app.runtime.uiSync.pending()).toEqual([]);
+  });
+
+  it('says the same session again when the person goes back to the one that was chosen before the Cloud tab', async () => {
+    const user = userEvent.setup();
+    const seed = seedWith({ route: { projectId: IDS.gitManager, view: 'workspace' }, perProject: { [IDS.gitManager]: { sessionKey: gmSecond } } });
+    const app = await renderApp({ seed, storage: createMemoryStorage(), uiSync: FAST });
+    await tabOf(/b7c8d9e0/);
+    await app.runtime.uiSync.flush();
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.click(await tabOf(/^Cloud/));
+    await waitFor(() => expect(gmWrites(spy)).toContainEqual({ sessionKey: null }));
+    await user.click(await tabOf(/b7c8d9e0/)); // the very tab that was remembered
+    await waitFor(() => expect(gmWrites(spy).at(-1)).toEqual({ sessionKey: gmSecond }));
+    expect(app.runtime.store.getState().settings?.ui?.perProject?.[IDS.gitManager]?.sessionKey).toBe(gmSecond);
+  });
+
+  it('sends the last state only when the person goes to the Cloud tab and back within the quiet period', async () => {
+    const user = userEvent.setup();
+    const seed = seedWith({ route: { projectId: IDS.gitManager, view: 'workspace' }, perProject: { [IDS.gitManager]: { sessionKey: gmSecond } } });
+    const app = await renderApp({ seed, storage: createMemoryStorage(), uiSync: { delayMs: 150, retry: FAST.retry } });
+    await tabOf(/b7c8d9e0/);
+    await app.runtime.uiSync.flush();
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.click(await tabOf(/^Cloud/));
+    await user.click(await tabOf(/b7c8d9e0/));
+    await new Promise((r) => setTimeout(r, 400));
+    expect(gmWrites(spy).filter((w) => (w as { sessionKey?: unknown }).sessionKey === null)).toEqual([]); // the core never heard of a Cloud tab that was not there for long
+    expect(app.runtime.store.getState().settings?.ui?.perProject?.[IDS.gitManager]?.sessionKey).toBe(gmSecond);
+  });
+
+  it('does the same for any project: Atlas API\'s only session is forgotten while its Cloud tab shows, and remembered when the tab goes', async () => {
+    const user = userEvent.setup();
+    const app = await renderApp({ seed: seedWith({ route: { projectId: IDS.atlas, view: 'workspace' } }), storage: createMemoryStorage(), uiSync: FAST });
+    await tabOf(/e1f2a3b4/);
+    await app.runtime.uiSync.flush();
+    expect(app.runtime.store.getState().settings?.ui?.perProject?.[IDS.atlas]?.sessionKey).toBe(IDS.s.atlasIdle); // the session on screen is remembered
+    const spy = vi.spyOn(app.demo, 'call');
+    await user.click(await tabOf(/^Cloud/));
+    await waitFor(() => expect(writesFor(spy, IDS.atlas)).toContainEqual({ sessionKey: null }));
+    await user.click(await tabOf(/e1f2a3b4/));
+    await waitFor(() => expect(writesFor(spy, IDS.atlas).at(-1)).toEqual({ sessionKey: IDS.s.atlasIdle }));
+  });
+});
+
+/** The change to one project's remembered choices in each write that carried one, oldest first. */
+function writesFor(spy: Spy, id: string) {
+  return (uiWrites(spy) as { perProject?: Record<string, unknown> }[]).map((ui) => ui.perProject?.[id]).filter((v) => v !== undefined);
+}

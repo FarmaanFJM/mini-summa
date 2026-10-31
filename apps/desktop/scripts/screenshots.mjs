@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Starts Vite for the renderer, opens it with the in-memory demo core (?demo=1) in Playwright's Chromium and writes
 // screenshots to docs/screenshots: the shell, the sidebar and its states, the quick switcher and the first-run screens in four
-// windows (1440x900, 1280x720, the smallest at 960x600, and tall at 900x1200), the dialogs and workspace states in the first. Run from anywhere:
+// windows (1440x900, 1280x720, the smallest at 960x600, and tall at 900x1200), the rest in the first. The workspace and project
+// dialog screens are written too with --also-workspace. Run from anywhere:
 //
-//   node apps/desktop/scripts/screenshots.mjs [--only name,name] [--out <dir>]
+//   node apps/desktop/scripts/screenshots.mjs [--only name,name] [--out <dir>] [--also-workspace]
 //
 // The embedded ChatGPT view is simulated by a plain rectangle that obeys the same bounds and overlay calls as the real
 // one, so a screenshot of an open dialog also shows that the view got out of its way.
@@ -19,6 +20,7 @@ const args = process.argv.slice(2);
 const flag = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const outDir = flag('--out') ?? join(repo, 'docs/screenshots');
 const only = flag('--only')?.split(',');
+const alsoWorkspace = args.includes('--also-workspace');
 
 // The four windows every screen of the shell is looked at in: a desktop, a laptop, the smallest window, and a tall one.
 const LANDSCAPE = [1440, 900];
@@ -67,11 +69,14 @@ async function openProjectMenu(page, project) {
 
 // ------------------------------------------------------------------------------------------------ the shots
 
-/** The shell and the sidebar, in all four windows; the states around them in the desktop window. Names are <number>-<name>-<size>.png. */
+/**
+ * The shell: the page, the sidebar and its states, the quick switcher, the first-run and loading screens, and the dialogs the sidebar opens.
+ * The key ones in all four windows, the rest in the desktop window. Names are shell-<name>-<width>x<height>.png.
+ */
 const shots = [
-  { name: '01-workspace', sizes: ALL },
+  { name: 'shell-workspace', sizes: ALL },
   {
-    name: '02-sidebar-collapsed', sizes: ALL,
+    name: 'shell-sidebar-collapsed', sizes: ALL,
     async run(page) {
       await page.getByRole('button', { name: 'Collapse sidebar' }).click();
       await page.getByRole('button', { name: 'Expand sidebar' }).waitFor();
@@ -79,7 +84,7 @@ const shots = [
     },
   },
   {
-    name: '03-quick-switcher', sizes: ALL,
+    name: 'shell-quick-switcher', sizes: ALL,
     async run(page) {
       await page.keyboard.press('Control+Shift+P');
       await page.getByRole('dialog', { name: 'Switch project' }).waitFor();
@@ -88,7 +93,7 @@ const shots = [
     },
   },
   {
-    name: '04-quick-switcher-filtered', sizes: [LANDSCAPE],
+    name: 'shell-quick-switcher-filtered', sizes: [LANDSCAPE],
     async run(page) {
       await page.getByRole('button', { name: 'Search projects' }).click();
       await page.getByRole('combobox', { name: 'Search projects' }).fill('acme');
@@ -97,22 +102,22 @@ const shots = [
     },
   },
   {
-    name: '05-project-menu', sizes: [LANDSCAPE],
+    name: 'shell-project-menu', sizes: [LANDSCAPE],
     async run(page) { await openProjectMenu(page, 'Atlas API'); },
   },
   {
-    name: '06-project-hover', sizes: [LANDSCAPE],
+    name: 'shell-project-hover', sizes: [LANDSCAPE],
     async run(page) {
       await projectButton(page, 'Atlas API').hover();
       await settle(page, 250);
     },
   },
-  { name: '07-empty-first-run', sizes: ALL, query: '?demo=1&scenario=empty', terminal: false },
-  { name: '08-loading', sizes: [LANDSCAPE], query: '?demo=1&scenario=loading', terminal: false },
-  { name: '09-offline-first-connect', sizes: [LANDSCAPE], query: '?demo=1&scenario=offline', terminal: false },
-  { name: '10-load-error', sizes: [LANDSCAPE], query: '?demo=1&scenario=error', terminal: false },
+  { name: 'shell-empty-first-run', sizes: ALL, query: '?demo=1&scenario=empty', terminal: false },
+  { name: 'shell-loading', sizes: [LANDSCAPE], query: '?demo=1&scenario=loading', terminal: false },
+  { name: 'shell-offline-first-connect', sizes: [LANDSCAPE], query: '?demo=1&scenario=offline', terminal: false },
+  { name: 'shell-load-error', sizes: [LANDSCAPE], query: '?demo=1&scenario=error', terminal: false },
   {
-    name: '11-reconnecting', sizes: [LANDSCAPE],
+    name: 'shell-reconnecting', sizes: [LANDSCAPE],
     async run(page) {
       await page.evaluate(() => window.__minisummaDemo.setOffline(true));
       await page.getByText('Connection to Mini-Summa lost. Reconnecting.').waitFor();
@@ -120,29 +125,7 @@ const shots = [
     },
   },
   {
-    name: '12-project-settings-dialog', sizes: [LANDSCAPE, PORTRAIT],
-    async run(page) {
-      await openProjectMenu(page, 'GitManager');
-      await menuItem(page, 'Project settings').click();
-      await page.getByRole('dialog', { name: /Edit GitManager/ }).waitFor();
-      await settle(page);
-    },
-  },
-  {
-    name: '13-new-project-dialog', sizes: [LANDSCAPE],
-    async run(page) {
-      await page.getByRole('button', { name: 'New project' }).click();
-      const dialog = page.getByRole('dialog', { name: 'New project' });
-      await dialog.waitFor();
-      await dialog.getByLabel('Name').fill('Billing service');
-      await dialog.getByLabel('GitHub repository').fill('https://github.com/acme/billing-service.git');
-      await dialog.getByLabel('Add a folder').fill('/home/me/billing');
-      await dialog.getByLabel('Add a conversation').fill('https://chatgpt.com/g/g-p-6720aa11/project');
-      await settle(page, 400);
-    },
-  },
-  {
-    name: '14-delete-project-dialog', sizes: [LANDSCAPE, PORTRAIT],
+    name: 'shell-delete-project-dialog', sizes: [LANDSCAPE, PORTRAIT],
     async run(page) {
       await openProjectMenu(page, 'Trading dashboard');
       await menuItem(page, 'Delete').click();
@@ -151,7 +134,7 @@ const shots = [
     },
   },
   {
-    name: '15-archive-project-with-terminals', sizes: [LANDSCAPE],
+    name: 'shell-archive-project-dialog', sizes: [LANDSCAPE],
     async run(page) {
       await openProjectMenu(page, 'GitManager');
       await menuItem(page, 'Archive').click();
@@ -159,9 +142,32 @@ const shots = [
       await settle(page);
     },
   },
-  // The workspace itself (panes, terminal, sessions) belongs to the workspace screens; these show it in the states the shell can reach.
+];
+
+/**
+ * Screens that belong to the workspace and the project dialog, which have their own labels and change with them. They are kept here so one
+ * script writes every picture, but they run only with --also-workspace, and whoever changes those screens keeps these steps true.
+ */
+const elsewhere = [
   {
-    name: '16-observed-session', sizes: [LANDSCAPE],
+    name: '03-project-settings-dialog', sizes: [LANDSCAPE, PORTRAIT],
+    async run(page) {
+      await openProjectMenu(page, 'GitManager');
+      await menuItem(page, 'Project settings').click();
+      await page.getByRole('dialog').first().waitFor();
+      await settle(page);
+    },
+  },
+  {
+    name: '20-new-project-dialog', sizes: [LANDSCAPE],
+    async run(page) {
+      await page.getByRole('button', { name: 'New project' }).click();
+      await page.getByRole('dialog', { name: 'New project' }).waitFor();
+      await settle(page, 400);
+    },
+  },
+  {
+    name: '07-observed-session', sizes: [LANDSCAPE],
     async run(page) {
       await page.getByRole('button', { name: 'Sessions', exact: true }).click();
       await menuItem(page, /d4e5f6a1/).click();
@@ -170,26 +176,26 @@ const shots = [
     },
   },
   {
-    name: '17-new-session-menu', sizes: [LANDSCAPE],
+    name: '08-new-session-menu', sizes: [LANDSCAPE],
     async run(page) {
       await projectButton(page, 'Atlas API').click();
-      await page.getByRole('button', { name: 'New session', exact: true }).click();
+      await page.getByRole('button', { name: 'New or resumed session' }).click();
       await settle(page, 250);
     },
   },
   {
-    name: '18-exited-session', sizes: [LANDSCAPE],
+    name: '10-exited-session', sizes: [LANDSCAPE],
     async run(page) {
       await projectButton(page, 'Trading dashboard').click();
       await page.getByRole('tab', { name: /9f8e7d6c/ }).click().catch(() => {});
       await settle(page, 500);
     },
   },
-  { name: '19-external-chatgpt', sizes: [LANDSCAPE], query: '?demo=1&native=none' },
+  { name: '11-external-chatgpt', sizes: [LANDSCAPE], query: '?demo=1&native=none' },
   {
-    name: '20-claude-maximized', sizes: [LANDSCAPE],
+    name: '19-claude-maximized', sizes: [LANDSCAPE],
     async run(page) {
-      await page.getByRole('radio', { name: 'Claude', exact: true }).click();
+      await page.getByRole('button', { name: 'Maximize Claude pane' }).click();
       await settle(page, 400);
     },
   },
@@ -199,15 +205,15 @@ const shots = [
     name: '21-starting-trust-hint', sizes: [LANDSCAPE], query: '?demo=1&trust=1',
     async run(page) {
       await projectButton(page, 'Atlas API').click();
-      await page.getByRole('button', { name: 'New session', exact: true }).click();
-      await menuItem(page, 'New local session').click();
+      await page.getByRole('button', { name: 'New or resumed session' }).click();
+      await menuItem(page, 'New session').click();
       await page.waitForFunction(() => document.querySelector('.xterm-rows')?.textContent?.includes('Do you trust the files'), null, { timeout: 10_000 });
       await page.getByText('Claude may be waiting for you to answer a question in the terminal').waitFor({ timeout: 12_000 });
       await settle(page, 300);
     },
   },
   {
-    name: '22-lost-terminal', sizes: [LANDSCAPE],
+    name: '23-lost-terminal', sizes: [LANDSCAPE],
     async run(page) {
       await projectButton(page, 'Docs site').click();
       await page.getByText(/lost its connection to this terminal/).waitFor();
@@ -225,7 +231,7 @@ const baseUrl = server.resolvedUrls?.local[0]?.replace(/\/$/, '') ?? `http://127
 const browser = await launch();
 const problems = [];
 try {
-  for (const shot of shots) {
+  for (const shot of [...shots, ...(alsoWorkspace ? elsewhere : [])]) {
     if (only && !only.includes(shot.name)) continue;
     for (const [width, height] of shot.sizes ?? [LANDSCAPE]) {
       const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });

@@ -17,7 +17,7 @@ export interface QuitDeps {
   confirm(terminals: number): Promise<boolean>;
   /** Stops the core: HTTP, the managed terminals (Windows: their process trees), the database. The process does not exit before it settles. */
   stopCore(): Promise<void>;
-  /** Persist cookies and storage of the embedded ChatGPT session. */
+  /** Persist cookies and storage of the embedded sites' sessions (ChatGPT, Claude Code on the web), so that their sign-ins survive the quit. */
   flushStorage(): Promise<void>;
   exit(code: number): void;
   /**

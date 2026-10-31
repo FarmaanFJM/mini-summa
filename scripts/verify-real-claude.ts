@@ -18,7 +18,7 @@ import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 import { MiniSummaClient } from '@minisumma/shared';
@@ -521,13 +521,18 @@ async function main(): Promise<void> {
         expect(strangers.length === 0, `observed sessions appeared next to the managed ones: ${strangers.map((x) => `${ids(x)} ${x.origin}/${x.availability}`).join(', ')}`);
         const liveNow = all.filter((x) => x.availability === 'live');
         expect(liveNow.length === 1 && liveNow[0].key === found!.key, `live sessions: ${liveNow.map((x) => ids(x)).join(', ')}`);
+        // Other Claude processes on this computer (this run is usually started from one) are listed by `claude agents --json` and are rightly
+        // "observed". A phantom session made by OUR terminal would be in our own temporary directory, so only those are held to "managed".
         const everything = await client.call('sessions.list', { query: { includeEnded: true } });
-        expect(everything.every((x) => x.origin === 'managed'), 'a session outside the project is observed');
+        const ownRoot = dirname(repoDir);
+        const ours = everything.filter((x) => x.cwd !== null && (x.cwd === ownRoot || x.cwd.startsWith(ownRoot + sep)));
+        expect(ours.every((x) => x.origin === 'managed'), `a session of this run is observed instead of managed: ${ours.filter((x) => x.origin !== 'managed').map((x) => `${ids(x)} ${x.origin}`).join(', ')}`);
+        expect(ours.length >= 2, `expected the old and the new session of this run, found ${ours.length}`);
         // The rest of the run (stop, restart, resume) follows the terminal, which is now the new session.
         key = found.key;
         view = found;
         pid = found.pid;
-        return `${ids(before)} -> ${ids(found)} in ${(adoptedMs / 1000).toFixed(1)} s, same process ${found.pid}; report "${report.taskTitle}" under the new key`;
+        return `${ids(before)} -> ${ids(found)} in ${(adoptedMs / 1000).toFixed(1)} s, same process ${found.pid}; report "${report.taskTitle}" under the new key; ${everything.length - ours.length} session(s) of other Claude processes on this computer ignored`;
       });
       if (!cleared) say('            (the steps that follow keep using the original session)');
 

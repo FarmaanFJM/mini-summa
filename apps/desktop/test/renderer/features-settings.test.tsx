@@ -413,6 +413,76 @@ describe('notifications', () => {
     expect(app.runtime.store.getState().settings?.notifications.defaults).toMatchObject({ enabled: false, sessionEnded: true });
   });
 
+  describe('the test notification', () => {
+    const SENT = 'Sent. If nothing appeared, check that notifications are allowed for Mini-Summa in Windows settings and that Focus assist is off.';
+    const button = () => screen.getByRole('button', { name: 'Send a test notification' });
+
+    it('sits beside the desktop switch as one quiet button, with no paragraph around it', async () => {
+      await open('notifications');
+      const group = screen.getByRole('region', { name: 'On this PC' });
+      expect(within(group).getByRole('switch', { name: 'Show desktop notifications' }).closest('.ms-x-row__control')).toBe(button().closest('.ms-x-row__control'));
+      expect(button().className).not.toMatch(/--(primary|danger)/); // emerald is for the one main action of a view, and this is not it
+      expect(group.querySelector('.ms-x-result')).toBeNull(); // nothing is said before it is pressed
+    });
+
+    it('asks the core once, shows the busy state while it runs, and says "Sent" with where to look, and nothing about it being seen', async () => {
+      const user = userEvent.setup();
+      const app = await open('notifications');
+      const original = app.demo.call; // taken before the spy, which would otherwise call itself
+      const spy = vi.spyOn(app.demo, 'call');
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      spy.mockImplementation(((name: string, ...rest: unknown[]) => (name === 'notifications.test' ? gate.then(() => (original as (...a: unknown[]) => unknown)(name, ...rest)) : (original as (...a: unknown[]) => unknown)(name, ...rest))) as never);
+      await user.click(button());
+      expect(button().getAttribute('aria-busy')).toBe('true'); // loading: the label stays, presses are ignored
+      await user.click(button());
+      release();
+      const line = await screen.findByText(SENT);
+      expect(line.getAttribute('role')).toBe('status');
+      expect(line.getAttribute('data-tone')).toBeNull();
+      expect(callsTo(spy, 'notifications.test')).toHaveLength(1);
+      expect(button().getAttribute('aria-busy')).toBeNull();
+      expect(textOf(line)).not.toMatch(/quiet mode/i); // only when it is on
+    });
+
+    it('adds that quiet mode holds real notifications back, only while quiet mode is on', async () => {
+      const user = userEvent.setup();
+      await open('notifications');
+      await user.click(screen.getByRole('switch', { name: 'Quiet now' }));
+      await waitFor(() => expect(screen.getByRole('switch', { name: 'Quiet now' }).getAttribute('aria-checked')).toBe('true'));
+      await user.click(button());
+      expect(await screen.findByText(`${SENT} Quiet mode is on, so real notifications are held back.`)).toBeTruthy();
+    });
+
+    it('gives the core\'s reason when the system did not show it, as an error, and the next press replaces the line', async () => {
+      const user = userEvent.setup();
+      await open('notifications');
+      await user.click(screen.getByRole('switch', { name: 'Show desktop notifications' }));
+      await waitFor(() => expect(screen.getByRole('switch', { name: 'Show desktop notifications' }).getAttribute('aria-checked')).toBe('false'));
+      await user.click(button());
+      const refusal = await screen.findByText('Desktop notifications are turned off in Settings.');
+      expect(refusal.getAttribute('data-tone')).toBe('error');
+      expect(refusal.getAttribute('role')).toBe('alert');
+      // Turned on again: the next result replaces the refusal; two lines are never on screen together.
+      await user.click(screen.getByRole('switch', { name: 'Show desktop notifications' }));
+      await waitFor(() => expect(screen.getByRole('switch', { name: 'Show desktop notifications' }).getAttribute('aria-checked')).toBe('true'));
+      await user.click(button());
+      expect(await screen.findByText(SENT)).toBeTruthy();
+      expect(screen.queryByText('Desktop notifications are turned off in Settings.')).toBeNull();
+    });
+
+    it('shows the message of a call that failed, as an error', async () => {
+      const user = userEvent.setup();
+      const app = await open('notifications');
+      app.demoState.failNext.set('notifications.test', new ApiError(502, 'unreachable', 'The core did not answer.'));
+      await user.click(button());
+      const line = await screen.findByText('The core did not answer.');
+      expect(line.getAttribute('data-tone')).toBe('error');
+      expect(screen.queryByText(SENT)).toBeNull();
+      expect(button().getAttribute('aria-busy')).toBeNull(); // it can be pressed again
+    });
+  });
+
   it('has a switch for "Claude finished", on for everyone until turned off, for new projects and for each project', async () => {
     const user = userEvent.setup();
     const app = await open('notifications');

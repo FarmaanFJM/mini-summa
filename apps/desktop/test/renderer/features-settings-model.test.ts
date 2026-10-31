@@ -4,7 +4,7 @@ import { defaultNotificationPrefs, defaultSettings } from '@minisumma/shared';
 import { describe, expect, it } from 'vitest';
 import {
   countdown, diffCounts, formatBytes, hookSummary, installGuidance, lastSeenWords, NOTIFICATION_SWITCHES, parseDays, parseDiff, parsePartSize, partCountFor,
-  previewMessage, pruneWords, quietSummary, quietUntil, resolveSection, runtimeWords, scopesInWords, SECTIONS, tailscaleFacts, TIME_RE,
+  previewMessage, pruneWords, quietSummary, quietUntil, resolveSection, runtimeWords, scopesInWords, SECTIONS, tailscaleFacts, testNotificationWords, TIME_RE,
 } from '../../src/renderer/src/features/settings/model';
 import { deriveSteps, doneCount, isComplete, nextStep } from '../../src/renderer/src/features/onboarding/model';
 import type { StepFacts } from '../../src/renderer/src/features/onboarding/model';
@@ -77,6 +77,27 @@ describe('the notification switches', () => {
 
   it('keeps every sentence free of the dashes the house rules refuse', () => {
     expect(NOTIFICATION_SWITCHES.map((s) => `${s.label} ${s.column} ${s.description}`).join(' ')).not.toMatch(/[\u2013\u2014]/);
+  });
+});
+
+describe('what a test notification says', () => {
+  const SENT = 'Sent. If nothing appeared, check that notifications are allowed for Mini-Summa in Windows settings and that Focus assist is off.';
+
+  it('says "sent" and where to look, never "seen", and adds that quiet mode holds real ones back only when it is on', () => {
+    expect(testNotificationWords({ shown: true, reason: null, quiet: false })).toEqual({ tone: 'ok', text: SENT });
+    expect(testNotificationWords({ shown: true, reason: null, quiet: true })).toEqual({ tone: 'ok', text: `${SENT} Quiet mode is on, so real notifications are held back.` });
+    expect(testNotificationWords({ shown: true, reason: null, quiet: false }).text).not.toMatch(/\b(saw|seen|appeared on|arrived|delivered)\b/i);
+  });
+
+  it('gives the system\'s reason as it is when the notification was not shown, as an error', () => {
+    expect(testNotificationWords({ shown: false, reason: 'Desktop notifications are turned off in Settings.', quiet: false })).toEqual({ tone: 'error', text: 'Desktop notifications are turned off in Settings.' });
+    expect(testNotificationWords({ shown: false, reason: 'The system did not accept the notification.', quiet: true })).toEqual({ tone: 'error', text: 'The system did not accept the notification.' }); // quiet is not added to a refusal
+    expect(testNotificationWords({ shown: false, reason: null, quiet: false }).text).toBe('The system did not accept the notification.'); // never an empty line
+  });
+
+  it('uses no em dash and no en dash', () => {
+    const all = [testNotificationWords({ shown: true, reason: null, quiet: true }).text, testNotificationWords({ shown: false, reason: null, quiet: false }).text];
+    expect(all.join(' ')).not.toMatch(/[\u2013\u2014]/);
   });
 });
 
