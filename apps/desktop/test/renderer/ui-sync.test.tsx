@@ -411,16 +411,17 @@ describe('what the core is told about the Claude pane', () => {
     expect(app.runtime.store.getState().settings?.ui?.perProject?.[IDS.gitManager]?.sessionKey).toBe(gmSecond);
   });
 
+  // The quiet period is 2 s, not 150 ms: two clicks took longer than 150 ms on a slow Windows runner and the test then saw the intermediate write.
   it('sends the last state only when the person goes to the Cloud tab and back within the quiet period', async () => {
     const user = userEvent.setup();
     const seed = seedWith({ route: { projectId: IDS.gitManager, view: 'workspace' }, perProject: { [IDS.gitManager]: { sessionKey: gmSecond } } });
-    const app = await renderApp({ seed, storage: createMemoryStorage(), uiSync: { delayMs: 150, retry: FAST.retry } });
+    const app = await renderApp({ seed, storage: createMemoryStorage(), uiSync: { delayMs: 2000, retry: FAST.retry } });
     await tabOf(/b7c8d9e0/);
     await app.runtime.uiSync.flush();
     const spy = vi.spyOn(app.demo, 'call');
     await user.click(await tabOf(/^Cloud/));
     await user.click(await tabOf(/b7c8d9e0/));
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 2600));
     expect(gmWrites(spy).filter((w) => (w as { sessionKey?: unknown }).sessionKey === null)).toEqual([]); // the core never heard of a Cloud tab that was not there for long
     expect(app.runtime.store.getState().settings?.ui?.perProject?.[IDS.gitManager]?.sessionKey).toBe(gmSecond);
   });
