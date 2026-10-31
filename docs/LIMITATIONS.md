@@ -89,6 +89,11 @@ These are things Mini-Summa gets wrong or does clumsily today. None blocks the c
 * **Installing an update while Mini-Summa runs ends it abruptly.** The installer's own "is it running" check ends the program
   without letting it quit ([audit/windows-desktop.md](audit/windows-desktop.md), "Upgrade while the app runs"), so its terminals are lost (they stay listed as resumable) and the last
   seconds of ChatGPT cookie changes may be lost. Quit Mini-Summa before updating.
+* **The embedded pages have square corners.** The ChatGPT and Claude pages are native views that cannot be clipped to the panel's
+  rounded outline, so where a page touches a corner of the panel (the bottom-left corner of the ChatGPT page in a wide window) the
+  corner is square. Cosmetic; seen in the real window under a virtual display, not on Windows.
+* **At the smallest window (960 wide) the sidebar takes about a quarter of the width and the Cloud tab's label is cut.** Collapse the
+  sidebar with the double arrow at its top (the choice is remembered) to give the panes the room.
 * **The smallest window (960 by 600 points) is larger than the usable area of a 1366 by 768 laptop at 150% scaling.** The window
   then extends past the screen edge.
 * **A Windows toast counts as shown when Windows accepted it**, even if Focus assist sent it straight to the Action Center.

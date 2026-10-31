@@ -177,14 +177,6 @@ const elsewhere = [
     },
   },
   {
-    name: '08-new-session-menu', sizes: [LANDSCAPE],
-    async run(page) {
-      await projectButton(page, 'Atlas API').click();
-      await page.getByRole('button', { name: 'New or resumed session' }).click();
-      await settle(page, 250);
-    },
-  },
-  {
     name: '10-exited-session', sizes: [LANDSCAPE],
     async run(page) {
       await projectButton(page, 'Trading dashboard').click();
@@ -194,20 +186,13 @@ const elsewhere = [
   },
   { name: '11-external-chatgpt', sizes: [LANDSCAPE], query: '?demo=1&native=none' },
   {
-    name: '19-claude-maximized', sizes: [LANDSCAPE],
-    async run(page) {
-      await page.getByRole('button', { name: 'Maximize Claude pane' }).click();
-      await settle(page, 400);
-    },
-  },
-  {
     // A new session whose terminal sits on Claude's "Do you trust the files in this folder?" screen. After six seconds of
     // "Starting" the pane points the person to the terminal. Nothing types for them.
     name: '21-starting-trust-hint', sizes: [LANDSCAPE], query: '?demo=1&trust=1',
     async run(page) {
       await projectButton(page, 'Atlas API').click();
-      await page.getByRole('button', { name: 'New or resumed session' }).click();
-      await menuItem(page, 'New session').click();
+      await page.getByRole('region', { name: 'Claude', exact: true }).getByRole('button', { name: 'New session', exact: true }).click();
+      await menuItem(page, 'New local session').click();
       await page.waitForFunction(() => document.querySelector('.xterm-rows')?.textContent?.includes('Do you trust the files'), null, { timeout: 10_000 });
       await page.getByText('Claude may be waiting for you to answer a question in the terminal').waitFor({ timeout: 12_000 });
       await settle(page, 300);
