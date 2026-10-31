@@ -148,6 +148,62 @@ describe('a project with a linked ChatGPT Project and no conversation', () => {
   });
 });
 
+describe('the project settings asking for the linked ChatGPT Project\'s page', () => {
+  it('is loaded by the pane, and the conversation the project would otherwise show does not take it away', async () => {
+    stubWorkspaceGeometry();
+    const fake = createFakeNative();
+    const app = await renderApp({ native: fake });
+    // A project with a conversation and a linked project, while another project (GitManager) is the one on screen.
+    const made = await app.demo.call('projects.create', { body: { name: 'Both', roots: [], chatgptProject: { url: PROJECT_URL } } });
+    await app.demo.call('conversations.add', { params: { id: made.id }, body: { url: PLAIN_CONVERSATION } });
+    const navigate = fake.native.chatgpt.navigate as ReturnType<typeof vi.fn>;
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    navigate.mockClear();
+    act(() => {
+      app.runtime.route.getState().selectProject(made.id);
+      app.runtime.route.getState().openChatGptProject(made.id);
+    });
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith(PROJECT_URL));
+    await waitFor(() => expect(app.runtime.route.getState().chatgptProjectOpen[made.id]).toBeUndefined()); // asked once, done once
+    await new Promise((r) => setTimeout(r, 120));
+    expect(navigate.mock.calls.map((c) => c[0])).toEqual([PROJECT_URL]); // the project's conversation was not loaded over it
+  });
+
+  it('does not load the page again when the view is already on it, and drops the request where nothing can show it', async () => {
+    stubWorkspaceGeometry();
+    const fake = createFakeNative({ view: { url: PROJECT_URL } });
+    const app = await renderApp({ native: fake });
+    const made = await app.demo.call('projects.create', { body: { name: 'Linked', roots: [], chatgptProject: { url: PROJECT_URL } } });
+    const bare = await app.demo.call('projects.create', { body: { name: 'Bare', roots: [] } });
+    const navigate = fake.native.chatgpt.navigate as ReturnType<typeof vi.fn>;
+    act(() => { app.runtime.route.getState().selectProject(made.id); app.runtime.route.getState().openChatGptProject(made.id); });
+    await waitFor(() => expect(app.runtime.route.getState().chatgptProjectOpen[made.id]).toBeUndefined());
+    expect(navigate).not.toHaveBeenCalled();
+    act(() => { app.runtime.route.getState().selectProject(bare.id); app.runtime.route.getState().openChatGptProject(bare.id); });
+    await waitFor(() => expect(app.runtime.route.getState().chatgptProjectOpen[bare.id]).toBeUndefined());
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('is what the "Open" of the project settings does, with the pane keeping the person where they are afterwards', async () => {
+    stubWorkspaceGeometry();
+    const user = userEvent.setup();
+    const fake = createFakeNative();
+    const app = await renderApp({ native: fake });
+    const made = await app.demo.call('projects.create', { body: { name: 'Both', roots: [], chatgptProject: { url: PROJECT_URL } } });
+    await app.demo.call('conversations.add', { params: { id: made.id }, body: { url: PLAIN_CONVERSATION } });
+    const navigate = fake.native.chatgpt.navigate as ReturnType<typeof vi.fn>;
+    await user.click(screen.getByRole('button', { name: `Actions for Both` }));
+    await user.click(await screen.findByRole('menuitem', { name: /^(Edit project|Project settings|Settings)$/ }));
+    const dialog = await screen.findByRole('dialog', { name: 'Both settings' });
+    navigate.mockClear();
+    await user.click(within(dialog).getByRole('button', { name: /^Open/ }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith(PROJECT_URL));
+    await screen.findByRole('heading', { level: 1, name: 'Both' });
+    await new Promise((r) => setTimeout(r, 120));
+    expect(navigate.mock.calls.map((c) => c[0])).toEqual([PROJECT_URL]);
+  });
+});
+
 describe('a project with neither a conversation nor a linked ChatGPT Project', () => {
   async function bare() {
     const places = stubWorkspaceGeometry();

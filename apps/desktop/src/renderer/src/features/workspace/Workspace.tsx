@@ -113,7 +113,7 @@ function WorkspaceBar({ project, layout, onChange }: BarProps) {
       </div>
       <div className="ms-wsbar__tools">
         <ViewSwitch value={viewOf(layout.maximized)} onChange={(view) => onChange({ maximized: maximizedOf(view) })} />
-        <IconButton label={`Edit ${project.name}`} icon="pencil" size="sm" onClick={() => openProjectDialog({ mode: 'edit', projectId: project.id })} />
+        <IconButton label={`${project.name} settings`} icon="pencil" size="sm" onClick={() => openProjectDialog({ mode: 'edit', projectId: project.id })} />
         <Menu
           label="Layout"
           placement="bottom-end"

@@ -41,7 +41,7 @@ describe('the header', () => {
     const tools = bar.querySelector('.ms-wsbar__tools') as HTMLElement;
     expect(within(identity).getByRole('heading', { level: 1 })).toBeTruthy();
     const names = [...within(tools).getAllByRole('radio').map((r) => r.textContent ?? ''), ...within(tools).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? '')];
-    expect(names).toEqual(['Split', 'ChatGPT', 'Claude', 'Edit GitManager', 'Layout: Automatic']);
+    expect(names).toEqual(['Split', 'ChatGPT', 'Claude', 'GitManager settings', 'Layout: Automatic']);
   });
 
   it('shows the repository and the first folder as quiet buttons that do what they say', async () => {
@@ -112,7 +112,7 @@ describe('the header', () => {
     await user.click(screen.getByRole('button', { name: 'Layout: Automatic' }));
     expect(screen.getByRole('menu', { name: 'Layout' })).toBeTruthy();
     await user.keyboard('{Escape}');
-    await user.click(screen.getByRole('button', { name: 'Edit GitManager' }));
+    await user.click(screen.getByRole('button', { name: 'GitManager settings' }));
     expect(await screen.findByRole('dialog', { name: 'GitManager settings' })).toBeTruthy();
   });
 });
