@@ -87,7 +87,19 @@ export async function startHarness(opts: { dataDir?: string; root?: string; core
         if (/^hooks-.*\.jsonl$/.test(f)) fake += `: ${fs.readFileSync(full, 'utf8').trim().split('\n').slice(-6).join(' | ').slice(0, 900)}`;
       }
     } catch { /* no state dir */ }
-    return `\n--- sessions: ${sessions}\n--- fake claude state:${fake}\n--- core.log tail:\n${log}`;
+    // What each managed terminal shows right now: attach for a moment and keep the tail of what is replayed.
+    let screens = '';
+    try {
+      const list = await client.call('sessions.list', { query: {} });
+      for (const x of list) {
+        let text = '';
+        const t = client.terminal.attach(x.key, { cols: 100, rows: 30 }, { onAttached() {}, onData: (d: string) => { text += d; }, onExit() {}, onError() {} });
+        await new Promise((r) => setTimeout(r, 700));
+        try { (t as { close?: () => void }).close?.(); } catch { /* detached */ }
+        screens += `\n  ${x.key}: ${JSON.stringify(text.slice(-700))}`;
+      }
+    } catch (e) { screens = ` (could not read terminals: ${String(e)})`; }
+    return `\n--- sessions: ${sessions}\n--- terminals:${screens}\n--- fake claude state:${fake}\n--- core.log tail:\n${log}`;
   };
 
   const waitFor: Harness['waitFor'] = async (what, fn, timeoutMs = 15_000) => {
