@@ -1,5 +1,7 @@
 # Mini-Summa
 
+<p align="center"><img src="assets/brand/mini-summa-logo.png" alt="The Mini-Summa logo: an owl whose eyes are an infinity sign" width="180"></p>
+
 **Automate communication. Preserve context. Keep the human in control.**
 
 Mini-Summa is a personal workspace for AI-assisted development. It sits between the ChatGPT conversations you already

@@ -32,7 +32,8 @@
 
 .ms-sidebar__head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: 0 0 12px 10px; }
 .ms-brand { display: flex; align-items: center; gap: 10px; min-width: 0; font-weight: 600; letter-spacing: -0.01em; }
-.ms-brand__mark { width: 22px; height: 22px; flex: none; border-radius: 7px; background: var(--accent); display: grid; place-items: center; color: var(--accent-ink); }
+/* The Mini-Summa logo itself: an owl whose eyes are an infinity sign. It has its own colours and is never tinted. */
+.ms-brand__logo { width: 26px; height: 26px; flex: none; object-fit: contain; user-select: none; }
 .ms-brand__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .ms-sidebar__top { flex: none; display: flex; flex-direction: column; gap: var(--sp-2); padding: 0 2px 8px; }

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Draws the Mini-Summa mark (an emerald sigma on a charcoal rounded square) with nothing but node:zlib: no image
-// libraries, no external assets. Colors are the Summa-UI tokens: charcoal --s0/--s1/--s3, emerald --accent.
+// Draws the Mini-Summa icons from the logo (assets/brand/mini-summa-logo.png: an owl whose eyes are an infinity sign) on a charcoal
+// rounded square, with nothing but node:zlib: no image library. The scaling lives in scripts/brand/logo-raster.mjs.
 //
 //   node apps/desktop/scripts/make-icons.mjs
 //
@@ -16,63 +16,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
+import { encodePng as encodeLogoPng, renderBrandMark, renderLogoOnly } from '../../../scripts/brand/logo-raster.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 
-const CHARCOAL_TOP = [0x1b, 0x1c, 0x1c];
-const CHARCOAL_BOTTOM = [0x14, 0x15, 0x15];
-const EDGE = [0x2c, 0x2d, 0x2d];
-const EMERALD = [0x10, 0xb9, 0x81];
-
-// Sigma, in unit coordinates: serif, top bar, diagonal to the vertex, diagonal back, bottom bar, serif.
-const SIGMA = [[0.745, 0.35], [0.745, 0.275], [0.275, 0.275], [0.525, 0.5], [0.275, 0.725], [0.745, 0.725], [0.745, 0.65]];
-
-const clamp01 = (v) => Math.min(1, Math.max(0, v));
-const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
-
-function distanceToSegment(px, py, ax, ay, bx, by) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const t = clamp01(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1));
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
-}
-
-function roundedRectSdf(x, y, size, radius) {
-  const h = size / 2;
-  const qx = Math.abs(x - h) - (h - radius);
-  const qy = Math.abs(y - h) - (h - radius);
-  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - radius;
-}
-
-/** RGBA pixels for one size. Each size is drawn from scratch so small icons stay crisp. */
+/** RGBA pixels for one size: the Mini-Summa logo (assets/brand/mini-summa-logo.png) on a charcoal rounded square. */
 export function drawMark(size) {
-  const px = Buffer.alloc(size * size * 4);
-  const radius = size * 0.22;
-  const stroke = Math.max(1.6, size * 0.092);
-  const edge = Math.max(1, size / 64);
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const cx = x + 0.5;
-      const cy = y + 0.5;
-      const body = clamp01(0.5 - roundedRectSdf(cx, cy, size, radius));
-      let rgb = mix(CHARCOAL_TOP, CHARCOAL_BOTTOM, cy / size);
-      // A hairline of the raised-surface tone keeps the shape readable on dark backgrounds.
-      const inside = -roundedRectSdf(cx, cy, size, radius);
-      rgb = mix(rgb, EDGE, clamp01(1 - inside / edge) * 0.9);
-      let d = Infinity;
-      for (let i = 0; i < SIGMA.length - 1; i += 1) {
-        d = Math.min(d, distanceToSegment(cx, cy, SIGMA[i][0] * size, SIGMA[i][1] * size, SIGMA[i + 1][0] * size, SIGMA[i + 1][1] * size));
-      }
-      rgb = mix(rgb, EMERALD, clamp01(0.5 - (d - stroke / 2)));
-      const i = (y * size + x) * 4;
-      px[i] = Math.round(rgb[0]);
-      px[i + 1] = Math.round(rgb[1]);
-      px[i + 2] = Math.round(rgb[2]);
-      px[i + 3] = Math.round(body * 255);
-    }
-  }
-  return px;
+  return renderBrandMark(size);
 }
 
 // ---- PNG and ICO encoders ----------------------------------------------------------------------------------------
@@ -194,5 +145,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   write('resources/icon.png', png(256));
   write('resources/tray.png', png(32));
   write('resources/tray@2x.png', png(64));
+  // The logo alone (no plate) for the sidebar of the app window; the renderer inlines it into its bundle.
+  write('src/renderer/src/assets/mini-summa-logo.png', encodeLogoPng(96, renderLogoOnly(96)));
   write('resources/tray.ico', encodeIcoDib(TRAY_ICO_SIZES.map((size) => ({ size, rgba: drawMark(size) }))));
 }

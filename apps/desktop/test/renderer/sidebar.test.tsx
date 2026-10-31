@@ -294,7 +294,7 @@ describe('the sidebar as a part of the shell', () => {
     expect(within(projects).queryAllByRole('heading')).toHaveLength(0);
     expect(within(sections).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Activity, 4 unread', 'Reports, 4 waiting for handoff', 'Settings']);
     // No initials and no avatars: nothing in the sidebar draws a letter in a circle.
-    expect(side.querySelector('img, [class*="avatar"]')).toBeNull();
+    expect(side.querySelector('img:not(.ms-brand__logo), [class*="avatar"]')).toBeNull(); // the brand logo is the only image
   });
 
   it('marks one place as current: the project only while the workspace is shown, the section otherwise', async () => {

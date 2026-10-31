@@ -39,6 +39,13 @@ gradient or glow (CHK-013), no em dash (CHK-017) and no horizontal overflow (CHK
 there is at least 4.5:1 on its real, composited surface; and 149 keyboard focus stops were walked, each with a neutral ring of 1.5px or
 less at 3:1 or better.
 
+### X3. The Mini-Summa logo has its own colours
+The brand mark in the sidebar, the application and installer icons, the tray icon, the extension icons and the Android icons are the
+owner's logo (`assets/brand/mini-summa-logo.png`: an owl whose eyes are an infinity sign, in jade and charcoal feathers). It is a
+picture with its own palette, not drawn from the tokens, and is never tinted. Where it sits on a surface of ours (the app icon plate,
+the launcher icon), the plate uses the charcoal tokens. The sidebar shows it at 26 px, the one image allowed there. It replaces the
+tinted "layers" glyph used before. Icons are generated from the one file by `scripts/brand/logo-raster.mjs`, deterministically.
+
 ### X2. Compact controls (P18)
 
 The bundle's controls are 32px (`--control-h`) and 40px. Toolbars, tab strips, filters and the pane headers use `--control-h-sm`

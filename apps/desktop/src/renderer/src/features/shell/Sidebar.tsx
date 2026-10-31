@@ -1,3 +1,4 @@
+import logoUrl from '../../assets/mini-summa-logo.png?inline';
 import type { RefCallback } from 'react';
 import { useApp, useRoute, useUi } from '../../app/runtime';
 import type { ViewId } from '../../app/route';
@@ -40,7 +41,7 @@ export function Sidebar({ replaced, slotRef }: SidebarProps) {
 function Brand() {
   return (
     <div className="ms-brand">
-      <span className="ms-brand__mark" aria-hidden="true"><Icon name="layers" size={14} style={{ strokeWidth: 2.4 }} /></span>
+      <img className="ms-brand__logo" src={logoUrl} alt="" width={26} height={26} draggable={false} />
       <span className="ms-brand__name">Mini-Summa</span>
     </div>
   );

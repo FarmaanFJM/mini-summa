@@ -140,12 +140,15 @@ describe('icons', () => {
     }
   });
 
-  it('show an emerald tab in front, an outlined tab behind and transparent rounded corners', () => {
+  it('show the Mini-Summa logo (jade owl with infinity eyes) on a charcoal rounded square with transparent corners', () => {
     const png = decodePng(renderIconPng(128));
     expect(png.px(0, 0)[3]).toBe(0); // rounded corner is transparent
-    expect(png.px(72, 78)).toEqual([0x10, 0xb9, 0x81, 255]); // inside the front tab
-    expect(png.px(55, 22)).toEqual([0xa3, 0xa6, 0xa4, 255]); // on the top edge of the back tab outline
-    expect(png.px(64, 3)).toEqual([0x23, 0x24, 0x24, 255]); // background near the top edge, inside the rounded square
+    const top = png.px(64, 2); // inside the plate, above the logo
+    expect(top[3]).toBe(255);
+    expect(top[1]).toBeLessThan(0x40); // charcoal, not a bright colour
+    let jade = 0; // the logo's glowing green: clearly more green than red, and bright
+    for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) { const p = png.px(x, y); if (p[3] === 255 && p[1] > 150 && p[1] > p[0] + 60) jade++; }
+    expect(jade).toBeGreaterThan(300);
   });
 
   it('are drawn the same way every time', () => {
