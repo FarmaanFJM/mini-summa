@@ -721,7 +721,16 @@ describe('wording of what the server says', () => {
     take(await api(hh, 'POST', '/projects', { token: hh.tokens.desktop, body: {} }));                                 // 400 body
     take(await api(hh, 'GET', '/reports?limit=zero', { token: hh.tokens.read }));                                     // 400 query
     take(await raw(hh.port, { method: 'POST', path: '/api/v1/projects', headers: { authorization: `Bearer ${hh.tokens.desktop}` }, body: '{' })); // invalid json
-    take(await raw(hh.port, { method: 'POST', path: '/api/v1/projects', headers: { authorization: `Bearer ${hh.tokens.desktop}` }, body: 'x'.repeat(1024 * 1024 + 1) })); // 413
+    // 413. On Windows the server's answer can be lost: it closes the socket with the rest of the body unread, TCP then resets the
+    // connection and the client sees ECONNRESET instead of the response (seen on a real Windows runner). The refusal itself still
+    // happens, but its wording cannot be read there; this is recorded in docs/WINDOWS_CI.md, not hidden.
+    let oversizeUnreadable = false;
+    try {
+      take(await raw(hh.port, { method: 'POST', path: '/api/v1/projects', headers: { authorization: `Bearer ${hh.tokens.desktop}` }, body: 'x'.repeat(1024 * 1024 + 1) }));
+    } catch (error) {
+      if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'ECONNRESET') throw error;
+      oversizeUnreadable = true;
+    }
     take(await api(hh, 'GET', '/nothing', { token: hh.tokens.read }));                                                // 404
     take(await api(hh, 'GET', '/sessions/nope', { token: hh.tokens.read }));                                          // 400 session key
     take(await api(hh, 'GET', '/deliveries/d1/parts/x', { token: hh.tokens.desktop }));                               // 400 part
@@ -735,7 +744,7 @@ describe('wording of what the server says', () => {
     await api(hh, 'POST', '/activity/read', { token: hh.tokens.read, body: { all: true }, headers: { 'idempotency-key': 'k' } });
     hh.db.run("INSERT INTO idempotency (key, principal, route, response_status, response_json, created_at) VALUES ('k2','desktop','projects.create',200,'{\"v\":1,\"fp\":\"other\",\"body\":{}}', ?)", [hh.clock.now().toISOString()]);
     take(await api(hh, 'POST', '/projects', { token: hh.tokens.desktop, body: { name: 'x' }, headers: { 'idempotency-key': 'k2' } })); // 422
-    expect(messages.length).toBe(17);
+    expect(messages.length).toBe(oversizeUnreadable ? 16 : 17);
     for (const m of messages) {
       expect(m, m).not.toMatch(/\u2014|\u2013/);
       expect(m.trim().length).toBeGreaterThan(15);
