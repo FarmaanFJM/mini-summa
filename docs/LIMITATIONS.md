@@ -126,11 +126,8 @@ These are things Mini-Summa gets wrong or does clumsily today. None blocks the c
   ChatGPT Projects if OpenAI does; both would replace pasting and page-showing.
 * A shared base for the two view controllers (ChatGPT and Claude), which now duplicate about 60 lines.
 * A light theme; the interface is dark only.
-* When the sidebar is collapsed to its narrow rail, Reports and Settings show their own navigation column inside the view
-  (recorded as exception X8 in [UI_PRINCIPLE_EXCEPTIONS.md](UI_PRINCIPLE_EXCEPTIONS.md)). A cleaner fix lets a view that
-  replaces the sidebar borrow its full width while it is open.
 * An automated accessibility audit (axe) of the interface; contrast ratios were computed from the tokens, not measured on screen.
-* Keyboard shortcuts beyond maximising a pane.
+* More keyboard shortcuts. Ctrl+Shift+P (search projects) and Alt+Up or Alt+Down (move a project in the list) exist; like Ctrl+Shift+Arrow they do not reach the app while the embedded ChatGPT or Claude page has the keyboard focus.
 * Auto-update for the desktop app.
 * An iOS companion.
 * Search across reports and a bulk export.

@@ -109,7 +109,7 @@ export function buildModel(results, behaviours) {
   const extras = behaviours.extras.map((x) => row(x, 'extra'));
   const known = new Set([...rows, ...extras].map((r) => r.id));
   // Tests whose id is not listed are shown too: nothing the suite ran may disappear from the report.
-  const others = tests.filter((t) => !known.has(t.id)).map((t) => ({ id: t.id ?? '—', title: t.text, kind: 'other', tests: [t], status: statusOf([t]), note: noteOf(statusOf([t]), [t]), why: null }));
+  const others = tests.filter((t) => !known.has(t.id)).map((t) => ({ id: t.id ?? '-', title: t.text, kind: 'other', tests: [t], status: statusOf([t]), note: noteOf(statusOf([t]), [t]), why: null }));
   const count = (list) => Object.fromEntries(Object.keys(STATUS).map((k) => [k, list.filter((r) => r.status === k).length]));
   const unexplained = tests.filter((t) => t.status === 'notTested' && !t.reason);
   return {
@@ -217,14 +217,14 @@ export function render(model, { meta, run, history = [] }) {
 
   out.push('## Results', '');
   out.push('| ID | Behaviour | Status | NOT TESTED reason, or what failed |', '| --- | --- | --- | --- |');
-  for (const r of model.rows) out.push(`| ${r.id} | ${cell(r.title)} | ${statusCell(r.status)} | ${cell(r.note) || '—'} |`);
+  for (const r of model.rows) out.push(`| ${r.id} | ${cell(r.title)} | ${statusCell(r.status)} | ${cell(r.note) || '-'} |`);
   out.push('');
   out.push('PASS means executed and asserted. FAIL means executed and an assertion did not hold (a product defect or a test defect; the evidence says which). PARTIAL means part of the behaviour was executed and held and part is NOT TESTED. NOT TESTED means it was not executed, with the reason. There is no status for "assumed to work".', '');
 
   out.push('## Extra checks', '');
   out.push('Not among the 25 behaviours. Each guards a defect that this suite found in the product, so that it stays fixed.', '');
   out.push('| ID | Check | Status | NOT TESTED reason, or what failed |', '| --- | --- | --- | --- |');
-  for (const r of [...model.extras, ...model.others]) out.push(`| ${r.id} | ${cell(r.title)} | ${statusCell(r.status)} | ${cell(r.note) || '—'} |`);
+  for (const r of [...model.extras, ...model.others]) out.push(`| ${r.id} | ${cell(r.title)} | ${statusCell(r.status)} | ${cell(r.note) || '-'} |`);
   out.push('');
 
   out.push('## What was observed', '');

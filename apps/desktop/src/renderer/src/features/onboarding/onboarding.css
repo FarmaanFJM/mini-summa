@@ -33,9 +33,9 @@
 .ms-onb-step__mark { display: grid; place-items: center; height: 20px; color: var(--text-3); }
 .ms-onb-step[data-done] .ms-onb-step__mark { color: var(--text); }
 .ms-onb-step__body { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
-.ms-onb-step__title { margin: 0; font-size: var(--fs-md); font-weight: 600; line-height: 20px; }
+.ms-onb-step__title { margin: 0; font-size: var(--fs); font-weight: 600; line-height: 20px; }
 .ms-onb-step[data-done] .ms-onb-step__title { color: var(--text-2); font-weight: 500; }
-.ms-onb-step__optional { color: var(--text-3); font-weight: 400; }
+.ms-onb-step__optional { color: var(--text-2); font-weight: 400; }
 
 /* Buttons on a floating surface sit one step lighter than it, as in dialogs. */
 .ms-onb .sm-btn { background: var(--s4); }

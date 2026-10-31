@@ -77,8 +77,7 @@
 
 /* ---------------------------------------------------------------- Claude pane */
 .ms-pane--claude .ms-pane__head .ms-tabs { flex: 0 1 auto; min-width: 0; }
-.ms-tab__origin { color: var(--text-3); font-weight: 400; }
-.ms-tab[data-selected] .ms-tab__origin { color: var(--text-2); }
+.ms-tab__origin { color: var(--text-2); font-weight: 400; }
 /* A narrow pane keeps the origin only on the selected tab; the others still say it in their tooltip and accessible name. */
 @container pane-head (max-width: 700px) { .ms-tab:not([data-selected]) .ms-tab__origin { display: none; } }
 

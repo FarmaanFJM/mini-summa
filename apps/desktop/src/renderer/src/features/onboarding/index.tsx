@@ -11,11 +11,10 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useApp } from '../../app/runtime';
 import { Button, Icon } from '../../ui';
+import { SIDEBAR_EDGE_WIDTH } from '../shell/SidebarEdge';
 import { Checklist, useSetup } from './Checklist';
 import { doneCount, isComplete } from './model';
 import { useOnboarding } from './state';
-
-const RAIL_WIDTH = 52;
 
 type Place = 'center' | 'corner';
 
@@ -34,7 +33,7 @@ function Panel({ place }: { place: Place }) {
   if (place === 'corner' && (!ready || complete)) return null;
 
   const { done, total } = doneCount(setup.steps);
-  const offset = layout?.sidebarCollapsed ? RAIL_WIDTH : layout?.sidebarWidth ?? 260;
+  const offset = layout?.sidebarCollapsed ? SIDEBAR_EDGE_WIDTH : layout?.sidebarWidth ?? 260;
   const compact = place === 'corner';
   return (
     <div className="ms-onb-layer" data-place={place} style={{ ['--ms-onb-offset' as string]: `${offset}px` }}>
