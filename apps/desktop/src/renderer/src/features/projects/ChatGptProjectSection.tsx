@@ -94,7 +94,7 @@ function Linked({ project, link, onSaved, onOpen }: LinkedProps) {
 
 interface ChangeProps { project: Project; link: ChatGptProjectLink; keepTitle: boolean; onDone(): void; onSaved(): void }
 
-/** The address of a linked project, edited in place: Enter or leaving the field sends it, Escape takes it back. */
+/** The address of a linked project, edited in place: Enter or leaving the field sends it, and so does closing the dialog. */
 function ChangeAddress({ project, link, keepTitle, onDone, onSaved }: ChangeProps) {
   const api = useApi();
   const address = useCommitText<string>({

@@ -291,7 +291,8 @@ try {
     const o = await (await fetch(`${core}/__test/options`)).json();
     assert.equal(o.dataDir, dataDir);
     assert.equal(o.mode, 'embedded');
-    assert.equal(o.port, 0);
+    // No port is passed (index.ts): the core prefers its own stable port and only falls back to a free one, so the window's origin survives restarts.
+    assert.equal(o.port, undefined);
     assert.equal(o.hasNative, true);
     assert.equal(o.hasLog, false, 'the core must use its own logger, not the main process one');
     assert.equal(o.uiDir, path.join(appRoot, 'out', 'renderer'));
