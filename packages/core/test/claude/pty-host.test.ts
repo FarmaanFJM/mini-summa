@@ -34,10 +34,11 @@ describe('createNodePtySpawner (real PTY)', () => {
     expect(r.pty.pid).toBeGreaterThan(0);
   });
 
-  // NOT VERIFIED ON WINDOWS: a Node child under ConPTY did not report the resize in the first native run (CI, 'Windows runner findings'). The initial size works.
-  it.skipIf(WIN)('gives the child a terminal of the requested size and applies resize()', async () => {
-    const r = run(`${READY} process.stdout.on("resize", () => process.stdout.write("size " + process.stdout.columns + "x" + process.stdout.rows + "\\n")); setInterval(() => {}, 1000); process.stdout.write("start " + process.stdout.columns + "x" + process.stdout.rows + "\\n");`, { cols: 91, rows: 27 });
-    await waitFor(() => r.out().includes('start 91x27'), 'initial size');
+  // The child reports the size it SEES, by polling. (The earlier version waited for Node's 'resize' event, which a child under ConPTY did not
+  // emit in the first native run; whether the size really changes is what matters, not how the child hears about it.)
+  it('gives the child a terminal of the requested size and applies resize()', async () => {
+    const r = run(`${READY} let last = ''; setInterval(() => { const now = process.stdout.columns + "x" + process.stdout.rows; if (now !== last) { last = now; process.stdout.write("size " + now + "\\n"); } }, 100);`, { cols: 91, rows: 27 });
+    await waitFor(() => r.out().includes('size 91x27'), 'initial size');
     r.pty.resize(77, 21);
     await waitFor(() => r.out().includes('size 77x21'), 'resized size');
     r.pty.kill();
