@@ -1,0 +1,5 @@
+# One line ending everywhere: tests read source files and match on \n, and a Windows checkout with autocrlf would otherwise turn them into \r\n (found on a real Windows runner).
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.bat text eol=crlf

@@ -124,18 +124,18 @@ describe('badge', () => {
 describe('locations', () => {
   it('finds everything beside the bundled main script in development', () => {
     const l = resolveLocations({ moduleDir: '/repo/apps/desktop/out/main', isPackaged: false, resourcesPath: '/ignored' });
-    expect(l.uiDir).toBe(path.join('/repo/apps/desktop', 'out', 'renderer'));
-    expect(l.preloadPath).toBe(path.join('/repo/apps/desktop', 'out', 'preload', 'index.cjs'));
-    expect(l.iconPath).toBe(path.join('/repo/apps/desktop', 'resources', 'icon.png'));
-    expect(l.trayIconPath).toBe(path.join('/repo/apps/desktop', 'resources', 'tray.png'));
+    expect(l.uiDir).toBe(path.resolve('/repo/apps/desktop', 'out', 'renderer'));
+    expect(l.preloadPath).toBe(path.resolve('/repo/apps/desktop', 'out', 'preload', 'index.cjs'));
+    expect(l.iconPath).toBe(path.resolve('/repo/apps/desktop', 'resources', 'icon.png'));
+    expect(l.trayIconPath).toBe(path.resolve('/repo/apps/desktop', 'resources', 'tray.png'));
     expect(l.captureScript).toBeUndefined();
   });
   it('finds the unpacked hook script and icons in the resources folder when packaged', () => {
     const l = resolveLocations({ moduleDir: '/app/resources/app.asar/out/main', isPackaged: true, resourcesPath: '/app/resources' });
-    expect(l.uiDir).toBe(path.join('/app/resources/app.asar', 'out', 'renderer'));
-    expect(l.preloadPath).toBe(path.join('/app/resources/app.asar', 'out', 'preload', 'index.cjs'));
-    expect(l.captureScript).toBe(path.join('/app/resources', 'hook', 'capture.mjs'));
-    expect(l.iconPath).toBe(path.join('/app/resources', 'icons', 'icon.png'));
+    expect(l.uiDir).toBe(path.resolve('/app/resources/app.asar', 'out', 'renderer'));
+    expect(l.preloadPath).toBe(path.resolve('/app/resources/app.asar', 'out', 'preload', 'index.cjs'));
+    expect(l.captureScript).toBe(path.resolve('/app/resources', 'hook', 'capture.mjs'));
+    expect(l.iconPath).toBe(path.resolve('/app/resources', 'icons', 'icon.png'));
   });
 });
 
