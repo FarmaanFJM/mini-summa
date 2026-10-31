@@ -2,11 +2,33 @@
 
 ## What it is
 
-One native browser view (an Electron `WebContentsView`) laid over the ChatGPT pane of the workspace. It has its own persistent
-session, so the login stays, and it is sandboxed with no preload. It is created the first time a conversation is shown and is
-never destroyed because of layout: hiding the pane, maximizing the other one, opening Settings or a dialog and resizing the window
-only hide or move it, so the page, its scroll position and a half-written message stay. The log has one line, `chatgpt view
-created`, per run.
+One native browser view (an Electron `WebContentsView`) laid over the ChatGPT pane of the workspace, **one for each project** (live
+views, below), all in the one persistent session (`persist:chatgpt`), so the login stays and is shared, and sandboxed with no preload.
+A view is created the first time a page is shown for its project and is never destroyed because of layout: hiding the pane,
+maximizing the other one, opening Settings or a dialog, resizing the window and selecting another project only hide or move it, so
+the page, its scroll position and a half-written message stay. The log has one line, `chatgpt view created`, for each view made;
+the only thing that ever destroys one is the bound on live views, which logs `chatgpt view unloaded to stay within the limit`.
+
+## Live views: one ChatGPT page for each project, within a bound
+
+A project is a workspace, not a chat, so leaving it must not throw its ChatGPT page away. Each project has a view of its own
+(`main/chatgptViews.ts`; the renderer names the project's view by its id in every ChatGPT call). Selecting another project shows
+that project's view and hides this one: the conversation, the scroll position and an unsent draft are still there when you come back.
+
+* **The bound is 4 live views** (`MAX_LIVE_CHATGPT_VIEWS`). Every live view keeps a renderer process with a ChatGPT page in memory even
+  while hidden. **Measured** (X11, the real app on Linux under Xvfb, Electron's process metrics, four views in four processes): 88.7
+  to 93.5 MB of working set per view, with the local stand-in page, which is a nearly empty document. **The real chatgpt.com page is
+  much heavier and could not be measured here** (it needs a login and cannot be reached from where this was built); 100 to 250 MB a
+  view is an estimate, not a measurement. Four views would then be roughly 0.4 to 1 GB.
+* **When a fifth is needed** the least recently used view that is not the one on screen is destroyed, and you are told, not silently:
+  "The ChatGPT page of <project> was unloaded to save memory. Unsent text there is gone; the page will reload at <address>." When you
+  open that project again the page loads at its last address in a new view.
+* **Mini-Summa never reads the page**, so it cannot know whether a draft was in an unloaded view; the notice always says unsent
+  text is gone. **A draft survives switching projects and, only while the project stays within the bound, coming back. It does not
+  survive an unload and it does not survive restarting Mini-Summa.** A restart restores only the last address of each project.
+* Only the view of the project on screen is loaded after a start; the others load when you open them.
+* Verified on Linux under Xvfb against the stand-in page (X11). **Windows: NOT TESTED.** How Chromium treats a hidden view of the real
+  site (timers, suspended tabs, its own memory pressure) was not observed.
 
 ## What Mini-Summa does to the page, and what it does not
 

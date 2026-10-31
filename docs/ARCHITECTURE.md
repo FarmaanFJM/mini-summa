@@ -62,7 +62,9 @@ notifications that navigate) come from `window.miniSumma`, exposed by the preloa
 9. **A project is a set of independent associations, and execution is chosen per session.** A project has an identity (its
    name) and, each optional and none depending on another: a GitHub repository (`owner/repo`), local folders, a link to an
    existing ChatGPT Project (its address only: Mini-Summa cannot list ChatGPT Projects and imports nothing from them), ChatGPT
-   conversations used as report destinations, and Claude sessions. A project with only a GitHub repository is complete. Where a
+   conversations used as report destinations, and Claude sessions. A project with only a GitHub repository is complete. A project is a
+   persistent workspace, not a chat: opening or creating a ChatGPT conversation never creates a project or maps a destination, and the
+   project reopens on the last ChatGPT page used in it (tracked locally; the newest conversation of a ChatGPT Project cannot be found). Where a
    Claude session runs is decided when the session starts: Local needs a local folder, Cloud needs the GitHub repository. One is
    never substituted for the other; when the chosen one is impossible the interface says why and what to add.
 
@@ -129,8 +131,9 @@ reaches back the server answers `resync: true` and the client reloads snapshots 
 
 The desktop shell starts the core on the same port every time (47811, or the next free one when it is taken) and the window keeps
 the choices that matter in the core, not in the browser profile that belongs to that port: the selected project and view, per
-project the selected session, the selected conversation and the last page of Claude Code on the web (`cloudUrl`, only an address on
-claude.ai/code, stored without its query), and the dismissed setup hints (`Settings.ui`, validated by the route's schema; ids and
+project the selected session, the selected conversation, the last page of Claude Code on the web (`cloudUrl`, only an address on
+claude.ai/code, stored without its query) and the last page of ChatGPT (`chatgptUrl`, only a conversation or project page on
+chatgpt.com, no query, recorded by `app/chatgptRecorder.ts` from the address the view reports), and the dismissed setup hints (`Settings.ui`, validated by the route's schema; ids and
 addresses only). While a project's Cloud tab is the one shown, its remembered session is sent as null, so the host knows no local
 session is on screen (a "Claude finished" notification is held back only for a session that is). The renderer sends changes after 0.6 s of quiet and, as the page closes, with a request that
 outlives it (`app/uiSync.ts`, `app/keepalive.ts`). The window's size, position and maximised state are the shell's own
@@ -140,7 +143,8 @@ outlives it (`app/uiSync.ts`, `app/keepalive.ts`). The window's size, position a
 
 ## ChatGPT integration modes
 
-* **Embedded** (default): a sandboxed `WebContentsView` with its own persistent partition (`persist:chatgpt`),
+* **Embedded** (default): a sandboxed `WebContentsView` for each project (a bounded set of four live views, least recently used
+  unloaded with a notice; `main/chatgptViews.ts`, [CHATGPT_PANE.md](CHATGPT_PANE.md)), all in one persistent partition (`persist:chatgpt`),
   context isolation, no Node, navigation restricted by `classifyNavigation`, no user-agent spoofing. If the site
   refuses the embedded view (Google sign-in often does), the status says so and the user switches to external mode.
 * **External**: opens the mapped URL in the default browser. The optional MV3 extension (tabs/windows APIs only, no

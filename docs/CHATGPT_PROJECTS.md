@@ -26,6 +26,40 @@
 * **Conversations stay separate.** A ChatGPT conversation that should receive Claude's reports is still mapped explicitly ("Use this conversation for reports" when the project page shows one). The link to the project and the mapped conversations are independent.
 * **Nothing is implied.** The interface says "linked", never "imported" or "synced".
 
+## Persistent workspace: the last page used in each project
+
+A Mini-Summa project is a persistent workspace, not a chat. You link your ChatGPT Project once and then open or create conversations with
+ChatGPT's own screens; Mini-Summa has no conversation manager and **creating a conversation in ChatGPT never creates a Mini-Summa
+project**. When you come back to a project it shows the last ChatGPT page you were on **in that project**, without pasting anything.
+
+* **What is remembered.** The address of the last conversation or project page the embedded view showed while the project was
+  selected, per project, in the core's window memory (`ui.perProject[id].chatgptUrl`, https chatgpt.com only, no query, no fragment,
+  at most 600 characters). It is taken from the view's address, in-page navigation (what ChatGPT's own client does when you open a
+  conversation) and full loads alike. The page itself is never read.
+* **What is not.** The home page, settings, sign-in, share links, a page that is still loading or failed to load, and (when the project
+  is linked to a ChatGPT Project whose address Mini-Summa recognises) any page that is not in that ChatGPT Project. A project linked by an
+  address of a form Mini-Summa does not recognise, or not linked at all, remembers conversations only.
+* **No mixing.** Right after you select another project the view may still show the previous project's page for a moment; nothing it
+  reports then is recorded for the new project (the recorder only listens once the view has loaded the address the new project asked for,
+  or you navigated). With live views each project has its own view anyway.
+* **A visited conversation is never mapped.** Sending reports to a conversation stays the explicit action "Use this conversation for
+  reports". Nothing you visit becomes a report destination, and nothing creates a project.
+* **Opening a project** shows, in this order: the remembered last page, else the conversation you mapped (the one chosen last, else the
+  preferred one), else the linked ChatGPT Project's page, else the empty state with the two ways to add one. The same on a restart.
+  A project that was never linked keeps working as before.
+* **Open project page** (the folder icon in the ChatGPT pane header, shown when a project is linked) opens the linked ChatGPT
+  Project's page, the one place from which ChatGPT lists that project's own conversations.
+* **Live views.** Each project keeps its own view while it is within the bound of 4, so the conversation, the scroll position and an
+  unsent draft survive switching projects; an unloaded view is announced and loads again at its last address
+  ([CHATGPT_PANE.md](CHATGPT_PANE.md)). **A draft does not survive an unload or a restart.**
+
+**External limits, stated plainly.** "Last used" is **tracked locally by Mini-Summa**, on this computer, from the addresses the view
+shows. The globally newest conversation of a ChatGPT Project, for example one started on your phone or another computer, **cannot be
+discovered**: OpenAI documents no way to list a project's conversations or read their dates, and Mini-Summa uses no undocumented
+interface, does not read or scrape the page, and does not read cookies or tokens. To get to a conversation you started elsewhere, use
+Open project page and choose it in ChatGPT; Mini-Summa then remembers it. Verified on Linux against a local stand-in for chatgpt.com
+only (X11); the real site's navigation was not observed and Windows is **NOT TESTED**.
+
 ## Not done, and why
 
 * No project picker, no list of the person's projects, no search by name. No documented route exists; every route found needs an undocumented endpoint, page scraping or token capture.

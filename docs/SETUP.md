@@ -110,6 +110,12 @@ later does not move reports already waiting. Changing a waiting delivery's desti
 
 Either way the handoff itself is the same: the message is on your clipboard and you paste it.
 
+**A project remembers its ChatGPT page.** Open or start conversations in ChatGPT as you like; when you come back to the project it
+shows the last page you were on in it, even after a restart, and each project keeps its own ChatGPT page alive while you switch
+(up to four; the fifth unloads the least recently used and tells you). An unsent message survives switching projects, not an unload and
+not a restart. A conversation started on another device is not known until you open it here: use **Open project page** in the ChatGPT
+pane's header. Details: [CHATGPT_PROJECTS.md](CHATGPT_PROJECTS.md).
+
 **Page size** (Settings, ChatGPT, only for the embedded view): Automatic (default), 100%, 90%, 80% or 70%. It is the view's own
 browser zoom, what Ctrl and minus do in a browser. In a narrow pane Automatic zooms out so that ChatGPT gets about 900 CSS pixels
 (never below 70%); it was added against ChatGPT's floating controls overlapping the writing blocks, a report that could not be

@@ -41,6 +41,16 @@ the 30-minute checklist for the phone.
 * **A person's ChatGPT Projects cannot be listed.** OpenAI documents no way for a third party to do it (sign-in scopes exclude
   conversations; "projects" in the OpenAI API are another thing). A workspace is linked by pasting the project's address;
   nothing is imported or synced ([CHATGPT_PROJECTS.md](CHATGPT_PROJECTS.md)).
+* **"Last used" in a project is tracked by Mini-Summa on this computer; the newest conversation of a ChatGPT Project cannot be found.**
+  Mini-Summa remembers, for each project, the last ChatGPT page the embedded view showed while that project was selected. A
+  conversation started on another device is not known to it until you open it here: OpenAI documents no way to list a
+  project's conversations or their dates, and Mini-Summa uses no undocumented interface, scrapes nothing and reads no cookie or
+  token. "Open project page" is the way to it ([CHATGPT_PROJECTS.md](CHATGPT_PROJECTS.md)).
+* **An unsent ChatGPT draft survives switching projects, not an unload and not a restart.** Each project keeps a live ChatGPT view
+  up to a bound of four; the fifth unloads the least recently used one, announced in a toast, and its page loads again at its last
+  address. A restart restores only the last address. Mini-Summa never reads the page, so it cannot say whether a draft was there
+  ([CHATGPT_PANE.md](CHATGPT_PANE.md)). The memory per view was measured only with a stand-in page (about 90 MB); the real site was
+  not measured and is estimated at 100 to 250 MB. Verified on Linux under Xvfb (X11); **Windows NOT TESTED**.
 * **Claude cloud sessions cannot be listed, watched or notified about by Mini-Summa.** Anthropic documents no API, event or
   completion signal an application can use, and hooks on your PC are not read by cloud sessions. The Cloud tab is a web page,
   not session control: to know a cloud task is done, look at the page or use Anthropic's own apps. Mini-Summa sends no
