@@ -82,7 +82,9 @@ try {
 
   const staging = path.join(work, 'package');
   fs.mkdirSync(staging);
-  execFileSync('tar', ['-xzf', tarball, '-C', staging, '--strip-components=1'], { stdio: 'inherit' });
+  // Relative names, run inside the work folder: GNU tar (the one Git for Windows puts first on PATH) reads `C:\...` as a file on a host named C
+  // (found on a real Windows runner), so no absolute Windows path may reach it.
+  execFileSync('tar', ['-xzf', path.basename(tarball), '-C', 'package', '--strip-components=1'], { stdio: 'inherit', cwd: work });
   const missing = REQUIRED.filter((f) => !fs.existsSync(path.join(staging, f)));
   if (missing.length) fail(`${spec} is missing expected files: ${missing.join(', ')}`);
   const manifest = JSON.parse(fs.readFileSync(path.join(staging, 'package.json'), 'utf8'));
