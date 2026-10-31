@@ -48,6 +48,13 @@ export interface StandIn {
   name(uuid: string, title: string): void;
   /** Give a ChatGPT Project (its scope id, `g-p-...`) a recognisable page title. */
   nameProject(scope: string, title: string): void;
+  /**
+   * Make a conversation misbehave the way the real site can: 'gone' answers 404, 'login' redirects to the sign-in page, 'project' redirects
+   * to the project page of its scope (a conversation that no longer exists), 'reset' drops the connection (offline, an outage), 'spa' loads
+   * the page and then, 300 ms later and without loading, moves to the project page of its scope the way a single-page app does.
+   * `undefined` makes it work again.
+   */
+  breakConversation(uuid: string, mode: 'gone' | 'login' | 'project' | 'reset' | 'spa' | undefined): void;
   /** Requests made to claude.ai since the mark. */
   claudeSince(mark: number): StandInRequest[];
   /** Whether claude.ai treats the visitor as signed in (default yes). Signed out, every Claude Code page redirects to /login. */
@@ -146,6 +153,7 @@ export async function startStandIn(): Promise<StandIn> {
   const requests: StandInRequest[] = [];
   const titles = new Map<string, string>();
   const projectTitles = new Map<string, string>();
+  const broken = new Map<string, 'gone' | 'login' | 'project' | 'reset' | 'spa'>();
   let claudeSignedIn = true;
 
   const server = https.createServer({ key, cert }, (req, res) => {
@@ -157,6 +165,22 @@ export async function startStandIn(): Promise<StandIn> {
     const get = (req.method ?? 'GET') === 'GET';
     if (host === CHATGPT_HOST && get) {
       const conversation = /\/c\/([0-9a-f-]{36})$/i.exec(url.pathname)?.[1]?.toLowerCase();
+      if (conversation && broken.get(conversation) === 'spa') {
+        const scope = /^\/g\/(g-p-[\w-]+)\/c\//.exec(url.pathname)?.[1];
+        res.writeHead(200, headers);
+        res.end(page(titles.get(conversation) ?? `Stand-in conversation ${conversation.slice(0, 8)}`, url.pathname, `<script>setTimeout(() => history.pushState({}, '', ${JSON.stringify(scope ? `/g/${scope}/project` : '/')}), 300);</script>`));
+        return;
+      }
+      if (conversation && broken.has(conversation)) {
+        const mode = broken.get(conversation);
+        if (mode === 'reset') { req.socket.destroy(); return; }
+        if (mode === 'gone') { res.writeHead(404, { 'content-type': 'text/plain' }); res.end('not found'); return; }
+        const scope = /^\/g\/(g-p-[\w-]+)\/c\//.exec(url.pathname)?.[1];
+        const to = mode === 'project' && scope ? `/g/${scope}/project` : '/auth/login';
+        res.writeHead(302, { location: `https://${CHATGPT_HOST}${to}`, 'cache-control': 'no-store' });
+        res.end();
+        return;
+      }
       if (conversation) {
         res.writeHead(200, headers);
         res.end(page(titles.get(conversation) ?? `Stand-in conversation ${conversation.slice(0, 8)}`, url.pathname, WRITING_BLOCK));
@@ -166,6 +190,11 @@ export async function startStandIn(): Promise<StandIn> {
       if (project) {
         res.writeHead(200, headers);
         res.end(page(projectTitles.get(project) ?? `Stand-in project ${project.slice(4, 12)}`, url.pathname));
+        return;
+      }
+      if (url.pathname === '/auth/login') {
+        res.writeHead(200, headers);
+        res.end(page('Sign in', url.pathname));
         return;
       }
       if (url.pathname === '/') {
@@ -213,6 +242,7 @@ export async function startStandIn(): Promise<StandIn> {
     pathsSince: (mark) => requests.slice(mark).map((r) => r.path),
     name: (uuid, title) => { titles.set(uuid.toLowerCase(), title); },
     nameProject: (scope, title) => { projectTitles.set(scope.toLowerCase(), title); },
+    breakConversation: (uuid, mode) => { if (mode) broken.set(uuid.toLowerCase(), mode); else broken.delete(uuid.toLowerCase()); },
     claudeSince: (mark) => requests.slice(mark).filter((r) => r.host === CLAUDE_HOST),
     claudeSignedIn: (signedIn) => { claudeSignedIn = signedIn; },
     close: () => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }),

@@ -258,3 +258,72 @@ scenario('[X11] A project keeps its live ChatGPT view (page and unsent draft) wi
   expect(h.standIn.submissions()).toEqual([]);
   evidence('X11', `against a local stand-in for chatgpt.com only (NOT the real site, NOT Windows): five projects, each linked to its own ChatGPT Project; the four live views cost, as separate renderer processes (Electron process metrics, idle stand-in page): ${perView}; a draft typed in Anna's view was still there, in the same web contents (id ${annaFirst.id}), after Boris was shown and Anna again, with no request for her page; four live views were kept without any notice; the fifth view unloaded the least recently used one (Anna's), the window showed "${expected}", her web contents was gone, opening her again loaded exactly her last address (one request) into a new web contents (id ${annaAgain.id}) with an empty draft; a local Claude session finished a task, the (simulated) notification click opened that report with no ChatGPT view over it, and the Workspace view control hid and showed the views with the second draft intact; projects.list was unchanged`);
 }, { timeout: 300_000 });
+
+scenario('[X11] A restore that fails, is redirected or lands on a missing conversation never replaces the remembered last page; only a page the person chose is recorded', async () => {
+  let h = await launchApp();
+  const scope = projectScope('a1', 'alpha');
+  const alpha = await h.api.call('projects.create', { body: { name: 'Alpha', roots: [{ path: makeRepo(h.sandbox, 'Alpha') }], chatgptProject: { url: projectUrl(scope) } } });
+  const conv1 = chatIn(scope, '51');
+  const conv2 = chatIn(scope, '52');
+  const path1 = new URL(conv1).pathname;
+  await selectProject(h.page, 'Alpha');
+  const first = await visibleView(h, projectUrl(scope));
+  await pushState(h, first.id, conv1);
+  await untilRemembered(h, 'Alpha', alpha.id, conv1);
+  const restart = async (): Promise<AppHandle> => {
+    await until('the window choices to reach the core', async () => (await h.api.call('settings.get')).ui?.route?.projectId === alpha.id);
+    expect((await h.quit()).code).toBe(0);
+    h = await launchApp({ sandbox: h.sandbox, standIn: h.standIn });
+    await projectRow(h.page, 'Alpha').waitFor();
+    return h;
+  };
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 2500)); // longer than the 0.6 s the window waits before telling the core
+  const outcomes: string[] = [];
+
+  // The remembered conversation misbehaves in each way the real site can; the pane may show whatever ChatGPT answers, but the remembered
+  // page must still be the conversation afterwards.
+  for (const [mode, landing] of [['project', projectUrl(scope)], ['login', 'https://chatgpt.com/auth/login'], ['gone', conv1], ['reset', conv1]] as const) {
+    h.standIn.breakConversation(uuidOf('51'), mode);
+    await restart();
+    await until(`the view to settle after a restore that answers "${mode}"`, async () => {
+      const view = (await chatgptViews(h.app)).find((v) => v.url === landing && !v.loading);
+      return view ?? null;
+    });
+    await settle();
+    expect(await remembered(h, alpha.id), `after "${mode}" the last conversation is still remembered`).toBe(conv1);
+    expect(await h.api.call('conversations.list', { params: { id: alpha.id } })).toEqual([]);
+    outcomes.push(`${mode}: view on ${landing === conv1 ? 'the failed conversation page' : new URL(landing).pathname.slice(0, 24)}, remembered kept`);
+  }
+
+  // The conversation loads and then the page moves to the project page by itself, without loading (a single-page app deciding the
+  // conversation is gone): not the person's choice, so not recorded.
+  h.standIn.breakConversation(uuidOf('51'), 'spa');
+  await restart();
+  await until('the page to move to the project page by itself', async () => (await chatgptViews(h.app)).some((v) => v.url === projectUrl(scope) && !v.loading));
+  await settle();
+  expect(await remembered(h, alpha.id), 'an in-page redirect right after the restore is not recorded').toBe(conv1);
+  outcomes.push('spa: loaded, then moved to the project page by itself, remembered kept');
+
+  // ChatGPT recovers: the same remembered conversation opens (it was never forgotten).
+  h.standIn.breakConversation(uuidOf('51'), undefined);
+  await restart();
+  const back = await visibleView(h, conv1);
+  expect(h.standIn.pathsSince(0).filter((p) => p === path1).length).toBeGreaterThan(1);
+  // The person opens another conversation, some seconds after the page came back: that is recorded.
+  await new Promise((resolve) => setTimeout(resolve, 6000));
+  await pushState(h, back.id, conv2);
+  await untilRemembered(h, 'Alpha', alpha.id, conv2);
+
+  // "Open project page" is the explicit way to the project page, and what it opens is the person's choice.
+  h.standIn.breakConversation(uuidOf('52'), 'reset');
+  await restart();
+  await until('the failed page to be shown', async () => (await chatgptViews(h.app)).some((v) => v.url === conv2 && !v.loading));
+  await settle();
+  expect(await remembered(h, alpha.id)).toBe(conv2);
+  await h.page.getByRole('region', { name: 'ChatGPT', exact: true }).getByRole('button', { name: 'Open project page' }).click();
+  await visibleView(h, projectUrl(scope));
+  await untilRemembered(h, 'Alpha', alpha.id, projectUrl(scope));
+  expect(await h.api.call('conversations.list', { params: { id: alpha.id } })).toEqual([]);
+
+  evidence('X11', `against a local stand-in for chatgpt.com only (NOT the real site, NOT Windows): the remembered last conversation of a project was still remembered after a restart in which that conversation answered with a redirect to the project page, a redirect to sign-in, a 404 and a dropped connection (${outcomes.join('; ')}), and after an in-page redirect to the project page right after it loaded (included in the list above); it was replaced only by a conversation the person opened and, last, by the project page the person asked for with "Open project page"; no conversation was mapped`);
+}, { timeout: 300_000 });

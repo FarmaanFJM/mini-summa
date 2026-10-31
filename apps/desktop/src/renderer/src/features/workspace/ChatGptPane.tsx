@@ -98,6 +98,8 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
   // which pages count and guards the moment right after another project was selected, while the view still shows its page).
   const recorder = useMemo(() => new ChatGptRecorder(), []);
   const owner = useRef(0);
+  const [missed, setMissed] = useState<string | null>(null);
+  useEffect(() => { setMissed(null); }, [project.id]);
   useEffect(() => {
     if (!embedded) return undefined;
     let live = true;
@@ -107,6 +109,7 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
       // A report handed off to another project's conversation opens in the view on screen: that page belongs to the other project.
       const foreign = hit !== null && appStore.getState().conversations.some((c) => c.projectId !== hit.projectId && sameChatGptPage(c.url, hit.url));
       if (hit && !foreign) routeStore.getState().selectChatGptUrl(hit.projectId, hit.url);
+      setMissed(recorder.missedPage(owner.current));
     });
     return () => { live = false; off(); };
   }, [embedded, chat, recorder, routeStore, appStore]);
@@ -173,7 +176,7 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
       // unsent draft are in it). Only a project whose view was never loaded, or was unloaded, loads its page now.
       if (activation && key !== undefined && state?.url) { recorder.arm(token); return; }
       if (state?.url && sameChatGptPage(state.url, target.url)) { recorder.arm(token); return; }
-      recorder.expect(token, target.url);
+      recorder.expect(token, target.url, { restore: target.from === 'last' });
       await chat.navigate(target.url);
     })().catch(() => { lastNavigated.current = null; });
     return () => { cancelled = true; };
@@ -285,6 +288,15 @@ export function ChatGptPane({ project, visible }: ChatGptPaneProps) {
         <div className="ms-notice" data-tone={status.tone} role="status">
           {status.tone === 'busy' ? <Spinner /> : <Icon name={status.tone === 'error' ? 'circle-alert' : 'info'} />}
           <span className="ms-notice__text">{status.text}</span>
+        </div>
+      ) : null}
+      {missed && rememberedUrl && !status ? (
+        <div className="ms-notice" role="status">
+          <Icon name="info" />
+          <span className="ms-notice__text">ChatGPT did not open the last page of {project.name} and showed another page. The last page is still remembered until you open another one here.</span>
+          <span className="ms-notice__actions">
+            <Button size="sm" variant="ghost" onClick={() => { route.selectChatGptUrl(project.id, null); setMissed(null); }}>Forget the last page</Button>
+          </span>
         </div>
       ) : null}
       {unmapped && !status ? (

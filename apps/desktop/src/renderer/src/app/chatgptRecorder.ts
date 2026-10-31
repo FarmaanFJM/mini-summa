@@ -37,6 +37,13 @@ export function recordableAddress(url: string | null, project: RecordedProject):
   return read.ok && read.info.scopeId === project.scopeId && (read.info.kind === 'project' || read.info.kind === 'project_chat') ? plain : null;
 }
 
+/**
+ * How long after the view reached (or was sent away from) the page a restore asked for, a different address counts as ChatGPT's own
+ * redirect and not as the person's choice. A redirect (a conversation that no longer exists, an expired sign-in, an outage page) must
+ * never replace the remembered last page: only a page the person navigated to, or the page the restore asked for, is recorded.
+ */
+export const RESTORE_GRACE_MS = 5000;
+
 interface Owner {
   token: number;
   project: RecordedProject;
@@ -44,7 +51,18 @@ interface Owner {
   stale: string | null;
   /** The address this project asked the view to load, until the view has shown it. */
   requested: string | null;
+  /** The address that was asked for, kept after a redirect so that arriving there later (after signing in) is recorded. */
+  wanted: string | null;
   armed: boolean;
+  /** The first address after the request (the page itself, or where ChatGPT sent the view instead), and until when others are redirects. */
+  anchor: string | null;
+  graceUntil: number;
+  /** ChatGPT showed another page than the one asked for. Nothing was recorded for it. */
+  missed: string | null;
+  /** The anchor is a page ChatGPT sent the view to instead of the one asked for: it is not recorded for as long as the view stays on it. */
+  landing: boolean;
+  /** The request is the restore of a remembered last page: that address is protected from being replaced by a redirect. */
+  protect: boolean;
 }
 
 export class ChatGptRecorder {
@@ -56,7 +74,7 @@ export class ChatGptRecorder {
   /** Starts a new owner (a project became the one on screen). Returns its token; the previous owner is finished. */
   begin(project: RecordedProject): number {
     this.tokens += 1;
-    this.owner = { token: this.tokens, project, stale: this.lastSeen, requested: null, armed: false };
+    this.owner = { token: this.tokens, project, stale: this.lastSeen, requested: null, wanted: null, armed: false, anchor: null, graceUntil: 0, missed: null, landing: false, protect: false };
     return this.tokens;
   }
 
@@ -71,32 +89,59 @@ export class ChatGptRecorder {
   }
 
   /** The owner asked the view to load `url`: nothing is recorded until the view has shown it (or the person has navigated since). */
-  expect(token: number, url: string): void {
+  expect(token: number, url: string, opts: { restore?: boolean } = {}): void {
     const o = this.owner;
     if (!o || o.token !== token) return;
     o.requested = url;
+    o.wanted = url;
+    o.protect = opts.restore === true;
     o.armed = false;
+    o.anchor = null;
+    o.missed = null;
+    o.landing = false;
     o.stale = this.lastSeen;
   }
 
   /** The view already shows what the owner wanted (or, with live views, a page of its own): what it reports from now on is the person's. */
   arm(token: number): void {
     const o = this.owner;
-    if (o && o.token === token) { o.armed = true; o.requested = null; }
+    if (o && o.token === token) { o.armed = true; o.requested = null; o.wanted = null; o.anchor = null; o.graceUntil = 0; o.missed = null; o.landing = false; }
+  }
+
+  /** The address ChatGPT showed instead of the one asked for, when it did (nothing was recorded for it); null otherwise. */
+  missedPage(token: number): string | null {
+    return this.owner && this.owner.token === token ? this.owner.missed : null;
   }
 
   /** A state of the view. Returns the address to remember for the owner, or null. */
-  observe(state: Pick<ChatGptViewState, 'url' | 'status'>): { projectId: string; url: string } | null {
+  observe(state: Pick<ChatGptViewState, 'url' | 'status'>, now: number = Date.now()): { projectId: string; url: string } | null {
     const url = state.url;
     const o = this.owner;
     if (url !== null) this.lastSeen = url;
     if (!o || url === null) return null;
     if (!o.armed) {
-      // The page this project asked for is on screen, or the view moved off the page it showed when this owner began: either way what
-      // it reports is no longer the previous project's page. (A request that ends somewhere else, a redirect, is the second case.)
-      if (o.requested !== null && sameChatGptPage(url, o.requested)) { o.armed = true; o.requested = null; }
-      else if (url !== o.stale) { o.armed = true; o.requested = null; }
-      else return null;
+      if (o.requested !== null && sameChatGptPage(url, o.requested)) {
+        o.armed = true; o.requested = null; o.anchor = url; o.graceUntil = o.protect ? now + RESTORE_GRACE_MS : 0;
+      } else if (url !== o.stale) {
+        o.armed = true;
+        if (o.requested !== null && o.protect) {
+          // The request ended somewhere else: a redirect, a sign-in, a page that is gone. That page is not recorded and does not replace the
+          // remembered one; what the person does from here on is recorded.
+          o.requested = null; o.anchor = url; o.graceUntil = now + RESTORE_GRACE_MS; o.missed = url; o.landing = true;
+          return null;
+        }
+        o.requested = null;
+      } else return null;
+    } else if (o.landing && o.wanted !== null && sameChatGptPage(url, o.wanted)) {
+      o.anchor = url; o.graceUntil = 0; o.missed = null; o.landing = false; // arrived where it was asked to go after all (after signing in, say)
+    } else if (o.protect && o.anchor !== null && now < o.graceUntil && !sameChatGptPage(url, o.anchor)) {
+      // Moved off the restored page right after it loaded: ChatGPT's own redirect. The page it landed on is not recorded either.
+      if (o.wanted !== null) { o.missed = url; o.landing = true; o.anchor = url; o.graceUntil = now + RESTORE_GRACE_MS; }
+      return null;
+    } else if (o.landing && o.anchor !== null && sameChatGptPage(url, o.anchor)) {
+      return null; // still on the page ChatGPT sent the view to
+    } else if (o.landing) {
+      o.landing = false; o.anchor = null; // the person moved on from it
     }
     if (state.status !== 'ready') return null;
     const address = recordableAddress(url, o.project);

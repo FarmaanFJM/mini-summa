@@ -42,6 +42,12 @@ project**. When you come back to a project it shows the last ChatGPT page you we
 * **No mixing.** Right after you select another project the view may still show the previous project's page for a moment; nothing it
   reports then is recorded for the new project (the recorder only listens once the view has loaded the address the new project asked for,
   or you navigated). With live views each project has its own view anyway.
+* **A failed or redirected restore never replaces the remembered page.** The last page is only replaced by a page you went to (or one
+  you asked for: a conversation chosen in the header, "Open project page"). If the remembered conversation does not open (offline,
+  ChatGPT down, sign-in expired, the conversation deleted, ChatGPT redirecting to the project page, also by itself within 5 seconds of
+  the page loading), nothing is recorded for what ChatGPT showed instead; the pane says "ChatGPT did not open the last page of <project>
+  and showed another page", with **Forget the last page**, and the project page stays one click away (Open project page). Limit: because
+  Mini-Summa sees only addresses, a page you open yourself within 5 seconds of a restore is not recorded (the next one is).
 * **A visited conversation is never mapped.** Sending reports to a conversation stays the explicit action "Use this conversation for
   reports". Nothing you visit becomes a report destination, and nothing creates a project.
 * **Opening a project** shows, in this order: the remembered last page, else the conversation you mapped (the one chosen last, else the

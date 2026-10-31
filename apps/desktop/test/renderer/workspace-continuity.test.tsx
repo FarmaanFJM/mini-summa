@@ -3,8 +3,9 @@
 // The embedded view is a double (createFakeNative): it proves what the pane asks of it, not what ChatGPT does.
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearNativeBounds } from '../../src/renderer/src/app/nativeBounds';
+import { RESTORE_GRACE_MS } from '../../src/renderer/src/app/chatgptRecorder';
 import { pageToOpen } from '../../src/renderer/src/features/workspace/ChatGptPane';
 import { createFakeNative, renderApp, stubWorkspaceGeometry } from './helpers';
 
@@ -12,6 +13,12 @@ vi.mock('../../src/renderer/src/features/activity', async () => ({ default: (awa
 vi.mock('../../src/renderer/src/features/reports', async () => ({ default: (await import('./stubViews')).ReportsStandIn }));
 vi.mock('../../src/renderer/src/features/settings', async () => ({ default: (await import('./stubViews')).SettingsStandIn }));
 
+// The recorder holds a page that appears right after a restore as ChatGPT's own redirect (RESTORE_GRACE_MS). A test that plays the PERSON
+// going elsewhere after a restore says that time passed.
+let clockOffset = 0;
+const realNow = Date.now.bind(Date);
+const timePasses = (): void => { clockOffset += RESTORE_GRACE_MS + 1; };
+beforeEach(() => { clockOffset = 0; vi.spyOn(Date, 'now').mockImplementation(() => realNow() + clockOffset); });
 afterEach(() => { clearNativeBounds(); vi.restoreAllMocks(); });
 
 const SCOPE_A = 'g-p-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-alpha';
@@ -128,6 +135,7 @@ describe('remembering what the person does in the view', () => {
     act(() => fake.emitView({ url: plain('1'), status: 'ready' }));
     // The person goes to another conversation of the first project, then selects the second project; the view reports the first
     // project's page again and again until the second project's page has loaded.
+    timePasses();
     act(() => fake.emitView({ url: plain('5'), status: 'ready' }));
     expect(route().chatgptUrlByProject[free1.id]).toBe(plain('5'));
     act(() => route().selectProject(free2.id));
@@ -136,6 +144,7 @@ describe('remembering what the person does in the view', () => {
     act(() => fake.emitView({ url: plain('5'), status: 'loading' }));
     expect(route().chatgptUrlByProject[free2.id]).toBe(plain('2')); // untouched: still what it was
     act(() => fake.emitView({ url: plain('2'), status: 'ready' }));
+    timePasses();
     act(() => fake.emitView({ url: plain('6'), status: 'ready' }));
     expect(route().chatgptUrlByProject[free2.id]).toBe(plain('6'));
     expect(route().chatgptUrlByProject[free1.id]).toBe(plain('5')); // the first project's page was never changed by the second
@@ -173,8 +182,53 @@ describe('a page that belongs to another project', () => {
     act(() => fake.emitView({ url: plain('b'), status: 'ready' }));
     act(() => fake.emitView({ url: plain('a'), status: 'ready' }));
     expect(app.runtime.route.getState().chatgptUrlByProject[other.id]).toBe(plain('b'));
+    timePasses();
     act(() => fake.emitView({ url: plain('c'), status: 'ready' }));
     expect(app.runtime.route.getState().chatgptUrlByProject[other.id]).toBe(plain('c'));
+  });
+});
+
+describe('a restore that does not end on the remembered page', () => {
+  const setupLinked = async () => {
+    stubWorkspaceGeometry();
+    const fake = createFakeNative();
+    const app = await renderApp({ native: fake });
+    const a = await app.demo.call('projects.create', { body: { name: 'Alpha', roots: [], chatgptProject: { url: projectPage(SCOPE_A) } } });
+    const route = () => app.runtime.route.getState();
+    act(() => { route().selectChatGptUrl(a.id, chatIn(SCOPE_A, '1')); route().selectProject(a.id); });
+    await waitFor(() => expect(lastNavigated(fake)).toBe(chatIn(SCOPE_A, '1')));
+    return { fake, app, a, route };
+  };
+
+  it('keeps the remembered conversation when ChatGPT redirects the view to the project page, and says so', async () => {
+    const { fake, a, route } = await setupLinked();
+    act(() => fake.emitView({ url: projectPage(SCOPE_A), status: 'ready' }));
+    act(() => fake.emitView({ url: projectPage(SCOPE_A), status: 'ready', title: 'again' }));
+    expect(route().chatgptUrlByProject[a.id]).toBe(chatIn(SCOPE_A, '1'));
+    expect(await within(chatgpt()).findByText(/did not open the last page of Alpha/)).toBeTruthy();
+    timePasses();
+    act(() => fake.emitView({ url: chatIn(SCOPE_A, '2'), status: 'ready' })); // the person picks a conversation
+    expect(route().chatgptUrlByProject[a.id]).toBe(chatIn(SCOPE_A, '2'));
+  });
+
+  it('keeps it when the restored page loads and then moves to the project page by itself, and when the load fails or needs a sign in', async () => {
+    const { fake, a, route } = await setupLinked();
+    act(() => fake.emitView({ url: chatIn(SCOPE_A, '1'), status: 'ready' }));
+    act(() => fake.emitView({ url: projectPage(SCOPE_A), status: 'ready' }));
+    act(() => fake.emitView({ url: chatIn(SCOPE_A, '1'), status: 'error' }));
+    act(() => fake.emitView({ url: 'https://chatgpt.com/auth/login', status: 'login_required' }));
+    expect(route().chatgptUrlByProject[a.id]).toBe(chatIn(SCOPE_A, '1'));
+  });
+
+  it('"Forget the last page" in the notice forgets it, and the project page opened with "Open project page" is the person\'s choice and is recorded', async () => {
+    const user = userEvent.setup();
+    const { fake, a, route } = await setupLinked();
+    act(() => fake.emitView({ url: projectPage(SCOPE_A), status: 'ready' }));
+    await user.click(await within(chatgpt()).findByRole('button', { name: 'Forget the last page' }));
+    expect(route().chatgptUrlByProject[a.id]).toBeUndefined();
+    await user.click(within(chatgpt()).getByRole('button', { name: 'Open project page' }));
+    act(() => fake.emitView({ url: projectPage(SCOPE_A), status: 'ready', title: 'x' }));
+    expect(route().chatgptUrlByProject[a.id]).toBe(projectPage(SCOPE_A));
   });
 });
 
@@ -275,6 +329,8 @@ describe('live views: a ChatGPT view for each project', () => {
     await waitFor(() => expect(fake.boundsOf(free2.id)).toBeTruthy());
     act(() => fake.emitView({ url: plain('7') }, free1.id)); // the first project's view reports a page while the second is on screen
     expect(route().chatgptUrlByProject[free2.id]).toBe(plain('2'));
+    act(() => fake.emitView({ url: plain('2') }, free2.id)); // the restored page arrives
+    timePasses();
     act(() => fake.emitView({ url: plain('8') }, free2.id));
     expect(route().chatgptUrlByProject[free2.id]).toBe(plain('8'));
   });

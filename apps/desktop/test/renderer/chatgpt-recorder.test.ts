@@ -2,7 +2,7 @@
 // after another project was selected (the one view still shows the previous project's page and goes on reporting it).
 import { describe, expect, it } from 'vitest';
 import type { ChatGptViewStatus } from '@minisumma/shared';
-import { ChatGptRecorder, recordableAddress } from '../../src/renderer/src/app/chatgptRecorder';
+import { ChatGptRecorder, recordableAddress, RESTORE_GRACE_MS } from '../../src/renderer/src/app/chatgptRecorder';
 
 const SCOPE_A = 'g-p-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-alpha';
 const SCOPE_B = 'g-p-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-beta';
@@ -122,5 +122,53 @@ describe('the recorder after a project switch', () => {
     r.retarget(token, { id: 'prj_free', scopeId: SCOPE_A });
     expect(r.observe(state(plain('7')))).toBeNull(); // now linked: a plain conversation is outside the project
     expect(r.observe(state(chatIn(SCOPE_A, '7')))).toEqual({ projectId: 'prj_free', url: chatIn(SCOPE_A, '7') });
+  });
+});
+
+describe('a restore of the remembered last page (it is protected from redirects)', () => {
+  const last = chatIn(SCOPE_A, '1');
+  const restore = (r: ChatGptRecorder) => { const token = r.begin(A); r.expect(token, last, { restore: true }); return token; };
+
+  it('does not record the project page ChatGPT redirects the view to, then records what the person opens', () => {
+    const r = new ChatGptRecorder();
+    const token = restore(r);
+    expect(r.observe(state(projectPage(SCOPE_A)), 1000)).toBeNull(); // a redirect instead of the page
+    expect(r.observe(state(projectPage(SCOPE_A)), 1100)).toBeNull(); // and every report of it afterwards
+    expect(r.missedPage(token)).toBe(projectPage(SCOPE_A));
+    expect(r.observe(state(chatIn(SCOPE_A, '2')), 1200 + RESTORE_GRACE_MS)).toEqual({ projectId: 'prj_a', url: chatIn(SCOPE_A, '2') });
+  });
+
+  it('does not record a sign-in page, an error page or a page that never loaded, and records the conversation if it arrives after signing in', () => {
+    const r = new ChatGptRecorder();
+    restore(r);
+    expect(r.observe(state('https://chatgpt.com/auth/login', 'login_required'), 1000)).toBeNull();
+    expect(r.observe(state(last, 'error'), 1100)).toBeNull();
+    expect(r.observe(state(last), 1200)).toEqual({ projectId: 'prj_a', url: last });
+  });
+
+  it('holds a page that replaces the restored one right after it loaded (in-page redirect), however often the view reports it', () => {
+    const r = new ChatGptRecorder();
+    const token = restore(r);
+    expect(r.observe(state(last), 1000)).toEqual({ projectId: 'prj_a', url: last });
+    expect(r.observe(state(last), 1100)).toEqual({ projectId: 'prj_a', url: last }); // later reports of the restored page do not end the protection
+    expect(r.observe(state(projectPage(SCOPE_A)), 1500)).toBeNull();
+    expect(r.observe(state(projectPage(SCOPE_A)), 1600)).toBeNull();
+    expect(r.missedPage(token)).toBe(projectPage(SCOPE_A));
+    expect(r.observe(state(chatIn(SCOPE_A, '3')), 1700 + RESTORE_GRACE_MS)).toEqual({ projectId: 'prj_a', url: chatIn(SCOPE_A, '3') });
+  });
+
+  it('records a page the person goes to after the grace period', () => {
+    const r = new ChatGptRecorder();
+    restore(r);
+    expect(r.observe(state(last), 1000)).not.toBeNull();
+    expect(r.observe(state(chatIn(SCOPE_A, '4')), 1000 + RESTORE_GRACE_MS + 1)).toEqual({ projectId: 'prj_a', url: chatIn(SCOPE_A, '4') });
+  });
+
+  it('an explicit request (a chosen conversation, Open project page) is recorded when it arrives, even if it is not a restore', () => {
+    const r = new ChatGptRecorder();
+    const token = r.begin(A);
+    r.expect(token, projectPage(SCOPE_A));
+    expect(r.observe(state(projectPage(SCOPE_A)), 1000)).toEqual({ projectId: 'prj_a', url: projectPage(SCOPE_A) });
+    expect(r.observe(state(chatIn(SCOPE_A, '5')), 1100)).toEqual({ projectId: 'prj_a', url: chatIn(SCOPE_A, '5') });
   });
 });
