@@ -97,7 +97,7 @@ export function ClaudePane({ project, visible }: ClaudePaneProps) {
 
   const closeTab = (key: SessionKey) => {
     const after = key === selected?.key ? selectionAfterClose(tabs, key) : selected?.key ?? null;
-    actions.close(key, after);
+    actions.close(key, after, { keepCloud: cloudShown }); // closing a session tab does not take the pane away from the Cloud tab
   };
 
   const sessionItems: TabItem[] = tabs.map((s) => ({

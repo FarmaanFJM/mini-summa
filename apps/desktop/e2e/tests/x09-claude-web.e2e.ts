@@ -414,3 +414,34 @@ scenario('[X09] The Claude page, its web contents and a half written draft survi
 
   evidence('X09', `after the person typed a draft into the Claude page, the same web contents (id ${first.id}), the same document (a marker set in it) and the same draft were still there, with no second request, no second "view created" line in the main log, no new window and no state change, after: hiding and showing, three rectangles, four window sizes (960x600 to 1000x1300, the view clamped into the content area), the overlay switch, and a real New project dialog (its overlay request hid the view and closing the dialog brought it back); the person could then carry on typing, and the page recorded only that typing`);
 });
+
+scenario('[X09] The sign-in of each site stays in its own profile across a quit and a start, and only the Claude view sends the Claude cookie', async () => {
+  const h = await launchApp({ size: { width: 1280, height: 800 } });
+  // A cookie with an expiry is what a "stay signed in" cookie is; one without goes with the process by design, and is not what is tested.
+  const inAYear = Math.floor(Date.now() / 1000) + 365 * 24 * 3600;
+  await setProfileCookie(h.app, 'persist:claude', { url: 'https://claude.ai/', name: 'kept', value: 'claude-login', expirationDate: inAYear });
+  await setProfileCookie(h.app, 'persist:chatgpt', { url: 'https://chatgpt.com/', name: 'kept', value: 'chatgpt-login', expirationDate: inAYear });
+  expect((await profileCookies(h.app, 'persist:claude', 'https://claude.ai/')).map((c) => c.value)).toEqual(['claude-login']);
+
+  // Quit the way a person does (the quit flow flushes the cookies of both profiles), then start again on the same data directory.
+  const quit = await h.quit();
+  expect(quit.code).toBe(0);
+  const second = await launchApp({ sandbox: h.sandbox, standIn: h.standIn, size: { width: 1280, height: 800 } });
+  expect((await profileCookies(second.app, 'persist:claude', 'https://claude.ai/')).map((c) => `${c.name}=${c.value}`)).toEqual(['kept=claude-login']);
+  expect((await profileCookies(second.app, 'persist:chatgpt', 'https://chatgpt.com/')).map((c) => `${c.name}=${c.value}`)).toEqual(['kept=chatgpt-login']);
+  // Neither profile holds the other's cookie.
+  expect(await profileCookies(second.app, 'persist:claude', 'https://chatgpt.com/')).toEqual([]);
+  expect(await profileCookies(second.app, 'persist:chatgpt', 'https://claude.ai/')).toEqual([]);
+
+  // The Claude view is not created by starting the app, and when it loads a page it sends the cookie of its own profile and nothing else.
+  expect(await claudeWebView(second.app)).toBeNull();
+  await claude(second, 'setBounds', RECT);
+  const mark = second.standIn.mark();
+  await claude(second, 'navigate', NEW_SESSION);
+  await claudeShows(second, NEW_SESSION);
+  const request = second.standIn.since(mark)[0];
+  expect(request.headers.cookie).toBe('kept=claude-login');
+  expect(second.standIn.strays()).toEqual([]);
+
+  evidence('X09', `a cookie with an expiry in each profile (persist:claude for claude.ai, persist:chatgpt for chatgpt.com) was still there after a quit through the app's own quit flow and a start on the same data directory, each profile held only its own, the Claude view did not exist until a page was asked for, and its first request carried exactly the cookie of its own profile`);
+});

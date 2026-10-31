@@ -238,6 +238,18 @@ describe('the lifecycle of the view', () => {
     expect(s.handle.setVisible).not.toHaveBeenCalled();
   });
 
+  it('a view that went with its window cannot be asked to load, and is not left saying loading', async () => {
+    const s = setup();
+    await show(s, HOME);
+    s.contents.destroyed = true;
+    const states: string[] = [];
+    s.view.onState((st) => states.push(st.status));
+    await expect(s.view.navigate(SESSION)).rejects.toThrow(/window was closed/);
+    expect(states).toEqual([]);
+    expect(s.view.getState().status).toBe('ready');
+    expect(s.contents.loads).toEqual([HOME]);
+  });
+
   it('without a window the first page cannot be shown, and says so by throwing instead of loading', async () => {
     const created = vi.fn(() => { throw new Error('There is no window to attach the Claude Code view to.'); });
     const view = new ClaudeWebView({ createView: created, content: () => null, openExternal: vi.fn(), log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } });
@@ -510,6 +522,7 @@ describe('what the state says', () => {
     expect(s.view.getState()).toMatchObject({ status: 'login_required', url: LOGIN });
     expect(s.view.getState().note).toMatch(/sign-in page/);
     expect(s.view.getState().note).toMatch(/guess/);
+    expect(s.view.getState().note).not.toMatch(/Open in your browser/); // the Cloud tab adds what to do; the host gives the reason
     expect(s.contents.loads).toEqual([NEW_SESSION]);
   });
 
@@ -533,9 +546,7 @@ describe('what the state says', () => {
   it('a failed load is an error with the reason and the way out; a policy refusal is blocked', async () => {
     const offline = setup({ plan: () => ({ type: 'fail', code: -106, description: 'ERR_INTERNET_DISCONNECTED' }) });
     await show(offline, HOME, 'error');
-    expect(offline.view.getState().note).toMatch(/ERR_INTERNET_DISCONNECTED/);
-    expect(offline.view.getState().note).toMatch(/reload/);
-    expect(offline.view.getState().note).toMatch(/Open in your browser/);
+    expect(offline.view.getState().note).toBe('The page could not be loaded (ERR_INTERNET_DISCONNECTED).');
 
     const refused = setup({ plan: () => ({ type: 'fail', code: -27, description: 'ERR_BLOCKED_BY_RESPONSE' }) });
     await show(refused, HOME, 'blocked');
@@ -779,6 +790,8 @@ describe('what the view never does', () => {
     s.contents.emit('will-navigate', policyEvent(), 'https://example.org/?token=abc123');
     s.contents.emit('will-navigate', policyEvent(), 'https://user:pw@example.org/?token=abc123');
     s.contents.emit('will-navigate', policyEvent(), 'javascript:alert("abc123")');
+    s.contents.emit('will-navigate', policyEvent(), 'claude.ai/code?prompt=abc123'); // no scheme: the whole address must not be taken for one
+    s.contents.emit('will-navigate', policyEvent(), '??abc123');
     s.contents.windowOpen!({ url: 'mailto:abc123@example.org' });
     s.contents.emit('did-fail-load', {}, -105, 'ERR_NAME_NOT_RESOLVED', secret, true);
     const logged = everythingLogged(s);

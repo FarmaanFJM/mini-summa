@@ -80,6 +80,7 @@ const shots = [
     async run(page) {
       await page.getByRole('button', { name: 'Collapse sidebar' }).click();
       await page.getByRole('button', { name: 'Expand sidebar' }).waitFor();
+      await page.mouse.move(page.viewportSize().width / 2, page.viewportSize().height - 2); // out of the way: the header now sits where the button was
       await settle(page, 400);
     },
   },

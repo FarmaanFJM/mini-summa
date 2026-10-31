@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@minisumma/shared';
 import type { ActivityEvent } from '@minisumma/shared';
@@ -456,6 +456,25 @@ describe('notifications', () => {
     const added = await screen.findByRole('button', { name: /GitManager: report ready/ });
     await user.click(added);
     expect(app.runtime.route.getState()).toMatchObject({ view: 'reports', reportId: 'rpt_gm_1' });
+  });
+
+  it('keeps newest first and one heading per day while a notification older than the rest arrives, before the list is reloaded', async () => {
+    const app = await open({ route: { section: 'notifications' } });
+    await screen.findAllByRole('list', { name: /^Notifications, / });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const template = app.server.data.notifications[0];
+    const old = (id: string, hoursAgo: number) => ({ ...template, id, at: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(), title: `Late arrival ${hoursAgo} hours old`, body: 'Held back for a while' });
+    // The store puts what arrives first in the list; these are older than everything shown, and one lands between two days.
+    act(() => {
+      app.server.transport.emit({ type: 'notification.added', notification: old('ntf_old_1', 70) });
+      app.server.transport.emit({ type: 'notification.added', notification: old('ntf_old_2', 30) });
+    });
+    const titles = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? '').filter((l) => /^Late arrival/.test(l));
+    expect(titles.map((t) => Number(/(\d+) hours old/.exec(t)?.[1]))).toEqual([30, 70]); // newest first, whatever order the store has
+    const days = screen.getAllByRole('region').filter((r) => r.classList.contains('ms-act-day')).map((r) => r.getAttribute('aria-label'));
+    expect(new Set(days).size).toBe(days.length);
+    expect(errors.mock.calls.some((c) => /same key/.test(String(c[0])))).toBe(false); // React did not see two days with one key
+    errors.mockRestore();
   });
 
   it('says so when there are none', async () => {

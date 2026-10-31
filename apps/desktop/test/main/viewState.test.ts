@@ -107,16 +107,16 @@ describe('deriveClaudeViewState: status table', () => {
     { name: 'a session page', o: { url: claudePage('session_abc123'), title: 'Fix the login bug' }, status: 'ready', note: null },
     { name: 'another page of the site', o: { url: 'https://claude.ai/settings', title: 'Settings' }, status: 'ready', note: null },
     { name: 'the sign-in page', o: { url: 'https://claude.ai/login', title: 'Claude' }, status: 'login_required', note: /sign-in page.*guess/s },
-    { name: 'the sign-in page with a return address', o: { url: 'https://claude.ai/login?returnTo=%2Fcode%3Frepositories%3Dacme%2Fwebapp', title: 'x' }, status: 'login_required', note: /Open in your browser/ },
+    { name: 'the sign-in page with a return address', o: { url: 'https://claude.ai/login?returnTo=%2Fcode%3Frepositories%3Dacme%2Fwebapp', title: 'x' }, status: 'login_required', note: /guess from the address/ },
     { name: 'a step of the sign-in page', o: { url: 'https://claude.ai/login/verify?token=1', title: 'x' }, status: 'login_required', note: null },
     { name: 'the sign-in page on the www host', o: { url: 'https://www.claude.ai/login', title: 'x' }, status: 'login_required', note: null },
     { name: 'a provider page while signing in is still just a page', o: { url: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=x', title: 'Sign in' }, status: 'ready', note: null },
     { name: 'GitHub authorisation is just a page', o: { url: 'https://github.com/login/oauth/authorize?client_id=x', title: 'Authorize' }, status: 'ready', note: null },
     { name: 'google refusal', o: { url: 'https://accounts.google.com/v3/signin/rejected?x=1', title: 'Sign in' }, status: 'blocked', note: /Google refused.*does not work around it/s },
     { name: 'google refusal by the user agent error', o: { url: 'https://accounts.google.com/x?error=disallowed_useragent', title: 'Error' }, status: 'blocked', note: /Google refused/ },
-    { name: 'failed load: network', o: { failure: { code: -105, description: 'ERR_NAME_NOT_RESOLVED' } }, status: 'error', note: /ERR_NAME_NOT_RESOLVED.*reload.*Open in your browser/s },
+    { name: 'failed load: network', o: { failure: { code: -105, description: 'ERR_NAME_NOT_RESOLVED' } }, status: 'error', note: /ERR_NAME_NOT_RESOLVED/ },
     { name: 'failed load: certificate', o: { failure: { code: -200, description: 'ERR_CERT_COMMON_NAME_INVALID' } }, status: 'error', note: /ERR_CERT_COMMON_NAME_INVALID/ },
-    { name: 'failed load: blocked by response', o: { failure: { code: -27, description: 'ERR_BLOCKED_BY_RESPONSE' } }, status: 'blocked', note: /Some sites refuse embedded browsers.*Open in your browser/s },
+    { name: 'failed load: blocked by response', o: { failure: { code: -27, description: 'ERR_BLOCKED_BY_RESPONSE' } }, status: 'blocked', note: /Some sites refuse embedded browsers/ },
     { name: 'failed load: blocked by client', o: { failure: { code: -20, description: 'ERR_BLOCKED_BY_CLIENT' } }, status: 'blocked', note: null },
     { name: 'failure beats a stale address', o: { failure: { code: -2, description: 'ERR_FAILED' } }, status: 'error', note: null },
     { name: 'failure on the sign-in page is still a failure', o: { url: 'https://claude.ai/login', failure: { code: -2, description: 'ERR_FAILED' } }, status: 'error', note: null },
@@ -148,6 +148,13 @@ describe('deriveClaudeViewState: status table', () => {
   it('never has a challenge status: a security check on the page is just a page the person completes', () => {
     const state = deriveClaudeViewState(claudeObs({ title: 'Just a moment...' }), nav);
     expect(state.status).toBe('ready');
+  });
+
+  it('gives the reason only: what to do about it is the Cloud tab\'s to say, so no note carries advice that would appear twice', () => {
+    const notes = rows.map((r) => deriveClaudeViewState(claudeObs(r.o), nav).note ?? '').filter((n) => n !== '');
+    expect(notes.length).toBeGreaterThan(8);
+    for (const n of notes) expect(n).not.toMatch(/Open in your browser|reload|Check your connection|Sign in here|Sign in with/i);
+    for (const n of notes) expect(n).toMatch(/[.]$/); // whole sentences, so the tab can put its own after them
   });
 
   it('never writes an em dash in a user-visible note', () => {

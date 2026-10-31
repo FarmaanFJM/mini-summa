@@ -18,8 +18,8 @@ export interface SessionActions {
   show(key: SessionKey, opts?: { focus?: boolean }): void;
   /** Open a session that was replaced inside its terminal, as the history it is: its tab stays, it does not move on to its successor. */
   showHistory(key: SessionKey): void;
-  /** Hide a tab. The session itself keeps running. */
-  close(key: SessionKey, selectedAfter: SessionKey | null): void;
+  /** Hide a tab. The session itself keeps running. With `keepCloud`, a pane that shows the Cloud tab keeps showing it. */
+  close(key: SessionKey, selectedAfter: SessionKey | null, opts?: { keepCloud?: boolean }): void;
 }
 
 export function useSessionActions(project: Project): SessionActions {
@@ -64,9 +64,9 @@ export function useSessionActions(project: Project): SessionActions {
     }
   }, [api, project.id, show, terminals, ui]);
 
-  const close = useCallback((key: SessionKey, selectedAfter: SessionKey | null) => {
+  const close = useCallback((key: SessionKey, selectedAfter: SessionKey | null, opts?: { keepCloud?: boolean }) => {
     ui.getState().closeTab(project.id, key);
-    route.selectSession(project.id, selectedAfter);
+    route.selectSession(project.id, selectedAfter, opts);
   }, [project.id, route, ui]);
 
   return { starting, start, show, showHistory, close };

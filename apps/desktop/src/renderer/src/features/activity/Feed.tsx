@@ -6,7 +6,7 @@ import { useApi, useApp } from '../../app/runtime';
 import { Button, EmptyState, Icon, IconButton, Menu, Select, Tag } from '../../ui';
 import { formatRelative } from '../workspace/sessionModel';
 import { errorText } from '../reports/support';
-import { demandWords, groupByDay, isOpen, linkKey, linkWords, primaryLink, SEVERITY_WORDS, spoken } from './model';
+import { demandWords, groupByDay, isOpen, linkKey, linkWords, newestFirst, primaryLink, SEVERITY_WORDS, spoken } from './model';
 import { useOpenLink } from './navigation';
 
 export interface FeedFilters { projectId: string; unread: boolean; attention: boolean }
@@ -15,7 +15,6 @@ const PAGE = 50;
 
 interface Loaded { status: 'loading' | 'ready' | 'error'; items: ActivityEvent[]; next: string | null; error: string | null }
 
-const newestFirst = (a: ActivityEvent, b: ActivityEvent): number => b.at.localeCompare(a.at) || b.id.localeCompare(a.id);
 
 export interface FeedProps {
   filters: FeedFilters;

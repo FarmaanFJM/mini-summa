@@ -41,7 +41,11 @@ export interface RouteActions {
   go(target: Partial<NavigationTarget>): void;
   setView(view: ViewId): void;
   selectProject(projectId: string | null): void;
-  selectSession(projectId: string, key: SessionKey | null): void;
+  /**
+   * The session a project's Claude pane shows (or, with `keepCloud`, only the one it goes back to when the Cloud tab is left: a session
+   * that moved on, a tab that was closed). Choosing one to look at takes the pane back from the Cloud tab.
+   */
+  selectSession(projectId: string, key: SessionKey | null, opts?: { keepCloud?: boolean }): void;
   selectConversation(projectId: string, conversationId: string | null): void;
   /** Remember the page of Claude Code on the web a project's Cloud tab is on (null forgets it). */
   selectCloudUrl(projectId: string, url: string | null): void;
@@ -142,11 +146,11 @@ export function createRouteStore(options: RouteOptions = {}): RouteStore {
     selectProject(projectId) {
       set((s) => ({ projectId, view: 'workspace', previous: s.view === 'workspace' ? s.previous : [...s.previous, s.view].slice(-10) }));
     },
-    selectSession(projectId, key) {
+    selectSession(projectId, key, opts) {
       set((s) => {
         const next = { ...s.sessionByProject };
         if (key) next[projectId] = key; else delete next[projectId];
-        return { sessionByProject: next, cloudShown: key ? without(s.cloudShown, projectId) : s.cloudShown };
+        return { sessionByProject: next, cloudShown: key && !opts?.keepCloud ? without(s.cloudShown, projectId) : s.cloudShown };
       });
     },
     selectConversation(projectId, conversationId) {

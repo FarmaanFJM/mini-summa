@@ -353,6 +353,32 @@ describe('the Cloud tab', () => {
     expect(inClaude().getByRole('tab', { name: /^Session b7c8d9e0/ }).getAttribute('aria-selected')).toBe('true');
   });
 
+  it('stays on the Cloud tab when a session tab is closed: closing a tab does not choose a session to look at', async () => {
+    stubWorkspaceGeometry();
+    const user = userEvent.setup();
+    const app = await renderApp({ native: createFakeNative() });
+    await user.click(cloudTab());
+    await user.click(inClaude().getByRole('button', { name: /^Close tab b7c8d9e0/ }));
+    expect(inClaude().queryByRole('tab', { name: /^Session b7c8d9e0/ })).toBeNull();
+    expect(cloudTab().getAttribute('aria-selected')).toBe('true');
+    expect(app.runtime.route.getState().cloudShown[IDS.gitManager]).toBe(true);
+    // The session that was remembered is still the one to go back to.
+    await user.click(inClaude().getByRole('tab', { name: /^Session a1b2c3d4/ }));
+    expect(cloudTab().getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('stays on the Cloud tab when the session it remembers goes on as another one inside its terminal', async () => {
+    stubWorkspaceGeometry();
+    const user = userEvent.setup();
+    const app = await renderApp({ native: createFakeNative() });
+    await user.click(cloudTab());
+    const newId = 'ee11ee11-0000-4000-8000-0000000000e1';
+    act(() => { app.demo.demo.server.replaceConversation(IDS.s.gmWorking as never, { newSessionId: newId }); });
+    await waitFor(() => expect(inClaude().getByRole('tab', { name: new RegExp(`^Session ${newId.slice(0, 8)}`) })).toBeTruthy());
+    expect(cloudTab().getAttribute('aria-selected')).toBe('true');
+    expect(app.runtime.route.getState().sessionByProject[IDS.gitManager]).toBe(`win|${newId}`); // what it goes back to follows the terminal
+  });
+
   it('is chosen for each project on its own, and kept when the person looks at another project', async () => {
     stubWorkspaceGeometry();
     const user = userEvent.setup();

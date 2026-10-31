@@ -37,7 +37,8 @@ export function createSessionFollower({ store, ui, route, terminals }: SessionFo
     const host = terminals.hostOf(from);
     const hadFocus = Boolean(host && typeof document !== 'undefined' && document.activeElement && host.contains(document.activeElement));
     ui.getState().replaceTab(projectId, from, to);
-    if (chosen === from) route.getState().selectSession(projectId, to);
+    // The remembered choice moves with the terminal; where the person is looking (the Cloud tab, say) does not.
+    if (chosen === from) route.getState().selectSession(projectId, to, { keepCloud: true });
     if (hadFocus) ui.getState().focusTerminal(to);
   }
 

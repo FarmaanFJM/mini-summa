@@ -204,6 +204,10 @@ async function main(): Promise<void> {
   writeFileSync(join(repoDir, 'README.md'), '# Verification repository\n');
   spawnSync('git', ['init', '-q'], { cwd: repoDir });
   const filesBefore = readdirSync(repoDir).sort();
+  // Other Claude processes on this computer (this run is usually started from one) are listed by `claude agents --json` and are rightly
+  // "observed" by the core. Checks about live or phantom sessions look only at sessions in this run's own temporary directory.
+  const ownRoot = dirname(repoDir);
+  const ofThisRun = (list: SessionView[]): SessionView[] => list.filter((x) => x.cwd !== null && (x.cwd === ownRoot || x.cwd.startsWith(ownRoot + sep)));
   say(`work dir: ${workDir}`);
 
   let core = await startCore(dataDir);
@@ -521,11 +525,9 @@ async function main(): Promise<void> {
         expect(strangers.length === 0, `observed sessions appeared next to the managed ones: ${strangers.map((x) => `${ids(x)} ${x.origin}/${x.availability}`).join(', ')}`);
         const liveNow = all.filter((x) => x.availability === 'live');
         expect(liveNow.length === 1 && liveNow[0].key === found!.key, `live sessions: ${liveNow.map((x) => ids(x)).join(', ')}`);
-        // Other Claude processes on this computer (this run is usually started from one) are listed by `claude agents --json` and are rightly
-        // "observed". A phantom session made by OUR terminal would be in our own temporary directory, so only those are held to "managed".
+        // A phantom session made by OUR terminal would be in our own temporary directory, so only those are held to "managed".
         const everything = await client.call('sessions.list', { query: { includeEnded: true } });
-        const ownRoot = dirname(repoDir);
-        const ours = everything.filter((x) => x.cwd !== null && (x.cwd === ownRoot || x.cwd.startsWith(ownRoot + sep)));
+        const ours = ofThisRun(everything);
         expect(ours.every((x) => x.origin === 'managed'), `a session of this run is observed instead of managed: ${ours.filter((x) => x.origin !== 'managed').map((x) => `${ids(x)} ${x.origin}`).join(', ')}`);
         expect(ours.length >= 2, `expected the old and the new session of this run, found ${ours.length}`);
         // The rest of the run (stop, restart, resume) follows the terminal, which is now the new session.
@@ -565,7 +567,7 @@ async function main(): Promise<void> {
           const left = await client.call('sessions.get', { params: { key } });
           expect(left.origin === 'managed' && left.availability !== 'live', `the cleared session is ${left.origin}/${left.availability}`);
           expect(left.termination !== null && /\/resume/.test(left.termination.reason), `the cleared session does not say what happened: ${JSON.stringify(left.termination)}`);
-          const all = await client.call('sessions.list', { query: { includeEnded: true } });
+          const all = ofThisRun(await client.call('sessions.list', { query: { includeEnded: true } }));
           const liveNow = all.filter((x) => x.availability === 'live');
           expect(liveNow.length === 1 && liveNow[0].key === originalKey, `live sessions: ${liveNow.map((x) => ids(x)).join(', ')}`);
           expect(all.every((x) => x.origin === 'managed'), `an observed session appeared: ${all.filter((x) => x.origin !== 'managed').map((x) => `${ids(x)} ${x.origin}`).join(', ')}`);

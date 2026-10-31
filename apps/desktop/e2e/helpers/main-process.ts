@@ -149,7 +149,7 @@ export const windowCounts = (app: ElectronApplication): Promise<{ windows: numbe
 export interface CookieFacts { name: string; value: string; domain: string }
 
 /** Puts a cookie into one of the app's browser profiles ('persist:claude', 'persist:chatgpt'), the way a site's own Set-Cookie would. */
-export const setProfileCookie = (app: ElectronApplication, partition: string, cookie: { url: string; name: string; value: string }): Promise<void> => app.evaluate(({ session }, args) => session.fromPartition(args.partition).cookies.set(args.cookie), { partition, cookie });
+export const setProfileCookie = (app: ElectronApplication, partition: string, cookie: { url: string; name: string; value: string; /** Seconds since 1970; without it the cookie is a session cookie and goes with the process. */ expirationDate?: number }): Promise<void> => app.evaluate(({ session }, args) => session.fromPartition(args.partition).cookies.set(args.cookie), { partition, cookie });
 
 /** The cookies a browser profile would send to this address. */
 export const profileCookies = (app: ElectronApplication, partition: string, url: string): Promise<CookieFacts[]> => app.evaluate(async ({ session }, args) => {

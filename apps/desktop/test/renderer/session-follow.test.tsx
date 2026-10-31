@@ -26,8 +26,10 @@ const ATLAS_NEW = `wsl:Ubuntu|${NEW_ID}` as SessionKey;
 
 type App = Awaited<ReturnType<typeof renderApp>>;
 const server = (app: App) => app.demo.demo.server;
-const tabs = () => screen.getAllByRole('tab').map((t) => (/Session ([0-9a-f]{8})/.exec(t.getAttribute('aria-label') ?? t.getAttribute('title') ?? t.textContent ?? '') ?? [])[1]);
-const selectedTab = () => (/[0-9a-f]{8}/.exec(screen.getAllByRole('tab').find((t) => t.getAttribute('aria-selected') === 'true')?.textContent ?? '') ?? [])[0];
+// The session tabs of the Claude pane. GitManager also has the Cloud tab (it has a GitHub repository), which is not a session.
+const sessionTabs = () => screen.getAllByRole('tab', { name: /^Session / });
+const tabs = () => sessionTabs().map((t) => (/Session ([0-9a-f]{8})/.exec(t.getAttribute('aria-label') ?? t.getAttribute('title') ?? t.textContent ?? '') ?? [])[1]);
+const selectedTab = () => (/[0-9a-f]{8}/.exec(sessionTabs().find((t) => t.getAttribute('aria-selected') === 'true')?.textContent ?? '') ?? [])[0];
 const claudePane = () => screen.getByRole('region', { name: 'Claude' });
 const stateOf = (app: App, key: SessionKey) => app.runtime.store.getState().sessions.find((s) => s.key === key);
 

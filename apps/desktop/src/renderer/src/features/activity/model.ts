@@ -25,6 +25,9 @@ export function dayLabel(iso: string, now: number = Date.now()): { key: string; 
   return { key, label: (sameYear ? WEEKDAY : WITH_YEAR).format(new Date(t)) };
 }
 
+/** Newest first, then by id, so that two entries of one moment keep one order. A list shown by day has to be in this order, or a day would be cut in two. */
+export const newestFirst = (a: { at: string; id: string }, b: { at: string; id: string }): number => b.at.localeCompare(a.at) || b.id.localeCompare(a.id);
+
 /** Consecutive items of the same day share a heading; the order the list came in is kept. */
 export function groupByDay<T extends { at: string }>(items: readonly T[], now: number = Date.now()): DayGroup<T>[] {
   const groups: DayGroup<T>[] = [];

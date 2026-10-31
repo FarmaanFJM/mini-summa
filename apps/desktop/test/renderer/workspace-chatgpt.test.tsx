@@ -22,8 +22,8 @@ const PLAIN_CONVERSATION = 'https://chatgpt.com/c/99999999-9999-4999-8999-999999
 const chatgpt = () => screen.getByRole('region', { name: 'ChatGPT' });
 const inChatgpt = () => within(chatgpt());
 
-async function open(app: RenderedApp, user: ReturnType<typeof userEvent.setup>, body: Record<string, unknown>) {
-  const name = body.name as string;
+async function open(app: RenderedApp, user: ReturnType<typeof userEvent.setup>, body: { name: string; chatgptProject?: { url: string; title?: string } }) {
+  const { name } = body;
   await app.demo.call('projects.create', { body: { roots: [], ...body } });
   await user.click(await screen.findByRole('button', { name: new RegExp(`^${name}(,|$)`) }));
   await screen.findByRole('heading', { level: 1, name });

@@ -40,7 +40,7 @@ describe('the header', () => {
     const identity = bar.querySelector('.ms-wsbar__identity') as HTMLElement;
     const tools = bar.querySelector('.ms-wsbar__tools') as HTMLElement;
     expect(within(identity).getByRole('heading', { level: 1 })).toBeTruthy();
-    const names = within(tools).getAllByRole('radio').map((r) => r.textContent).concat(within(tools).getAllByRole('button').map((b) => b.getAttribute('aria-label')));
+    const names = [...within(tools).getAllByRole('radio').map((r) => r.textContent ?? ''), ...within(tools).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? '')];
     expect(names).toEqual(['Split', 'ChatGPT', 'Claude', 'Edit GitManager', 'Layout: Automatic']);
   });
 

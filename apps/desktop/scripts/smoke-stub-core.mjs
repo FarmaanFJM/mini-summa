@@ -16,7 +16,8 @@ const PAGE = `<!doctype html>
 export async function createCore(options) {
   const token = crypto.randomBytes(24).toString('hex');
   const state = { sessions: [], quiet: false, started: false, stopped: false, startedAt: null };
-  const settings = { notifications: { quiet: { enabled: false, until: null } } };
+  // The part of the real settings the app reads at start: the quiet mode (tray) and the ChatGPT page size (index.ts applies it to the view).
+  const settings = { notifications: { quiet: { enabled: false, until: null } }, chatgpt: { pageScale: 'auto' } };
   const subscribers = new Set();
   const note = (message, data) => options.log?.info(message, data);
 

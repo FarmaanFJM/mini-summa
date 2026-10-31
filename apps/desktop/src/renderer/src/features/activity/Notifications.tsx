@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useApp, useRoute, useRuntime } from '../../app/runtime';
 import { Button, EmptyState } from '../../ui';
 import { formatRelative } from '../workspace/sessionModel';
-import { groupByDay, notificationOutcome, spoken } from './model';
+import { groupByDay, newestFirst, notificationOutcome, spoken } from './model';
 
 /**
  * Every notification Mini-Summa considered, with what became of it on this PC and on the phone: shown, held back by quiet
@@ -15,7 +15,8 @@ export function NotificationList() {
   const error = useApp((s) => s.listErrors.notifications);
   const route = useRoute();
   const { loader } = useRuntime();
-  const groups = useMemo(() => groupByDay(items), [items]);
+  // Newest first whatever order the store holds them in: a day listed twice would be two headings with one key.
+  const groups = useMemo(() => groupByDay([...items].sort(newestFirst)), [items]);
 
   if (status === 'idle' || status === 'loading') {
     return <div className="ms-skeleton-list ms-skeleton-list--wide" aria-busy="true" aria-label="Loading notifications">{[0, 1, 2, 3].map((i) => <div key={i} className="ms-skeleton-row" />)}</div>;
