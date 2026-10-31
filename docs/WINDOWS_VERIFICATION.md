@@ -13,32 +13,12 @@ virtual display, no person at the screen and no ChatGPT or Claude login. It cann
 
 ## Tier 1: what CI already checked (details: [WINDOWS_CI.md](WINDOWS_CI.md))
 
-Latest complete native run of the installed application: **commit 91bd25d, run 41179575582 (and 41179579093 for the pull request), runner image
-win25-vs2026 20261021.278.1, Windows build 10.0.26100, Node 22.23.4, Electron 45.1.0. All jobs green; the installed-app report: 24 checks passed, 0 failed,
-3 informational.** The first run (41176630640) had 22 passed and 2 failed; the failures were a wrong uninstall command in the check, a race in the
-check, and a continuity defect found by it (below).
+Latest complete native run: **commit 75c3dc6d20f10e7d94479c372c1d4bbe0958faba, run 41193183980** (runner image win25-vs2026 20261021.278.1, Windows build 10.0.26100, Node 22.23.4, Electron 45.1.0). **Every job passed**: typecheck; unit tests of six packages; the native installer build; and the installed application, **24 checks passed, 0 failed, 3 informational, no retry needed**. (Earlier runs found and fixed: a build break on case-insensitive file systems, a ConPTY spawn that threw, a managed terminal that could not follow `/clear` and `/resume` behind a `.cmd` shim, a refused 1 MB request body answered with a reset, a remembered ChatGPT conversation replaced by a fallback page, and several Windows-only test assumptions.)
 
-* **Passed on the runner:** the installer asks for no elevation; silent per-user install; files and ConPTY components on disk; the `minisumma://` key;
-  per-user uninstall entry, nothing in Program Files or HKLM; the installed app launches and shows its window; a project with a GitHub repository and a
-  ChatGPT link but no folder is accepted; a folder (spaces, accented letter) persists and is read back; a missing folder is refused with a message and
-  nothing is stored; everything the app held (project, folder, associations, route, the remembered Cloud and ChatGPT pages) is identical after quit and
-  relaunch; the Windows host environment and the `claude` CLI are found; **the PowerShell hook (W-11): PowerShell does not wait for the app without
-  `| Write-Output` (0.01 s) and does with it (3.06 s), and the SessionStart and Stop commands wrote their spool record before PowerShell returned**;
-  `notifications.test`: Windows accepted the toast request; silent uninstall (with the command Windows registered, `/currentuser /S`) removes the program,
-  the protocol key and the uninstall entry (the entry goes about 2 s after the folder) and keeps your data.
-* **What the restart check does and does not show for ChatGPT continuity.** The running app replaced the address the check had written (a conversation) with
-  the linked project page before the check quit it, because the window records the ChatGPT page it shows. The check therefore shows that the page the app
-  recorded survives a restart on Windows. It does **not** show that a remembered conversation is reopened: the runner has no signed-in ChatGPT and the
-  conversation address is made up. The first run exposed a real defect in the restore (a failed or redirected restore overwrote the remembered
-  conversation); it is fixed and covered on Linux against a stand-in (X11), and **untested on Windows and on the real chatgpt.com**. P1 to P4 below are the
-  check that matters.
-* **Also run natively by CI:** type check, unit tests of six packages, the installer build. Known exclusions and Windows-only observations are listed in
-  [WINDOWS_CI.md](WINDOWS_CI.md): 17 core test files that need a POSIX fake `claude` are skipped on Windows (untested there), ConPTY resize is not
-  verified, and an oversize request body can be answered with a connection reset instead of a 413 message. The installer is **not code-signed**.
-
-**The installer built by that run** (artifact `mini-summa-windows-installer` of run 41179575582): `Mini-Summa-Setup-0.1.0-x64.exe`, 122,559,111 bytes,
-SHA-256 `8aedb95980b54c7b83fed0648d72a51f63ae19fa790dd3fd8b3294a6c0056243`, commit `91bd25d7ee0f424559c9213ada431a5044b9b07c`, built on the runner above.
-Commits after it change documentation only unless the status report says otherwise.
+* **Installed application, on the runner:** the installer asks for no elevation; silent per-user install; files and ConPTY components present; the `minisumma://` key; per-user uninstall entry, nothing in Program Files or HKLM; the app launches; a project with a GitHub repository and a ChatGPT link but no folder is accepted; a folder (spaces, accented letter) persists and a missing folder is refused with a message; the saved state is identical after quit and relaunch; the Windows environment and the `claude` CLI are found; **the PowerShell hook (W-11)**: PowerShell does not wait for the app without `| Write-Output` (about 0.01 s) and does with it (about 3 s), and the SessionStart and Stop commands wrote their spool record before PowerShell returned; `notifications.test`: Windows accepted the toast request; silent uninstall removes the program, protocol key and uninstall entry (the entry goes about 2 s after the folder) and keeps your data.
+* **Core service, on the runner:** the whole `packages/core` suite runs natively, including the integration tests with a fake `claude` behind a `.cmd` shim (hooks fire through the real capture script; the terminal follows `/clear` and `/resume`), **except** 10 files that need POSIX fixtures, 2 resume tests, and the ConPTY resize test (listed with reasons in [WINDOWS_CI.md](WINDOWS_CI.md); nothing is claimed for them).
+* **What the restart check shows about ChatGPT continuity.** The page the app recorded for a project survives a restart. The runner has no signed-in ChatGPT, so it does **not** show that a remembered conversation is reopened, nor how the real site behaves. The restore-protection fix (a failed or redirected restore never replaces the remembered page) is tested on Linux against a stand-in only.
+* **The installer built by that run** (artifact `mini-summa-windows-installer` of run 41193183980): `Mini-Summa-Setup-0.1.0-x64.exe`, **122,560,138 bytes, SHA-256 `80366b4edd8863b0e532f1688d8d52993a294c1780ec023631e0d0b1ee2ce6df`**, built from `75c3dc6d20f10e7d94479c372c1d4bbe0958faba`, **not code-signed**. Builds are not byte-for-byte reproducible: another run of the same commit gives another hash, so use the hash printed in the status report and in `BUILD-INFO.txt` of the artifact you downloaded. Commits after 75c3dc6 change documentation only (the status report says how that was checked).
 
 Tier 1 does **not** show: a toast on a screen or a click on it, SmartScreen, anything needing a ChatGPT or Claude login, layout, display
 scaling, typing in the terminal, resize, Ctrl+C, a real Claude session on Windows, or behaviour as a standard (non-admin) user.
