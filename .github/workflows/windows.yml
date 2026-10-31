@@ -1,0 +1,390 @@
+# Native Windows verification for Mini-Summa. What each job proves, and what it cannot, is written down in docs/WINDOWS_CI.md.
+#
+#   typecheck         npm run typecheck (all workspaces) on Windows
+#   unit              the test suite of each workspace on Windows (no continue-on-error: a POSIX assumption shows up as a red job)
+#   package           native `npm run dist:win` (no wine), installer + BUILD-INFO.txt + SHA256SUMS.txt as an artifact
+#   installed-checks  silent per-user install of THAT installer, scripts/windows/installed-smoke.mjs against the installed exe,
+#                     silent uninstall, a report in the job summary
+name: Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['feat/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # No telemetry, no update prompts, quieter logs.
+  NPM_CONFIG_FUND: 'false'
+  NPM_CONFIG_AUDIT: 'false'
+  NPM_CONFIG_UPDATE_NOTIFIER: 'false'
+  CI: 'true'
+
+jobs:
+  typecheck:
+    name: typecheck (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the commit under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Node 22 with the npm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Toolchain versions
+        shell: bash
+        run: |
+          set -x
+          node --version
+          npm --version
+          git --version
+          bash --version | head -n 1
+
+      - name: npm ci
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci-logs"
+          npm ci 2>&1 | tee "$RUNNER_TEMP/ci-logs/typecheck-npm-ci.log"
+
+      - name: npm run typecheck (all workspaces)
+        shell: bash
+        run: npm run typecheck 2>&1 | tee "$RUNNER_TEMP/ci-logs/typecheck.log"
+
+      - name: Windows CI helper tests (node --test, scripts/windows/lib)
+        shell: bash
+        run: node --test scripts/windows/lib/helpers.test.mjs 2>&1 | tee "$RUNNER_TEMP/ci-logs/windows-helpers-test.log"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-typecheck
+          path: ${{ runner.temp }}/ci-logs
+          if-no-files-found: warn
+
+  unit:
+    name: unit (${{ matrix.ws }})
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ws: shared
+            pkg: '@minisumma/shared'
+          - ws: storage
+            pkg: '@minisumma/storage'
+          - ws: claude-integration
+            pkg: '@minisumma/claude-integration'
+          - ws: core
+            pkg: '@minisumma/core'
+          # `npm test` in apps/desktop is `vitest run test`, which runs both vitest projects (renderer in jsdom, node).
+          - ws: desktop
+            pkg: '@minisumma/desktop'
+          - ws: browser-extension
+            pkg: '@minisumma/browser-extension'
+    steps:
+      - name: Check out the commit under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Node 22 with the npm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Toolchain versions
+        shell: bash
+        run: |
+          set -x
+          node --version
+          npm --version
+          git --version
+          git config --get core.autocrlf || echo "core.autocrlf is not set (Git for Windows default applies)"
+
+      - name: npm ci
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci-logs"
+          npm ci 2>&1 | tee "$RUNNER_TEMP/ci-logs/unit-${{ matrix.ws }}-npm-ci.log"
+
+      # Some tests start the bundled hook (packages/claude-integration/dist/capture.mjs). It is git-ignored build output.
+      - name: Build the hook bundle (dist/capture.mjs)
+        shell: bash
+        run: npm run build:hook -w @minisumma/claude-integration 2>&1 | tee "$RUNNER_TEMP/ci-logs/unit-${{ matrix.ws }}-build-hook.log"
+
+      - name: Tests of ${{ matrix.pkg }}
+        shell: bash
+        run: npm test -w "${{ matrix.pkg }}" 2>&1 | tee "$RUNNER_TEMP/ci-logs/unit-${{ matrix.ws }}-test.log"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-unit-${{ matrix.ws }}
+          path: ${{ runner.temp }}/ci-logs
+          if-no-files-found: warn
+
+  package:
+    name: package (npm run dist:win, native)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the commit under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Node 22 with the npm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm ci
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci-logs"
+          npm ci 2>&1 | tee "$RUNNER_TEMP/ci-logs/package-npm-ci.log"
+
+      # Builds the hook, the app (electron-vite) and the NSIS installer. NSIS runs natively here: there is no wine step.
+      - name: npm run dist:win
+        shell: bash
+        run: npm run dist:win 2>&1 | tee "$RUNNER_TEMP/ci-logs/package-dist-win.log"
+
+      - name: Collect the installer and write BUILD-INFO.txt and SHA256SUMS.txt
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'installer-artifact'
+          Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $stage | Out-Null
+
+          $releaseDir = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/release'
+          Write-Host "Contents of ${releaseDir}:"
+          Get-ChildItem $releaseDir | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+
+          $installers = @(Get-ChildItem -Path $releaseDir -Filter 'Mini-Summa-Setup-*.exe' -File -ErrorAction SilentlyContinue)
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one Mini-Summa-Setup-*.exe in $releaseDir, found $($installers.Count). The build did not produce the installer."
+          }
+          $installer = $installers[0]
+          if ($installer.Length -lt 1MB) { throw "The installer is only $($installer.Length) bytes; that is not a real installer." }
+          $blockmap = Get-Item -LiteralPath ($installer.FullName + '.blockmap') -ErrorAction Stop
+
+          Copy-Item -LiteralPath $installer.FullName -Destination $stage
+          Copy-Item -LiteralPath $blockmap.FullName -Destination $stage
+
+          $electronVersion = (node -p "require('electron/package.json').version").Trim()
+          $builderPin = (Select-String -Path (Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/electron-builder.yml') -Pattern '^electronVersion:\s*(\S+)').Matches.Groups[1].Value
+          $nodeVersion = (node --version).Trim()
+          $headCommit = (git rev-parse HEAD).Trim()
+          $runUrl = "$($env:GITHUB_SERVER_URL)/$($env:GITHUB_REPOSITORY)/actions/runs/$($env:GITHUB_RUN_ID)"
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer.FullName).Hash.ToLowerInvariant()
+          $blockHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $blockmap.FullName).Hash.ToLowerInvariant()
+
+          $info = @(
+            'Mini-Summa Windows installer, built natively on a GitHub-hosted runner (no wine).',
+            '',
+            "GITHUB_SHA:            $($env:GITHUB_SHA)",
+            "Checked-out commit:    $headCommit",
+            "Pull request head:     $($env:PR_HEAD_SHA)",
+            "Ref:                   $($env:GITHUB_REF)",
+            "Event:                 $($env:GITHUB_EVENT_NAME)",
+            "Workflow run id:       $($env:GITHUB_RUN_ID) (attempt $($env:GITHUB_RUN_ATTEMPT))",
+            "Workflow run url:      $runUrl",
+            "Runner image:          ImageOS=$($env:ImageOS) ImageVersion=$($env:ImageVersion)",
+            "Node:                  $nodeVersion",
+            "Electron (installed):  $electronVersion",
+            "Electron (pinned in electron-builder.yml): $builderPin",
+            "Installer file:        $($installer.Name)",
+            "Installer size bytes:  $($installer.Length)",
+            "Installer SHA-256:     $hash",
+            "Blockmap SHA-256:      $blockHash",
+            '',
+            'NOT code-signed. Windows SmartScreen will warn about an unknown publisher.',
+            'For a pull_request event GITHUB_SHA is the temporary merge commit; this job checks out the pull request head, which is the line "Checked-out commit".'
+          )
+          Set-Content -LiteralPath (Join-Path $stage 'BUILD-INFO.txt') -Value $info -Encoding utf8
+
+          # sha256sum-compatible: "<hash>  <file>". Verify with: Get-FileHash, or sha256sum -c on Git Bash.
+          $sums = @("$hash  $($installer.Name)", "$blockHash  $($blockmap.Name)")
+          Set-Content -LiteralPath (Join-Path $stage 'SHA256SUMS.txt') -Value $sums -Encoding utf8
+
+          Get-ChildItem $stage | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+          Get-Content (Join-Path $stage 'BUILD-INFO.txt') | Write-Host
+
+          @(
+            '## Windows installer',
+            '',
+            '```text',
+            $info,
+            '```'
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+
+      - name: Upload the installer artifact (fails if the installer is missing)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mini-summa-windows-installer
+          path: |
+            ${{ runner.temp }}/installer-artifact/Mini-Summa-Setup-*.exe
+            ${{ runner.temp }}/installer-artifact/Mini-Summa-Setup-*.exe.blockmap
+            ${{ runner.temp }}/installer-artifact/BUILD-INFO.txt
+            ${{ runner.temp }}/installer-artifact/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-package
+          path: |
+            ${{ runner.temp }}/ci-logs
+            apps/desktop/release/builder-debug.yml
+          if-no-files-found: warn
+
+  installed-checks:
+    name: installed-checks (install, run, uninstall)
+    needs: package
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the commit under test (for scripts/windows and playwright)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Node 22 with the npm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Prepare the output folder
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP 'windows-ci-out'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          "WINDOWS_CI_OUT=$out" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
+          "Output folder: $out"
+
+      # Only playwright is needed from node_modules; the Electron binary is not (the INSTALLED exe is launched), so skip its download.
+      - name: npm ci (without the Electron binary download)
+        shell: bash
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: |
+          mkdir -p "$RUNNER_TEMP/ci-logs"
+          npm ci 2>&1 | tee "$RUNNER_TEMP/ci-logs/installed-npm-ci.log"
+
+      - name: Download the installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mini-summa-windows-installer
+          path: ${{ runner.temp }}/installer
+
+      - name: Verify the downloaded installer against SHA256SUMS.txt and show BUILD-INFO.txt
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'installer'
+          Get-ChildItem $dir | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+          $bad = 0
+          foreach ($line in Get-Content (Join-Path $dir 'SHA256SUMS.txt')) {
+            if (-not $line.Trim()) { continue }
+            $expected, $name = $line -split '\s+', 2
+            $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $dir $name.Trim())).Hash.ToLowerInvariant()
+            if ($actual -ne $expected) { Write-Host "MISMATCH $name expected $expected actual $actual"; $bad++ } else { Write-Host "OK $name $actual" }
+          }
+          if ($bad) { throw "$bad file(s) do not match SHA256SUMS.txt" }
+          Get-Content (Join-Path $dir 'BUILD-INFO.txt') | Write-Host
+          $built = (Select-String -Path (Join-Path $dir 'BUILD-INFO.txt') -Pattern '^Checked-out commit:\s*(\S+)').Matches.Groups[1].Value
+          $here = (git rev-parse HEAD).Trim()
+          if ($built -ne $here) { throw "The installer was built from $built but this job checked out $here." }
+          "Installer commit matches this job's checkout: $here"
+
+      # Claude Code is installed unauthenticated, only so that environment discovery and `claude --version` can be checked.
+      # A failure here is recorded and does not stop the job: check 3 then says NOT RUN with the reason.
+      - name: Install Claude Code (npm, global, unauthenticated; failure is recorded, not fatal)
+        shell: pwsh
+        run: |
+          $out = $env:WINDOWS_CI_OUT
+          $log = Join-Path $out 'claude-install.txt'
+          $ok = $false
+          try {
+            npm install -g '@anthropic-ai/claude-code' 2>&1 | Tee-Object -FilePath $log
+            if ($LASTEXITCODE -ne 0) { throw "npm install -g exited with $LASTEXITCODE" }
+            $prefix = (npm prefix -g).Trim()
+            Add-Content -LiteralPath $env:GITHUB_PATH -Value $prefix -Encoding utf8
+            $env:PATH = "$prefix;$env:PATH"
+            $version = (& claude --version 2>&1 | Out-String).Trim()
+            "claude --version: $version" | Tee-Object -FilePath $log -Append
+            $ok = $true
+          } catch {
+            "NOT INSTALLED: $($_.Exception.Message)" | Tee-Object -FilePath $log -Append
+            Write-Host "::warning title=Claude Code install failed::$($_.Exception.Message)"
+          }
+          "Claude Code installed: $ok" | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          exit 0
+
+      - name: Toolchain, account and what is already on this machine
+        shell: pwsh
+        run: |
+          node --version; git --version; where.exe bash
+          where.exe claude 2>&1 | Write-Host
+          "ImageOS=$($env:ImageOS) ImageVersion=$($env:ImageVersion)"
+          [Environment]::OSVersion.VersionString
+          "User: $env:USERNAME  LOCALAPPDATA=$env:LOCALAPPDATA  APPDATA=$env:APPDATA"
+          "Mini-Summa already installed? " + (Test-Path (Join-Path $env:LOCALAPPDATA 'Programs\Mini-Summa'))
+          "Port 47811 in use? " + [bool](Get-NetTCPConnection -LocalPort 47811 -ErrorAction SilentlyContinue)
+          $global:LASTEXITCODE = 0  # where.exe returns 1 when claude is not on PATH; that is information here, not a failure
+
+      - name: "1. Silent per-user install (/S) and file, registry and elevation checks"
+        id: install
+        shell: bash
+        run: |
+          node scripts/windows/installed-smoke.mjs install --installer "$RUNNER_TEMP/installer" 2>&1 | tee "$WINDOWS_CI_OUT/step-install.log"
+
+      - name: "2-5. Launch the installed exe, persistence across a restart, environments, PowerShell hook, notification routing"
+        id: smoke
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: node scripts/windows/installed-smoke.mjs smoke 2>&1 | tee "$WINDOWS_CI_OUT/step-smoke.log"
+
+      - name: "6. Silent uninstall, leftovers and kept user data"
+        id: uninstall
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: node scripts/windows/installed-smoke.mjs uninstall 2>&1 | tee "$WINDOWS_CI_OUT/step-uninstall.log"
+
+      - name: Report (also appended to the job summary)
+        if: always()
+        shell: bash
+        run: node scripts/windows/installed-smoke.mjs report 2>&1 | tee "$WINDOWS_CI_OUT/step-report.log"
+
+      - name: Upload the report, results and application logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installed-report
+          path: |
+            ${{ runner.temp }}/windows-ci-out
+            ${{ runner.temp }}/ci-logs
+          if-no-files-found: warn
