@@ -75,7 +75,7 @@ const shots = [
     name: 'projects-new-chatgpt-error',
     async run(page) {
       const d = await openNew(page);
-      await d.getByLabel('Address of an existing ChatGPT Project').fill('https://chatgpt.com/c/6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b');
+      await d.getByLabel('Address of an existing ChatGPT Project').fill('https://chatgpt.com/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
       await settle(page);
     },
   },
@@ -130,7 +130,7 @@ const shots = [
         const p = await server.call('projects.create', {
           body: { name: 'CaissaTrainer', githubRepo: 'FarmaanFIM/CaissaTrainer', chatgptProject: { url: address }, roots: [{ path: 'C:\\Dev\\CaissaTrainer', env: 'win' }] },
         });
-        await server.call('conversations.add', { params: { id: p.id }, body: { url: 'https://chatgpt.com/g/g-p-6720aa11bb22cc33dd44ee55ff66aa77-caissa-trainer/c/6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b', title: 'Opening theory review' } });
+        await server.call('conversations.add', { params: { id: p.id }, body: { url: 'https://chatgpt.com/g/g-p-6720aa11bb22cc33dd44ee55ff66aa77-caissa-trainer/c/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', title: 'Opening theory review' } });
       }, ADDRESS);
       await settle(page, 250);
       await openSettings(page, 'CaissaTrainer');
