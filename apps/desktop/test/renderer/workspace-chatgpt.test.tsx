@@ -176,6 +176,8 @@ describe('the project settings asking for the linked ChatGPT Project\'s page', (
     const made = await app.demo.call('projects.create', { body: { name: 'Linked', roots: [], chatgptProject: { url: PROJECT_URL } } });
     const bare = await app.demo.call('projects.create', { body: { name: 'Bare', roots: [] } });
     const navigate = fake.native.chatgpt.navigate as ReturnType<typeof vi.fn>;
+    await new Promise((r) => setTimeout(r, 100)); // the first project's own page, loaded on start, is not what is looked at here
+    navigate.mockClear();
     act(() => { app.runtime.route.getState().selectProject(made.id); app.runtime.route.getState().openChatGptProject(made.id); });
     await waitFor(() => expect(app.runtime.route.getState().chatgptProjectOpen[made.id]).toBeUndefined());
     expect(navigate).not.toHaveBeenCalled();
@@ -196,7 +198,7 @@ describe('the project settings asking for the linked ChatGPT Project\'s page', (
     await user.click(await screen.findByRole('menuitem', { name: /^(Edit project|Project settings|Settings)$/ }));
     const dialog = await screen.findByRole('dialog', { name: 'Both settings' });
     navigate.mockClear();
-    await user.click(within(dialog).getByRole('button', { name: /^Open/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Open' }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(PROJECT_URL));
     await screen.findByRole('heading', { level: 1, name: 'Both' });
     await new Promise((r) => setTimeout(r, 120));

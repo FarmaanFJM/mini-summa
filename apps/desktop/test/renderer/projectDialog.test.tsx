@@ -138,7 +138,7 @@ describe('from a ChatGPT Project', () => {
     const created = stored(app, 'Caissa trainer');
     expect(created).toMatchObject({ githubRepo: null, roots: [], chatgptProject: { url: PROJECT, scopeId: 'g-p-6720aa11bb22cc33dd44ee55ff66aa77-caissa-trainer', title: 'Caissa trainer' } });
     expect(app.runtime.route.getState().projectId).toBe(created?.id);
-    expect(await screen.findByRole('button', { name: /^Caissa trainer/ })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /^Caissa trainer(,|$)/ })).toBeTruthy();
   });
 
   it('turns a pasted conversation inside the project into the project page', async () => {

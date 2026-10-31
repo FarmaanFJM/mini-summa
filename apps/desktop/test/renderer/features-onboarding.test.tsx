@@ -302,7 +302,7 @@ describe('an installation that already has projects', () => {
   it('is never shown the checklist unprompted, and no environment is probed for it', async () => {
     const storage = createMemoryStorage();
     const app = await renderFeature({ view: 'workspace', gate: true, storage });
-    await screen.findByRole('button', { name: /^GitManager/ });
+    await screen.findByRole('button', { name: /^GitManager(,|$)/ });
     expect(screen.queryByRole('region', { name: 'Set up Mini-Summa' })).toBeNull();
     expect(saved(storage)).toBeNull(); // nothing was recorded either
     expect(app.runtime.store.getState().projects.length).toBeGreaterThan(0);

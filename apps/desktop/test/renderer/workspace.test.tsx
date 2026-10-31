@@ -198,7 +198,7 @@ describe('where the native ChatGPT view goes', () => {
     await waitFor(() => expect(lastBounds(app.fake)).not.toBeNull());
     await user.click(screen.getByRole('button', { name: 'Reports, 4 waiting for handoff' }));
     await waitFor(() => expect(lastBounds(app.fake)).toBeNull());
-    await user.click(screen.getByRole('button', { name: /^GitManager/ }));
+    await user.click(screen.getByRole('button', { name: /^GitManager(,|$)/ }));
     await waitFor(() => expect(lastBounds(app.fake)).not.toBeNull());
   });
 
@@ -207,7 +207,7 @@ describe('where the native ChatGPT view goes', () => {
     const user = userEvent.setup();
     const app = await renderApp();
     await waitFor(() => expect(lastBounds(app.fake)).not.toBeNull());
-    await user.click(screen.getByRole('button', { name: /^Docs site/ }));
+    await user.click(screen.getByRole('button', { name: /^Docs site(,|$)/ }));
     await waitFor(() => expect(lastBounds(app.fake)).toBeNull());
     expect(screen.getByText('This project has no ChatGPT Project or conversation yet.')).toBeTruthy();
   });
@@ -242,9 +242,9 @@ describe('the ChatGPT pane', () => {
     const navigate = app.fake.native.chatgpt.navigate as ReturnType<typeof vi.fn>;
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(expect.stringContaining('/c/6f1a2b3c')));
     const before = navigate.mock.calls.length;
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     await waitFor(() => expect(navigate).toHaveBeenCalledWith(expect.stringContaining('/c/3a4b5c6d')));
-    await user.click(screen.getByRole('button', { name: /^GitManager/ }));
+    await user.click(screen.getByRole('button', { name: /^GitManager(,|$)/ }));
     await waitFor(() => expect(navigate).toHaveBeenLastCalledWith(expect.stringContaining('/c/6f1a2b3c')));
     expect(navigate.mock.calls.length).toBe(before + 2);
   });
@@ -326,7 +326,7 @@ describe('the ChatGPT pane', () => {
     geometry();
     const user = userEvent.setup();
     await renderApp();
-    await user.click(screen.getByRole('button', { name: /^Docs site/ }));
+    await user.click(screen.getByRole('button', { name: /^Docs site(,|$)/ }));
     await user.click(screen.getByRole('button', { name: 'Add a conversation' }));
     expect(screen.getByRole('dialog', { name: 'Docs site settings' })).toBeTruthy();
   });
@@ -403,7 +403,7 @@ describe('navigation from outside (a notification, a deep link)', () => {
     geometry();
     const user = userEvent.setup();
     const first = await renderApp();
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     const storage = first.storage;
     first.unmount();
     first.runtime.dispose();

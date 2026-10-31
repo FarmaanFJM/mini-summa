@@ -54,7 +54,7 @@ describe('error', () => {
 
     app.demo.demo.server.failSnapshot = null;
     await user.click(screen.getByRole('button', { name: 'Try again' }));
-    expect(await screen.findByRole('button', { name: /^GitManager/ })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /^GitManager(,|$)/ })).toBeTruthy();
     expect(screen.queryByText(/could not load its data/)).toBeNull();
   });
 });
@@ -69,7 +69,7 @@ describe('offline', () => {
     expect(appRoot().getAttribute('data-connection')).toBe('reconnecting');
 
     act(() => app.demo.demo.setOffline(false));
-    expect(await screen.findByRole('button', { name: /^GitManager/ }, { timeout: 4000 })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /^GitManager(,|$)/ }, { timeout: 4000 })).toBeTruthy();
     await waitFor(() => expect(screen.queryByText(LOST)).toBeNull());
     expect(appRoot().getAttribute('data-connection')).toBe('live');
     app.runtime.dispose();
@@ -80,10 +80,10 @@ describe('offline', () => {
     act(() => { app.demo.demo.setOffline(true); app.demo.demo.drop(); });
     expect(await screen.findByText(LOST)).toBeTruthy();
     expect(screen.getByText('Showing the last known state.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^GitManager/ })).toBeTruthy(); // not blanked out
+    expect(screen.getByRole('button', { name: /^GitManager(,|$)/ })).toBeTruthy(); // not blanked out
     expect(appRoot().getAttribute('data-connection')).toBe('reconnecting');
     // What is live is dimmed while it cannot be trusted: the attention marker of a project and the counts of the sections.
-    expect(within(screen.getByRole('button', { name: /^GitManager/ })).getByRole('img', { name: 'Needs your attention' }).closest('.ms-live')).toBeTruthy();
+    expect(within(screen.getByRole('button', { name: /^GitManager(,|$)/ })).getByRole('img', { name: 'Needs your attention' }).closest('.ms-live')).toBeTruthy();
     expect(screen.getByTitle('4 unread').closest('.ms-live')).toBeTruthy();
 
     // Something changes in the core while the window is away.
@@ -92,7 +92,7 @@ describe('offline', () => {
 
     expect(await screen.findByRole('button', { name: /^Atlas Gateway/ }, { timeout: 4000 })).toBeTruthy();
     await waitFor(() => expect(screen.queryByText(LOST)).toBeNull());
-    expect(screen.queryByRole('button', { name: /^Atlas API/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Atlas API(,|$)/ })).toBeNull();
     app.runtime.dispose();
   }, 10_000);
 });

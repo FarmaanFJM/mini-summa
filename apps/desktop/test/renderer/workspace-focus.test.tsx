@@ -81,7 +81,7 @@ describe('the header', () => {
     expect(bar.querySelector('.ms-wsbar__places')).toBeNull();
     expect(bar.textContent).not.toMatch(/No folder|No repository|folder yet/i);
     // A project with a folder and no repository shows only the folder.
-    await user.click(screen.getByRole('button', { name: /^Docs site/ }));
+    await user.click(screen.getByRole('button', { name: /^Docs site(,|$)/ }));
     await screen.findByRole('heading', { level: 1, name: 'Docs site' });
     expect(screen.queryByRole('button', { name: /on GitHub$/ })).toBeNull();
     expect(screen.getByRole('button', { name: /^Show the folder C:\\Dev\\docs-site$/ })).toBeTruthy();
@@ -91,7 +91,7 @@ describe('the header', () => {
     stubWorkspaceGeometry();
     const user = userEvent.setup();
     await renderApp();
-    await user.click(screen.getByRole('button', { name: /^Trading dashboard/ }));
+    await user.click(screen.getByRole('button', { name: /^Trading dashboard(,|$)/ }));
     await screen.findByRole('heading', { level: 1, name: 'Trading dashboard' });
     expect(screen.getByRole('button', { name: /^Show the folder C:\\Dev\\dashboard$/ })).toBeTruthy();
     expect((document.querySelector('.ms-wsbar__more') as HTMLElement).textContent).toBe('+1');
@@ -317,7 +317,7 @@ describe('showing one pane never closes the other', () => {
     await user.click(screen.getByRole('button', { name: 'Reports, 4 waiting for handoff' }));
     await waitFor(() => expect(fake.lastBounds()).toBeNull());
     await waitFor(() => expect(fake.lastClaudeBounds()).toBeNull());
-    await user.click(screen.getByRole('button', { name: /^GitManager/ }));
+    await user.click(screen.getByRole('button', { name: /^GitManager(,|$)/ }));
     await waitFor(() => expect(fake.lastClaudeBounds()).toEqual(places.claude));
     await waitFor(() => expect(fake.lastBounds()).toEqual(places.chatgpt));
   });

@@ -136,13 +136,13 @@ describe('archiving and deleting', () => {
     expect(dialog.textContent).toContain('kept');
     expect(dialog.textContent).toContain('1 report');
     await user.click(within(dialog).getByRole('button', { name: 'Archive project' }));
-    await waitFor(() => expect(screen.queryByRole('button', { name: /^Docs site/ })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Docs site(,|$)/ })).toBeNull());
     expect(calls).toHaveBeenCalledWith('projects.remove', { params: { id: IDS.docs }, query: { mode: 'archive' } });
     expect(app.runtime.store.getState().reports.some((r) => r.projectId === IDS.docs)).toBe(true); // history is kept
 
     await user.click(await screen.findByRole('button', { name: /Archived/ }));
     await user.click(screen.getByRole('button', { name: 'Restore Docs site' }));
-    expect(await screen.findByRole('button', { name: /^Docs site/ })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: /^Docs site(,|$)/ })).toBeTruthy();
   });
 
   it('delete is a solid destructive confirmation that says what goes with the project', async () => {
@@ -162,7 +162,7 @@ describe('archiving and deleting', () => {
     // Cancel is where focus starts, so Enter cannot delete by accident.
     expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Cancel' }));
     await user.click(confirm);
-    await waitFor(() => expect(screen.queryByRole('button', { name: /^Trading dashboard/ })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Trading dashboard(,|$)/ })).toBeNull());
     expect(calls).toHaveBeenCalledWith('projects.remove', { params: { id: IDS.dashboard }, query: { mode: 'delete' } });
     expect(app.runtime.store.getState().reports.some((r) => r.projectId === IDS.dashboard)).toBe(false);
   });
@@ -204,7 +204,7 @@ describe('removing a project that has running Claude terminals', () => {
     const dialog = screen.getByRole('dialog', { name: 'Archive Atlas API?' });
     expect(dialog.textContent).toContain('Removing it also ends its running Claude terminal. You can resume the session later.');
     await user.click(within(dialog).getByRole('button', { name: 'Archive project' }));
-    await waitFor(() => expect(screen.queryByRole('button', { name: /^Atlas API/ })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Atlas API(,|$)/ })).toBeNull());
     expect(calls).toHaveBeenCalledWith('projects.remove', { params: { id: IDS.atlas }, query: { mode: 'archive', stopSessions: true } });
     // The terminal was ended, not lost: the session is resumable.
     expect(app.runtime.store.getState().sessions.find((x) => x.key === IDS.s.atlasIdle)?.availability).toBe('resumable');
@@ -220,7 +220,7 @@ describe('removing a project that has running Claude terminals', () => {
     expect(dialog.textContent).toContain('Removing it also ends its 2 running Claude terminals. You can resume the sessions later.');
     expect(dialog.textContent).toContain('1 session started outside Mini-Summa keeps running.');
     await user.click(within(dialog).getByRole('button', { name: 'Delete project' }));
-    await waitFor(() => expect(screen.queryByRole('button', { name: /^GitManager/ })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^GitManager(,|$)/ })).toBeNull());
     expect(calls).toHaveBeenCalledWith('projects.remove', { params: { id: IDS.gitManager }, query: { mode: 'delete', stopSessions: true } });
   });
 
@@ -255,10 +255,10 @@ describe('removing a project that has running Claude terminals', () => {
     expect(await within(dialog).findByText(/This project has 1 running Claude terminal/)).toBeTruthy();
     expect(dialog.textContent).toContain('Removing it also ends its running Claude terminal.');
     expect(calls).toHaveBeenLastCalledWith('projects.remove', { params: { id: IDS.docs }, query: { mode: 'archive' } });
-    expect(screen.getByRole('button', { name: /^Docs site/ })).toBeTruthy(); // nothing was removed
+    expect(screen.getByRole('button', { name: /^Docs site(,|$)/ })).toBeTruthy(); // nothing was removed
 
     await user.click(within(dialog).getByRole('button', { name: 'Archive project' }));
-    await waitFor(() => expect(screen.queryByRole('button', { name: /^Docs site/ })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Docs site(,|$)/ })).toBeNull());
     expect(calls).toHaveBeenLastCalledWith('projects.remove', { params: { id: IDS.docs }, query: { mode: 'archive', stopSessions: true } });
   });
 });

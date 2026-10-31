@@ -41,7 +41,7 @@ async function mount(views: Parameters<typeof Frame>[0]['views']) {
   const view = render(
     <RuntimeProvider runtime={harness.runtime}><LayoutProvider><Frame views={views} /></LayoutProvider></RuntimeProvider>,
   );
-  await screen.findByRole('button', { name: /^GitManager/ });
+  await screen.findByRole('button', { name: /^GitManager(,|$)/ });
   return { ...harness, view };
 }
 
@@ -157,7 +157,7 @@ describe('a view that replaces the sidebar, with the sidebar collapsed', () => {
     const user = userEvent.setup();
     const harness = createHarness();
     render(<RuntimeProvider runtime={harness.runtime}><LayoutProvider><CollapsedFrame /></LayoutProvider></RuntimeProvider>);
-    await screen.findByRole('button', { name: /^GitManager/ });
+    await screen.findByRole('button', { name: /^GitManager(,|$)/ });
     await user.click(screen.getByRole('button', { name: 'test: collapse' }));
     expect(aside().hasAttribute('hidden')).toBe(true);
 

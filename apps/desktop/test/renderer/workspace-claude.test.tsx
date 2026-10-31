@@ -78,7 +78,7 @@ describe('the + menu', () => {
     stubWorkspaceGeometry();
     const user = userEvent.setup();
     await renderApp();
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     await user.click(plus());
     const items = within(screen.getByRole('menu', { name: 'New session' })).getAllByRole('menuitem').map((i) => i.textContent);
     expect(items[0]).toBe('New local session');
@@ -154,7 +154,7 @@ describe('local and cloud are never swapped', () => {
     const user = userEvent.setup();
     const app = await renderApp();
     const calls = vi.spyOn(app.demo, 'call');
-    await user.click(screen.getByRole('button', { name: /^Trading dashboard/ }));
+    await user.click(screen.getByRole('button', { name: /^Trading dashboard(,|$)/ }));
     await user.click(plus());
     await user.click(screen.getByRole('menuitem', { name: 'New local session' }));
     const dialog = await screen.findByRole('dialog', { name: 'New local session' });
@@ -262,7 +262,7 @@ describe('the Cloud tab', () => {
     stubWorkspaceGeometry();
     const user = userEvent.setup();
     const app = await renderApp();
-    await user.click(screen.getByRole('button', { name: /^Docs site/ }));
+    await user.click(screen.getByRole('button', { name: /^Docs site(,|$)/ }));
     await screen.findByRole('heading', { level: 1, name: 'Docs site' });
     expect(inClaude().queryByRole('tab', { name: /^Cloud/ })).toBeNull();
     act(() => app.runtime.route.getState().selectCloudUrl(IDS.docs, SESSION));
@@ -405,9 +405,9 @@ describe('the Cloud tab', () => {
     const user = userEvent.setup();
     await renderApp({ native: createFakeNative() });
     await user.click(cloudTab());
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     expect(cloudTab().getAttribute('aria-selected')).toBe('false'); // Atlas API has its own choice
-    await user.click(screen.getByRole('button', { name: /^GitManager/ }));
+    await user.click(screen.getByRole('button', { name: /^GitManager(,|$)/ }));
     expect(cloudTab().getAttribute('aria-selected')).toBe('true');
   });
 
@@ -683,7 +683,7 @@ describe('the page each project was last on', () => {
     await waitFor(() => expect(lastNavigation()).toBe(SESSION));
     act(() => fake.emitClaudeView({ url: SESSION }));
 
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     await user.click(cloudTab());
     await waitFor(() => expect(lastNavigation()).toBe(OTHER_SESSION));
     // The view still reports the page it is leaving for a moment: that is not Atlas API's page.
@@ -692,7 +692,7 @@ describe('the page each project was last on', () => {
     expect(app.runtime.route.getState().cloudUrlByProject[IDS.atlas]).toBe(OTHER_SESSION);
     act(() => fake.emitClaudeView({ url: OTHER_SESSION }));
 
-    await user.click(screen.getByRole('button', { name: /^GitManager/ }));
+    await user.click(screen.getByRole('button', { name: /^GitManager(,|$)/ }));
     await waitFor(() => expect(lastNavigation()).toBe(SESSION));
     expect(navigate.mock.calls.map((c) => c[0])).toEqual([SESSION, OTHER_SESSION, SESSION]);
     expect(app.runtime.route.getState().cloudUrlByProject).toMatchObject({ [IDS.gitManager]: SESSION, [IDS.atlas]: OTHER_SESSION });

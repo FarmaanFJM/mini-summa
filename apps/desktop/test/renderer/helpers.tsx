@@ -207,7 +207,7 @@ export async function renderApp(options: HarnessOptions = {}): Promise<RenderedA
   document.body.appendChild(container);
   const view = render(<RuntimeProvider runtime={harness.runtime}><Shell /><Toaster /></RuntimeProvider>, { container });
   if (options.startLoader !== false && (options.scenario ?? 'normal') === 'normal') {
-    await screen.findByRole('button', { name: /^GitManager/ });
+    await screen.findByRole('button', { name: /^GitManager(,|$)/ });
   }
   return { ...harness, ...view };
 }

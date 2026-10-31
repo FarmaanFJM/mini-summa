@@ -48,7 +48,7 @@ describe('opening on what the core remembers', () => {
     const user = userEvent.setup();
     await renderApp({ seed: seedWith(remembered), storage: createMemoryStorage() });
     await waitFor(() => expect(heading()).toBe('Atlas API'));
-    await user.click(screen.getByRole('button', { name: /^GitManager/ }));
+    await user.click(screen.getByRole('button', { name: /^GitManager(,|$)/ }));
     await waitFor(() => expect(heading()).toBe('GitManager'));
     const tab = await screen.findByRole('tab', { name: /b7c8d9e0/ });
     expect(tab.getAttribute('aria-selected')).toBe('true'); // not the first tab, which is a1b2c3d4
@@ -127,9 +127,9 @@ describe('writing back', () => {
     const app = await renderApp({ seed: seedWith(undefined), storage: createMemoryStorage(), uiSync: FAST });
     await app.runtime.uiSync.flush(); // what the first screen remembered by itself (the displayed session tab)
     const spy = vi.spyOn(app.demo, 'call');
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
-    await user.click(screen.getByRole('button', { name: /^Docs site/ }));
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
+    await user.click(screen.getByRole('button', { name: /^Docs site(,|$)/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     await waitFor(() => expect(uiWrites(spy).length).toBeGreaterThan(0));
     await new Promise((r) => setTimeout(r, 80));
     const writes = uiWrites(spy) as { route?: unknown; perProject?: Record<string, unknown> }[];
@@ -183,7 +183,7 @@ describe('writing back', () => {
     const user = userEvent.setup();
     const sendOnClose = vi.fn();
     await renderApp({ seed: seedWith(undefined), storage: createMemoryStorage(), uiSync: { delayMs: 60_000, retry: FAST.retry }, sendOnClose });
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     act(() => { window.dispatchEvent(new Event('pagehide')); });
     expect(sendOnClose).toHaveBeenCalledTimes(1);
     expect(sendOnClose.mock.calls[0][0].ui).toMatchObject({ route: { projectId: IDS.atlas, view: 'workspace' } });
@@ -206,7 +206,7 @@ describe('when a write fails', () => {
     await app.runtime.uiSync.flush();
     const state = { failing: true, status: 0 };
     const spy = offline(app, state);
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     await waitFor(() => expect(uiWrites(spy).length).toBeGreaterThanOrEqual(2)); // tried, and tried again
     expect(heading()).toBe('Atlas API'); // the window works
     expect(app.runtime.uiSync.pending()).toContain('route'); // still waiting for the core
@@ -225,7 +225,7 @@ describe('when a write fails', () => {
     await app.runtime.uiSync.flush();
     const state = { failing: true, status: 0 };
     const spy = offline(app, state);
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     await waitFor(() => expect(uiWrites(spy)).toHaveLength(1));
     await new Promise((r) => setTimeout(r, 150));
     expect(uiWrites(spy)).toHaveLength(1); // waiting for the pause, not hammering the core
@@ -240,7 +240,7 @@ describe('when a write fails', () => {
     const app = await renderApp({ seed: seedWith(undefined), storage: createMemoryStorage(), uiSync: FAST });
     await app.runtime.uiSync.flush();
     const spy = offline(app, { failing: true, status: 400 });
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     await waitFor(() => expect(uiWrites(spy)).toHaveLength(1));
     await waitFor(() => expect(app.runtime.uiSync.pending()).toEqual([]));
     await new Promise((r) => setTimeout(r, 200));
@@ -252,7 +252,7 @@ describe('when a write fails', () => {
     const storage = createMemoryStorage();
     const app = await renderApp({ seed: seedWith(undefined), storage, uiSync: FAST });
     offline(app, { failing: true, status: 0 });
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     expect(stored(storage)).toMatchObject({ projectId: IDS.atlas });
   });
 });
@@ -291,7 +291,7 @@ describe('a change made just before the window closed', () => {
     await first.runtime.uiSync.flush();
     const original = first.demo.call.bind(first.demo);
     vi.spyOn(first.demo, 'call').mockImplementation(((name: string, input?: unknown) => (name === 'settings.update' ? Promise.reject(new ApiError(0, 'network', 'down')) : (original as (n: string, i?: unknown) => Promise<unknown>)(name, input))) as never);
-    await user.click(screen.getByRole('button', { name: /^Atlas API/ }));
+    await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     await waitFor(() => expect(first.runtime.uiSync.pending()).toContain('route'));
     first.runtime.dispose();
     first.unmount();
