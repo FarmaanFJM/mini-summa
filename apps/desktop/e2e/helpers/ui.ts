@@ -194,10 +194,10 @@ export const cloudTab = (page: Page): Locator => page.getByRole('region', { name
 /** Starts a LOCAL session with the empty-pane button, or with the "+" menu when the project already has a tab. */
 export async function startSessionInUi(page: Page): Promise<void> {
   const claude = page.getByRole('region', { name: 'Claude', exact: true });
-  const start = claude.getByRole('button', { name: 'New local session' });
+  const start = claude.getByRole('button', { name: 'Existing local session' });
   if (await start.isVisible()) { await start.click(); return; }
   await claude.getByRole('button', { name: 'New session', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'New local session' }).click();
+  await page.getByRole('menuitem', { name: 'Existing local session' }).click();
 }
 
 // ---------------------------------------------------------------------------------------------------------------

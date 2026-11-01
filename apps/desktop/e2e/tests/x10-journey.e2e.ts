@@ -77,10 +77,12 @@ scenario('[X10] A workspace from an existing ChatGPT Project and a GitHub reposi
   // 5. Claude's cloud entry point. Local is impossible without a folder and says so; cloud is possible. Choosing cloud opens Claude Code
   //    on the web with the repository preselected, and starts nothing.
   const claude = h.page.getByRole('region', { name: 'Claude', exact: true });
-  await claude.getByText('Local sessions need a folder on this computer.').waitFor();
-  expect(await claude.getByRole('button', { name: 'New local session' }).isDisabled()).toBe(true);
+  await claude.getByText('Needs a folder on this computer.').waitFor();
+  expect(await claude.getByRole('button', { name: 'Existing local session' }).isDisabled()).toBe(true);
   const mark = h.standIn.mark();
-  await claude.getByRole('button', { name: 'New cloud session' }).click();
+  // "Cloud session" opens the composer; the old behaviour (the start page on the web, nothing sent) is its own link.
+  await claude.getByRole('button', { name: 'Cloud session' }).click();
+  await h.page.getByRole('button', { name: 'Start in Claude Code on the web instead' }).click();
   const cloud = await until('Claude Code on the web to be in front', async () => {
     const view = await claudeWebView(h.app);
     return view && view.url.startsWith('https://claude.ai/code') && !view.loading ? view : null;
