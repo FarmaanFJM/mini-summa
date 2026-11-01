@@ -34,7 +34,8 @@ class FakePty implements PtyProcess {
 function setup(opts: { platform?: NodeJS.Platform; claudeFile?: string; auth?: string; help?: string; roots?: boolean; quietMs?: number; runExtra?: (args: string[]) => { code: number | null; stdout: string; stderr: string } | null } = {}) {
   const base = makeBase({ dataDir: tempDir('ms-data-') });
   const settings = createSettingsService({ base });
-  const projects = createProjectsService({ base, settings, hostPlatform: 'linux', hostEnv: 'posix' });
+  const HOST_ENV = process.platform === 'win32' ? 'win' : 'posix';
+  const projects = createProjectsService({ base, settings, hostPlatform: process.platform === 'win32' ? 'win32' : 'linux', hostEnv: HOST_ENV });
   const remote = makeRemote();
   const wsRoot = tempDir('ms-ws-');
   const workspaces = createWorkspacesService({ base, projects, git: remote.git, root: wsRoot, repoSize: async () => 1000, freeBytes: async () => 1e11, clone: realClone(remote) });
@@ -60,9 +61,9 @@ function setup(opts: { platform?: NodeJS.Platform; claudeFile?: string; auth?: s
     const extra = opts.runExtra?.(args);
     return extra ?? { code: 1, stdout: '', stderr: 'unexpected' };
   };
-  const environments = { hostEnv: () => 'posix', claudeCommand: async () => ({ file: opts.claudeFile ?? 'claude', prefixArgs: [], wslDistro: null }) } as never;
+  const environments = { hostEnv: () => HOST_ENV, claudeCommand: async () => ({ file: opts.claudeFile ?? 'claude', prefixArgs: [], wslDistro: null }) } as never;
   const build = (): CloudService => createCloudService({
-    base, projects, environments, workspaces, native, run, git: remote.git, spawner, platform: opts.platform ?? 'linux', processEnv: { PATH: process.env.PATH }, quietMs: opts.quietMs,
+    base, projects, environments, workspaces, native, run, git: remote.git, spawner, platform: opts.platform ?? process.platform, processEnv: { PATH: process.env.PATH }, quietMs: opts.quietMs,
   });
   return { base, projects, project, remote, workspaces, native, ptys, runs, folder, wsRoot, cloud: build(), build };
 }

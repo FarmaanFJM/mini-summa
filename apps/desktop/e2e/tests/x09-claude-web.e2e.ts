@@ -114,7 +114,7 @@ scenario('[X09] Claude Code on the web opens in a view of its own on demand: one
   // The state went from loading to ready, with the title, and only changes were pushed.
   const first = await statesHeard(h);
   expect(statuses(first)).toEqual(['loading', 'ready']);
-  expect(first.at(-1)).toEqual({ status: 'ready', url: NEW_SESSION, title: 'Stand-in Claude Code', canGoBack: false, canGoForward: false, note: null });
+  expect(first.at(-1)).toEqual({ status: 'ready', url: NEW_SESSION, title: 'Stand-in Claude Code', canGoBack: false, canGoForward: false, note: null, httpStatus: 200 });
   for (let i = 1; i < first.length; i += 1) expect(first[i]).not.toEqual(first[i - 1]);
   expect(await claude(h, 'getState')).toEqual(first.at(-1));
 
