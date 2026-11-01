@@ -40,6 +40,18 @@ and hash you have not compared.
 The installer installs for your user only and asks for no administrator rights. Alternatively build it yourself: Node.js 22.12 or newer,
 `git clone https://github.com/FarmaanFJM/mini-summa`, `git checkout feat/mini-summa-full-base`, `npm ci`, `npm run dist:win`.
 
+### The installer for the cloud dispatch and temporary workspace work
+
+Built by native Windows CI, [run 41300895637](https://github.com/FarmaanFJM/mini-summa/actions/runs/41300895637) (all jobs green: typecheck, unit tests of every workspace, package, installed checks), from commit `e7f2f2078da6a4ecb52065915f193007b16ac4a3` on `claude/gallant-curie-w5lms4`.
+
+| | |
+| --- | --- |
+| Artifact | `mini-summa-windows-installer` (zip 123,310,006 bytes, SHA-256 `e31c1a390a74612ad7d16cae1795025aade6d54934456e6e60747b159661a63d`) |
+| Installer | `Mini-Summa-Setup-0.1.0-x64.exe`, 123,171,645 bytes |
+| SHA-256 of the installer | `5cd06ec09c4d313f8a2e27a9263e30c01c87357249bd4fb11dbbba4c7ee275a0` |
+
+CI proves it installs, starts, persists across a restart and uninstalls. **It does not prove** anything about a real Claude account, GitHub, the Recycle Bin or the blank Cloud tab: section D of Tier 2 is for that.
+
 ## Tier 2: what only you can check (about 65 minutes, in this order; section D is the cloud and temporary workspace work)
 
 You need: Windows 10 1809 or newer, or Windows 11, as a normal user; Claude Code installed and logged in (`claude --version` works in PowerShell); Git for Windows; a ChatGPT account with **at least two ChatGPT Projects and a few conversations in them**. Stop at the first step that fails, write its number and what you saw, and send `%APPDATA%\Mini-Summa\logs\main.log` and `%APPDATA%\Mini-Summa\data\logs\core.log` (no tokens in them). Do not paste tokens, pairing codes or report text.
