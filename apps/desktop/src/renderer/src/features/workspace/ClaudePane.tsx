@@ -5,10 +5,14 @@ import { useApi, useApp, useRoute, useRuntime, useTerminals, useUi } from '../..
 import { Button, ConfirmDialog, EmptyState, Icon, IconButton, Menu, Tabs, tabPanelProps, toast, setToastAnchor } from '../../ui';
 import type { MenuEntry, TabItem } from '../../ui';
 import { useHandoffStrip } from '../reports/HandoffStrip';
+import { draftStore } from './sessionModes';
 import { ClaudeEmpty } from './ClaudeEmpty';
-import { claudeStart, CLOUD_TAB_ID, hasCloudTab } from './claudeCloud';
+import { CLOUD_TAB_ID, hasCloudTab } from './claudeCloud';
 import { CloudPanel } from './CloudPanel';
-import { NewSessionDialog } from './NewSessionDialog';
+import { NewClaudeSession } from './NewClaudeSession';
+import { MODE_HELP, MODE_LABEL, modesFix, sessionModes } from './sessionModes';
+import type { SessionMode } from './sessionModes';
+import { TempWorkspaces } from './TempWorkspaces';
 import { ObservedPanel, SessionNotice } from './SessionPanels';
 import { formatRelative, ORIGIN_LABEL, shortId, tabTitle } from './sessionModel';
 import { InputBanner, StateDot } from './sessionParts';
@@ -22,6 +26,9 @@ export interface ClaudePaneProps {
   /** On screen: the workspace is the current view and the other pane is not shown alone. */
   visible: boolean;
 }
+
+/** A prompt is waiting in the chooser for this project: the chooser opens even when a single folder would start at once. */
+const draftHasText = (projectId: string): boolean => (draftStore.get(projectId)?.prompt.trim() ?? '') !== '';
 
 export function ClaudePane({ project, visible }: ClaudePaneProps) {
   const sessions = useApp((s) => s.sessions);
@@ -80,22 +87,22 @@ export function ClaudePane({ project, visible }: ClaudePaneProps) {
     return () => setToastAnchor(null);
   }, [visible, cloudShown, cloudTop]);
 
-  const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const [chooser, setChooser] = useState<{ open: boolean; mode: SessionMode }>({ open: false, mode: 'cloud' });
+  const [workspacesOpen, setWorkspacesOpen] = useState(false);
   const [stopping, setStopping] = useState<SessionView | null>(null);
 
   const openSettings = () => openProjectDialog({ mode: 'edit', projectId: project.id });
 
-  // Local and cloud are separate choices. Asking for one never starts the other, and one that cannot start is not offered as a start.
-  const choices = claudeStart(project);
-  const newLocal = () => {
-    if (!choices.local.available) return;
-    if (project.roots.length === 1) void actions.start({ mode: 'new', rootId: project.roots[0].id });
-    else setNewSessionOpen(true);
+  // Cloud, temporary local and existing local are separate choices. Asking for one never starts another, and one that cannot start is
+  // not offered as a start. An existing local session with a single folder starts at once, as it always did.
+  const modes = sessionModes(project);
+  const fix = modesFix(project);
+  const choose = (mode: SessionMode) => {
+    if (!modes[mode].available) return;
+    if (mode === 'existing' && project.roots.length === 1 && !draftHasText(project.id)) { void actions.start({ mode: 'new', rootId: project.roots[0].id }); return; }
+    setChooser({ open: true, mode });
   };
-  const newCloud = () => {
-    if (!choices.cloud.available) return;
-    route.showCloud(project.id, { start: true });
-  };
+  const openWebStart = () => route.showCloud(project.id, { start: true });
 
   const closeTab = (key: SessionKey) => {
     const after = key === selected?.key ? selectionAfterClose(tabs, key) : selected?.key ?? null;
@@ -119,11 +126,13 @@ export function ClaudePane({ project, visible }: ClaudePaneProps) {
   const observed = sessions.filter((s) => s.origin !== 'managed' && (s.projectId === project.id || s.projectId === null));
 
   const addItems: MenuEntry[] = [
-    { label: 'New local session', icon: 'terminal', description: choices.local.reason ?? undefined, disabled: !choices.local.available || actions.starting, onSelect: newLocal },
-    { label: 'New cloud session', icon: 'cloud', description: choices.cloud.reason ?? undefined, disabled: !choices.cloud.available, onSelect: newCloud },
-    ...(choices.fix ? [
+    { label: MODE_LABEL.cloud, icon: 'cloud', description: modes.cloud.reason ?? MODE_HELP.cloud, disabled: !modes.cloud.available, onSelect: () => choose('cloud') },
+    { label: MODE_LABEL.temporary, icon: 'download', description: modes.temporary.reason ?? MODE_HELP.temporary, disabled: !modes.temporary.available || actions.starting, onSelect: () => choose('temporary') },
+    { label: MODE_LABEL.existing, icon: 'terminal', description: modes.existing.reason ?? MODE_HELP.existing, disabled: !modes.existing.available || actions.starting, onSelect: () => choose('existing') },
+    ...(modes.temporary.available ? [{ label: 'Temporary workspaces', icon: 'folder', onSelect: () => setWorkspacesOpen(true) } as MenuEntry] : []),
+    ...(fix ? [
       { type: 'separator' } as const,
-      { label: choices.fix, icon: 'settings', onSelect: openSettings } as MenuEntry,
+      { label: fix, icon: 'settings', onSelect: openSettings } as MenuEntry,
     ] : []),
     ...(resumable.length ? [
       { type: 'separator' } as const,
@@ -198,7 +207,7 @@ export function ClaudePane({ project, visible }: ClaudePaneProps) {
       </header>
 
       {cloudShown ? (
-        <CloudPanel key={project.id} project={project} active={visible} owner={cloudOwner} quiet={stripShown} onTop={setCloudTop} />
+        <CloudPanel key={project.id} project={project} active={visible} owner={cloudOwner} quiet={stripShown} onTop={setCloudTop} onNewSession={(mode) => setChooser({ open: true, mode })} />
       ) : shownSession ? (
         <>
           <InputBanner
@@ -212,15 +221,24 @@ export function ClaudePane({ project, visible }: ClaudePaneProps) {
           </div>
         </>
       ) : (
-        <ClaudeEmpty project={project} starting={actions.starting} quiet={stripShown} onLocal={newLocal} onCloud={newCloud} onFix={openSettings} />
+        <ClaudeEmpty project={project} starting={actions.starting} quiet={stripShown} onChoose={choose} onFix={openSettings} />
       )}
 
-      <NewSessionDialog
+      <NewClaudeSession
         project={project}
-        open={newSessionOpen}
+        open={chooser.open}
+        initialMode={chooser.mode}
         starting={actions.starting}
-        onClose={() => setNewSessionOpen(false)}
-        onStart={async ({ rootId, name }) => { const s = await actions.start({ mode: 'new', rootId, name }); if (s) setNewSessionOpen(false); }}
+        onClose={() => setChooser((c) => ({ ...c, open: false }))}
+        onStartLocal={({ rootId, workspaceId, name }) => actions.start({ mode: 'new', rootId, workspaceId, name })}
+        onOpenWebStart={openWebStart}
+        onShowCloudPage={(url) => { route.selectCloudUrl(project.id, url); route.showCloud(project.id); }}
+      />
+      <TempWorkspaces
+        project={project}
+        open={workspacesOpen}
+        onClose={() => setWorkspacesOpen(false)}
+        onStart={({ workspaceId, name }) => actions.start({ mode: 'new', workspaceId, name })}
       />
       <StopDialog session={stopping} onClose={() => setStopping(null)} />
     </section>

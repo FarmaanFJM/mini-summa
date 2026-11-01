@@ -343,9 +343,49 @@ ALTER TABLE projects ADD COLUMN chatgpt_project_scope TEXT;
 ALTER TABLE projects ADD COLUMN chatgpt_project_title TEXT;
 `;
 
+
+// Cloud sessions started through `claude --cloud` (kept apart from local sessions: a cloud session is remote and outlives Mini-Summa)
+// and temporary local workspaces (a checkout Mini-Summa made and owns, found again after a restart by its uuid).
+const V3 = `
+CREATE TABLE cloud_sessions (
+  id           TEXT PRIMARY KEY,
+  project_id   TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  repo         TEXT,
+  source_ref   TEXT,
+  session_id   TEXT NOT NULL,
+  url          TEXT NOT NULL,
+  title        TEXT,
+  created_at   TEXT NOT NULL,
+  method       TEXT NOT NULL CHECK (method IN ('cli_cloud','browser_fallback','recorded_link')),
+  last_at      TEXT NOT NULL,
+  last_outcome TEXT NOT NULL CHECK (last_outcome IN ('created','accepted','rejected','unknown')),
+  last_note    TEXT,
+  UNIQUE (project_id, session_id)
+);
+CREATE INDEX cloud_sessions_project ON cloud_sessions(project_id, created_at);
+
+CREATE TABLE temp_workspaces (
+  id                TEXT PRIMARY KEY,           -- a uuid; the directory is named after it
+  project_id        TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  repo              TEXT NOT NULL,
+  path              TEXT NOT NULL,
+  status            TEXT NOT NULL CHECK (status IN ('cloning','ready','clone_failed','cancelled','removed')),
+  branch            TEXT,
+  feature_branch    TEXT,
+  shallow           INTEGER NOT NULL DEFAULT 0,
+  purpose           TEXT NOT NULL DEFAULT 'session' CHECK (purpose IN ('session','dispatch')),
+  reported_size_kb  INTEGER,
+  error             TEXT,
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL
+);
+CREATE INDEX temp_workspaces_project ON temp_workspaces(project_id, created_at);
+`;
+
 export const MIGRATIONS: Migration[] = [
   { version: 1, name: 'initial schema', sql: V1 },
   { version: 2, name: 'chatgpt project link', sql: V2 },
+  { version: 3, name: 'cloud sessions and temporary workspaces', sql: V3 },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

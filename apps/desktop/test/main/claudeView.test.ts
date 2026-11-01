@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
-import { ClaudeWebView } from '../../src/main/claudeView.ts';
+import { BLANK_SETTLE_MS, ClaudeWebView, STALL_MS } from '../../src/main/claudeView.ts';
 import type { ClaudeViewContents, ClaudeViewHandle } from '../../src/main/claudeView.ts';
 
 const HOME = 'https://claude.ai/code';
@@ -13,7 +13,7 @@ const LOGIN = 'https://claude.ai/login?returnTo=%2Fcode';
 const GOOGLE_REFUSAL = 'https://accounts.google.com/v3/signin/rejected?continue=x';
 
 type Plan =
-  | { type: 'ok'; finalUrl?: string; title?: string; delayMs?: number }
+  | { type: 'ok'; finalUrl?: string; title?: string; delayMs?: number; httpStatus?: number }
   | { type: 'fail'; code: number; description: string }
   /** A server redirect. When the policy cancels it, real Electron only emits did-stop-loading; `abortEvent` adds ERR_ABORTED too. */
   | { type: 'redirect'; to: string; abortEvent?: boolean }
@@ -95,16 +95,16 @@ class FakeContents extends EventEmitter implements ClaudeViewContents {
           resolve();
           return;
         }
-        this.finish(plan.finalUrl ?? url, plan.title ?? 'Claude Code');
+        this.finish(plan.finalUrl ?? url, plan.title ?? 'Claude Code', plan.httpStatus);
         resolve();
       }, plan.type === 'ok' ? (plan.delayMs ?? 1) : 1);
     });
   }
 
-  finish(url: string, title: string) {
+  finish(url: string, title: string, httpStatus?: number) {
     this.url = url;
     this.title = title;
-    this.emit('did-navigate', {}, url);
+    this.emit('did-navigate', {}, url, httpStatus);
     this.emit('page-title-updated', {}, title);
     this.loading = false;
     this.emit('did-finish-load');
@@ -797,5 +797,56 @@ describe('what the view never does', () => {
     const logged = everythingLogged(s);
     for (const piece of ['prompt=', 'production', 'repositories', 'abc123', 'example.org', 'claude.ai']) expect(logged, piece).not.toContain(piece);
     expect(logged).toContain('claude web view created');
+  });
+});
+
+
+describe('a page that loads but shows nothing (the blank Cloud tab)', () => {
+  it('reports an HTTP 403 as blocked with the status, not as ready', async () => {
+    const s = setup({ plan: () => ({ type: 'ok', httpStatus: 403, title: '' }) });
+    await show(s, NEW_SESSION, 'blocked');
+    expect(s.view.getState()).toMatchObject({ status: 'blocked', httpStatus: 403 });
+    expect(s.view.getState().note).toMatch(/HTTP 403/);
+    expect(everythingLogged(s)).not.toContain('claude.ai/code');
+  });
+  it('reports a 5xx as an error, and a retry loads the page again', async () => {
+    let status = 503;
+    const s = setup({ plan: () => ({ type: 'ok', httpStatus: status }) });
+    await show(s, HOME, 'error');
+    status = 200;
+    await show(s, HOME, 'ready');
+    expect(s.contents.loads).toHaveLength(2);
+    expect(s.view.getState().httpStatus).toBe(200);
+  });
+  it('keeps a browser security check the person can complete as a page, although it is served with 403', async () => {
+    const s = setup({ plan: () => ({ type: 'ok', httpStatus: 403, title: 'Just a moment...' }) });
+    await show(s, HOME, 'ready');
+    expect(s.view.getState()).toMatchObject({ status: 'ready', httpStatus: 403 });
+  });
+  it('calls a finished load with no title blank after it settles, and a late title clears that', async () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup({ plan: () => ({ type: 'ok', httpStatus: 200, title: '' }) });
+      await s.view.navigate(HOME);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(s.view.getState().status).toBe('ready');
+      await vi.advanceTimersByTimeAsync(BLANK_SETTLE_MS + 10);
+      expect(s.view.getState().status).toBe('blank');
+      expect(s.deps.log.info.mock.calls.some((c) => c[0] === 'claude web view settled' && (c[1] as { titled: boolean }).titled === false)).toBe(true);
+      s.contents.title = 'Claude Code';
+      s.contents.emit('page-title-updated', {}, 'Claude Code');
+      expect(s.view.getState().status).toBe('ready');
+    } finally { vi.useRealTimers(); }
+  });
+  it('reports a load that never finishes as stalled instead of an endless spinner', async () => {
+    vi.useFakeTimers();
+    try {
+      const s = setup({ plan: () => ({ type: 'hang' }) });
+      await s.view.navigate(HOME);
+      await vi.advanceTimersByTimeAsync(STALL_MS - 100);
+      expect(s.view.getState().status).toBe('loading');
+      await vi.advanceTimersByTimeAsync(200);
+      expect(s.view.getState().status).toBe('stalled');
+    } finally { vi.useRealTimers(); }
   });
 });

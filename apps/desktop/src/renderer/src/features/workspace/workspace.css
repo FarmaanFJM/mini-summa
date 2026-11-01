@@ -134,3 +134,61 @@
 .ms-observed__block p { color: var(--text); }
 .ms-observed__actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .ms-observed__note { color: var(--text-2); font-size: var(--fs-sm); flex-basis: 100%; }
+
+/* ---------------------------------------------------------------- New Claude session (chooser and composer) */
+/* Three rows, not three cards: the chosen way is marked by a quiet fill, never by colour. */
+.ms-modes { display: flex; flex-direction: column; gap: 2px; margin-bottom: var(--sp-4); }
+.ms-mode { padding: 8px 10px; border-radius: var(--r); transition: background var(--dur); }
+.ms-mode:hover:not([data-disabled]) { background: var(--s2); }
+.ms-mode[data-selected] { background: var(--s3); }
+.ms-mode[data-disabled] { opacity: 0.6; }
+.ms-mode__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ms-mode__name { font-weight: 600; color: var(--text); }
+.ms-mode__help { color: var(--text-2); font-size: var(--fs-sm); line-height: 1.4; }
+
+.ms-newform { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.ms-composer { width: 100%; min-height: 160px; max-height: 50vh; resize: vertical; font-family: var(--font-mono); font-size: var(--fs-sm); line-height: 1.5; white-space: pre; overflow: auto; }
+.ms-newform__count { margin: -4px 0 0; color: var(--text-3); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.ms-newform__fine { margin: 0; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45; }
+.ms-newform__quiet { color: var(--text-2); }
+.ms-newform__facts { grid-template-columns: 104px minmax(0, 1fr); }
+.ms-newform__warnings { margin: 0; padding-left: 18px; color: var(--text-2); font-size: var(--fs-sm); line-height: 1.5; }
+.ms-newform__warnings li + li { margin-top: 2px; }
+.ms-newform__foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--sp-3); margin-top: var(--sp-2); }
+.ms-newform__foot > .ms-ws-link { margin-right: auto; font-size: var(--fs-sm); }
+
+.ms-dispatch { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.ms-dispatch__head { display: flex; align-items: center; gap: var(--sp-2); }
+.ms-dispatch__detail { margin: 0; color: var(--text); line-height: 1.5; }
+.ms-dispatch__keys { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.ms-dispatch__tail { margin: 0; max-height: 180px; overflow: auto; padding: 8px 10px; border-radius: var(--r); background: var(--term-bg); color: var(--text-2); font: 400 var(--fs-sm)/1.45 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ms-dispatch__link { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.ms-dispatch__link > .ms-mono { flex: 1 1 200px; min-width: 0; }
+.ms-dispatch__paste { display: flex; gap: var(--sp-2); }
+.ms-dispatch__paste .sm-input { flex: 1; min-width: 0; }
+.ms-dispatch__foot { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-2); }
+
+/* Temporary workspaces: a plain list with a fill on hover, like every other list. */
+.ms-wslist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.ms-wslist__item { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: var(--r); background: var(--s2); min-width: 0; }
+.ms-wslist__row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.ms-wslist__name { flex: 1; min-width: 0; font-weight: 600; }
+.ms-wslist__when { flex: none; color: var(--text-3); font-size: var(--fs-sm); }
+.ms-wslist__path { color: var(--text-2); font-size: var(--fs-sm); }
+.ms-wslist__error { margin: 0; color: var(--text-2); font-size: var(--fs-sm); }
+.ms-wslist__actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.ms-review { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-2); border-top: 1px solid var(--line); }
+.ms-review__confirm { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
+.ms-review__confirm .sm-input { width: 100%; }
+
+/* The Cloud tab when the page cannot be shown: native text where the page would be, never an empty panel. */
+.ms-cloud__fallback { flex: 1; min-height: 0; overflow: auto; background: var(--s1); }
+.ms-cloud__fallback-inner { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: clamp(16px, 8vh, 64px) var(--sp-4) var(--sp-4); text-align: center; }
+.ms-cloud__fallback .ms-cloud__line { max-width: 60ch; padding: 0; }
+.ms-cloud__recent { width: min(640px, 100%); display: flex; flex-direction: column; gap: var(--sp-2); text-align: left; }
+.ms-cloud__sessions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.ms-cloud__sessions li { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: 4px 6px; border-radius: var(--r-sm); }
+.ms-cloud__sessions li:hover { background: var(--s2); }
+.ms-cloud__sessions li > .ms-truncate { flex: 1; min-width: 0; }
+.ms-cloud__when { flex: none; color: var(--text-3); font-size: var(--fs-sm); }
+@media (max-width: 520px) { .ms-cloud__when { display: none; } }

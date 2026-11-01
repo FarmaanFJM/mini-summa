@@ -10,6 +10,10 @@ import { UI_LIMITS } from './defaults.ts';
 import { isEnvId, isSessionKey } from './env.ts';
 import type { EnvId, SessionKey } from './env.ts';
 import type { ChatGptOpenResult } from './native.ts';
+import type {
+  CloneCheck, CloudDispatch, CloudFollowUpResult, CloudPreflight, CloudSessionRecord, PromptDeliveryPlan, TempWorkspace, WorkspaceInspection,
+} from './cloud.ts';
+import { MAX_PROMPT_CHARS } from './cloud.ts';
 
 export const API_VERSION = 1;
 export const API_PREFIX = '/api/v1';
@@ -83,6 +87,8 @@ export const sessionStartSchema = z.object({
   resumeKey: sessionKey.optional(),
   env: envId.optional(),
   rootId: id.optional(),
+  /** Start in a temporary workspace of the project instead of one of its folders. */
+  workspaceId: id.optional(),
   name: text(120).optional(),
   remoteControl: z.boolean().optional(),
   cols: z.number().int().min(20).max(500).optional(),
@@ -177,6 +183,34 @@ export const routes = {
   'conversations.verify': route<Conversation>()({ method: 'POST', path: '/conversations/:id/verify', scope: 'desktop' }),
 
   // sessions
+  // cloud sessions (the official `claude --cloud`; see docs/CLOUD_SESSIONS.md)
+  'cloud.preflight': route<CloudPreflight>()({ method: 'GET', path: '/projects/:id/cloud/preflight', scope: 'desktop', query: z.object({ rootId: id.optional() }) }),
+  'cloud.plan': route<PromptDeliveryPlan>()({ method: 'POST', path: '/cloud/plan', scope: 'desktop', body: z.object({ prompt: z.string().max(MAX_PROMPT_CHARS + 1) }) }),
+  'cloud.dispatch': route<CloudDispatch>()({ method: 'POST', path: '/cloud/dispatches', scope: 'desktop', idempotent: true, body: z.object({
+    projectId: id, prompt: z.string().max(MAX_PROMPT_CHARS + 1), rootId: id.nullable().optional(), title: text(120).nullable().optional(),
+    acknowledgedLocalContent: z.boolean(), useBrowserFallback: z.boolean().optional(),
+  }) }),
+  'cloud.dispatches': route<CloudDispatch[]>()({ method: 'GET', path: '/projects/:id/cloud/dispatches', scope: 'desktop' }),
+  'cloud.dispatchGet': route<CloudDispatch>()({ method: 'GET', path: '/cloud/dispatches/:id', scope: 'desktop' }),
+  'cloud.dispatchKey': route<CloudDispatch>()({ method: 'POST', path: '/cloud/dispatches/:id/key', scope: 'desktop', body: z.object({ key: z.enum(['enter', 'escape', 'up', 'down', 'y', 'n', '1', '2', '3']) }) }),
+  'cloud.dispatchCancel': route<CloudDispatch>()({ method: 'POST', path: '/cloud/dispatches/:id/cancel', scope: 'desktop' }),
+  'cloud.sessions': route<CloudSessionRecord[]>()({ method: 'GET', path: '/projects/:id/cloud/sessions', scope: 'desktop' }),
+  'cloud.recordLink': route<CloudSessionRecord>()({ method: 'POST', path: '/projects/:id/cloud/sessions', scope: 'desktop', body: z.object({ url: text(500), title: text(120).nullable().optional() }) }),
+  'cloud.followUp': route<CloudFollowUpResult>()({ method: 'POST', path: '/cloud/sessions/:id/follow-up', scope: 'desktop', body: z.object({ message: z.string().max(MAX_PROMPT_CHARS + 1) }) }),
+  'cloud.forget': route<Ok>()({ method: 'DELETE', path: '/cloud/sessions/:id', scope: 'desktop' }),
+
+  // temporary workspaces (see docs/TEMP_WORKSPACES.md)
+  'workspaces.check': route<CloneCheck>()({ method: 'GET', path: '/projects/:id/workspaces/check', scope: 'desktop' }),
+  'workspaces.list': route<TempWorkspace[]>()({ method: 'GET', path: '/projects/:id/workspaces', scope: 'desktop' }),
+  'workspaces.create': route<TempWorkspace>()({ method: 'POST', path: '/projects/:id/workspaces', scope: 'desktop', idempotent: true, body: z.object({
+    confirmed: z.boolean(), branch: text(200).nullable().optional(), featureBranch: text(200).nullable().optional(), shallow: z.boolean().optional(),
+  }) }),
+  'workspaces.get': route<TempWorkspace>()({ method: 'GET', path: '/workspaces/:id', scope: 'desktop' }),
+  'workspaces.retry': route<TempWorkspace>()({ method: 'POST', path: '/workspaces/:id/retry', scope: 'desktop' }),
+  'workspaces.cancel': route<TempWorkspace>()({ method: 'POST', path: '/workspaces/:id/cancel', scope: 'desktop' }),
+  'workspaces.inspect': route<WorkspaceInspection>()({ method: 'GET', path: '/workspaces/:id/inspect', scope: 'desktop' }),
+  'workspaces.cleanup': route<TempWorkspace>()({ method: 'POST', path: '/workspaces/:id/cleanup', scope: 'desktop', body: z.object({ confirmRepo: text(200), permanent: z.boolean().optional() }) }),
+
   'sessions.list': route<SessionView[]>()({ method: 'GET', path: '/sessions', scope: 'read', query: z.object({ projectId: id.optional(), includeEnded: qBool.optional() }) }),
   'sessions.get': route<SessionView>()({ method: 'GET', path: '/sessions/:key', scope: 'read' }),
   'sessions.start': route<SessionView>()({ method: 'POST', path: '/projects/:id/sessions', scope: 'desktop', body: sessionStartSchema, idempotent: true }),

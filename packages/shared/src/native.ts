@@ -27,7 +27,11 @@ export interface ChatGptViewNotice {
   url: string | null;
 }
 
-export type ClaudeWebViewStatus = 'idle' | 'loading' | 'ready' | 'login_required' | 'blocked' | 'error';
+/**
+ * `stalled`: a load has run for a long time without finishing. `blank`: the page loaded without error but has no title, which is what an
+ * empty or refused page looks like from the outside (Mini-Summa never reads the content, so this is a guess from the title only).
+ */
+export type ClaudeWebViewStatus = 'idle' | 'loading' | 'ready' | 'login_required' | 'blocked' | 'error' | 'stalled' | 'blank';
 
 /**
  * What Mini-Summa can see of the embedded Claude Code on the web page: the address, the title, whether a load is running, why a
@@ -40,8 +44,10 @@ export interface ClaudeWebViewState {
   title: string | null;
   canGoBack: boolean;
   canGoForward: boolean;
-  /** Plain-language reason for login_required, blocked or error. */
+  /** Plain-language reason for login_required, blocked, error, stalled or blank. */
   note: string | null;
+  /** The HTTP status the main page answered with (403 from a bot check is an example). A page with an error status still "loads" in Chromium, so this is what tells it apart. null when unknown. */
+  httpStatus?: number | null;
 }
 
 export interface ChatGptOpenResult {
@@ -99,6 +105,8 @@ export interface NativeBridge {
   notify(n: NativeNotification): Promise<NativeNotifyResult>;
   openExternal(url: string): Promise<void>;
   saveTextFile(opts: { suggestedName: string; text: string }): Promise<{ path: string | null }>;
+  /** Moves a file or folder to the Recycle Bin or Trash (recoverable). Absent when the host has none; the core then never deletes without a separate, explicit decision. */
+  trashItem?(path: string): Promise<void>;
 }
 
 /** Everything unavailable. Used by tests and as the base for partial hosts. */

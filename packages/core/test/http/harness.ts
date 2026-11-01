@@ -208,6 +208,8 @@ export async function startHarness(opts: HarnessOptions = {}): Promise<Harness> 
     hooks: stub('hooks', { list: async () => [] }),
     tailscale: stub('tailscale', { publicUrl: () => opts.publicUrl ?? null }),
     data: stub('data'),
+    cloud: stub('cloud', { listDispatches: () => [], sessions: () => [], getDispatch: () => ({ id: 'cd_1' }) }),
+    workspaces: stub('workspaces', { list: () => [], require: () => ({ id: 'w1' }) }),
     push: opts.push ?? null,
   } as unknown as HttpServices;
 

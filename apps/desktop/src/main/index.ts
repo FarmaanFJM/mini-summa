@@ -148,6 +148,7 @@ const bridge = createNativeBridge({
   },
   writeFile: (file, text) => fs.promises.writeFile(file, text, 'utf8'),
   documentsDir: () => app.getPath('documents'),
+  trashItem: (target) => shell.trashItem(target),
 });
 
 const quit = createQuitFlow({

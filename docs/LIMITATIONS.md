@@ -64,6 +64,16 @@ the 30-minute checklist for the phone.
 * **External sessions** (started outside Mini-Summa) can be observed but not typed into. Anthropic's Remote Control is the
   supported way to steer them from the phone; Mini-Summa only shows how.
 
+## 2b. Cloud dispatch and temporary workspaces (new, not verified against the real services)
+
+* **NOT TESTED against a real Claude account or GitHub.** What `claude --cloud` prints on success, whether it exits afterwards, whether it uploads a local bundle, and that a follow-up reaches a real session are unverified. The sandbox login could not create cloud sessions. The reader accepts only a complete validated link; anything else is "unknown". See [CLOUD_SESSIONS.md](CLOUD_SESSIONS.md).
+* **Creating a cloud session needs a terminal** (verified): there is no non-interactive way, and no documented file or stdin input for the task. Prompts that a command line cannot carry (see the limits there; every multi-line prompt on a Windows `.cmd` install) use the browser route and need you to submit on claude.ai and paste the session address back.
+* Cloud runs only from a folder on this computer's own system (not a WSL folder).
+* Mini-Summa cannot tell whether a cloud session is running, waiting or finished, and a saved link does not mean it is running.
+* The blank Cloud tab's cause is inferred from the code and not reproduced; the fix shows a native panel and logs the evidence for the next Windows run ([CLOUD_SESSIONS.md](CLOUD_SESSIONS.md)). A page that loads with an HTTP 200 and a title but draws nothing is still invisible to Mini-Summa.
+* Temporary workspaces: GitHub's size is approximate and may be unavailable; HTTPS clones rely on your Git credential helper; Git LFS content and submodules are not downloaded; the Recycle Bin/Trash path and Windows locked files are untested on a real Windows PC; a cleanup right after a push relies on GitHub answering `ls-remote` at that moment. The temporary session's prompt is copied for you to paste; it is not typed for you.
+* Drafts are not kept after quitting, by design.
+
 ## 3. Known defects and imperfections
 
 These are things Mini-Summa gets wrong or does clumsily today. None blocks the core workflow.

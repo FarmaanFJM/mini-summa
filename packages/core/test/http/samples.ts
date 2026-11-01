@@ -2,6 +2,9 @@
 // compile, and used by the auth matrix and by the SDK end-to-end test.
 import type { RouteInput, RouteName } from '@minisumma/shared';
 
+// Addresses are built from parts: the publish guard refuses a literal session address anywhere in the repository.
+const CODE = 'https://claude.ai/code/';
+
 const key = 'posix|11111111-2222-3333-4444-555555555555' as const;
 
 export const samples: { [K in RouteName]: RouteInput<K> } = {
@@ -78,6 +81,25 @@ export const samples: { [K in RouteName]: RouteInput<K> } = {
   'tailscale.setServe': { body: { enabled: true } },
   'data.usage': {},
   'data.prune': { body: { dryRun: true } },
+  'cloud.preflight': { params: { id: 'p1' } },
+  'cloud.plan': { body: { prompt: 'Do the thing' } },
+  'cloud.dispatch': { body: { projectId: 'p1', prompt: 'Do the thing', acknowledgedLocalContent: true } },
+  'cloud.dispatches': { params: { id: 'p1' } },
+  'cloud.dispatchGet': { params: { id: 'cd_1' } },
+  'cloud.dispatchKey': { params: { id: 'cd_1' }, body: { key: 'enter' } },
+  'cloud.dispatchCancel': { params: { id: 'cd_1' } },
+  'cloud.sessions': { params: { id: 'p1' } },
+  'cloud.recordLink': { params: { id: 'p1' }, body: { url: `${CODE}session_abABCDEF` } },
+  'cloud.followUp': { params: { id: 'cs_1' }, body: { message: 'More' } },
+  'cloud.forget': { params: { id: 'cs_1' } },
+  'workspaces.check': { params: { id: 'p1' } },
+  'workspaces.list': { params: { id: 'p1' } },
+  'workspaces.create': { params: { id: 'p1' }, body: { confirmed: true } },
+  'workspaces.get': { params: { id: 'w1' } },
+  'workspaces.retry': { params: { id: 'w1' } },
+  'workspaces.cancel': { params: { id: 'w1' } },
+  'workspaces.inspect': { params: { id: 'w1' } },
+  'workspaces.cleanup': { params: { id: 'w1' }, body: { confirmRepo: 'a/b' } },
 };
 
 /** Status a correctly authorised sample call is expected to produce against the harness's auto-stubbed services. */

@@ -46,7 +46,7 @@ function partIndex(raw: string): number {
 
 export function createHandlers(deps: HandlerDeps): HandlerMap {
   const { base, services, conversations } = deps;
-  const { projects, sessions, reports, deliveries, actions, activity, devices } = services;
+  const { projects, sessions, reports, deliveries, actions, activity, devices, cloud, workspaces } = services;
 
   const requirePush = () => {
     if (!services.push) throw unavailable('Push notifications are not available in this build of Mini-Summa.', 'push_unavailable');
@@ -125,6 +125,29 @@ export function createHandlers(deps: HandlerDeps): HandlerMap {
     },
     'sessions.setDefault': ({ params, body }) => sessions.setDefault(sessionKeyParam(params.key), body.isDefault),
     'sessions.refresh': ({ body }) => sessions.refreshDiscovery(body.env),
+
+    // cloud sessions
+    'cloud.preflight': ({ params, query }) => { projects.require(params.id); return cloud.preflight(params.id, query.rootId); },
+    'cloud.plan': ({ body }) => cloud.plan(body.prompt),
+    'cloud.dispatch': ({ body }) => cloud.dispatch(body),
+    'cloud.dispatches': ({ params }) => { projects.require(params.id); return cloud.listDispatches(params.id); },
+    'cloud.dispatchGet': ({ params }) => cloud.getDispatch(params.id) ?? (() => { throw notFound('Dispatch'); })(),
+    'cloud.dispatchKey': ({ params, body }) => cloud.sendKey(params.id, body.key),
+    'cloud.dispatchCancel': ({ params }) => cloud.cancel(params.id),
+    'cloud.sessions': ({ params }) => { projects.require(params.id); return cloud.sessions(params.id); },
+    'cloud.recordLink': ({ params, body }) => cloud.recordLink(params.id, body.url, body.title ?? null),
+    'cloud.followUp': ({ params, body }) => cloud.followUp(params.id, body.message),
+    'cloud.forget': ({ params }) => { cloud.forget(params.id); return OK; },
+
+    // temporary workspaces
+    'workspaces.check': ({ params }) => workspaces.check(params.id),
+    'workspaces.list': ({ params }) => { projects.require(params.id); return workspaces.list(params.id); },
+    'workspaces.create': ({ params, body }) => workspaces.create({ projectId: params.id, confirmed: body.confirmed, branch: body.branch ?? null, featureBranch: body.featureBranch ?? null, shallow: body.shallow, purpose: 'session' }),
+    'workspaces.get': ({ params }) => workspaces.require(params.id),
+    'workspaces.retry': ({ params }) => workspaces.retry(params.id),
+    'workspaces.cancel': ({ params }) => workspaces.cancel(params.id),
+    'workspaces.inspect': ({ params }) => workspaces.inspect(params.id),
+    'workspaces.cleanup': ({ params, body }) => workspaces.cleanup(params.id, body),
 
     // reports
     'reports.list': ({ query }) => reports.list(query),

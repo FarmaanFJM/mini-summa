@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { clearNativeBounds } from '../../src/renderer/src/app/nativeBounds';
 import { createMemoryStorage } from '../../src/renderer/src/app/storage';
 import { createSeed, IDS } from '../../src/renderer/src/dev/demo/seed';
-import { CLOUD_LINE, CLOUD_LINE_BROWSER, CLOUD_NEEDS_REPOSITORY, LOCAL_NEEDS_FOLDER } from '../../src/renderer/src/features/workspace/claudeCloud';
+import { CLOUD_LINE, CLOUD_LINE_BROWSER } from '../../src/renderer/src/features/workspace/claudeCloud';
+import { NEEDS_FOLDER, NEEDS_REPOSITORY } from '../../src/renderer/src/features/workspace/sessionModes';
 import type { RenderedApp } from './helpers';
 import { toast } from '../../src/renderer/src/ui';
 import { createFakeNative, renderApp, stubWorkspaceGeometry } from './helpers';
@@ -56,14 +57,15 @@ describe('the + menu', () => {
     await openProject(app, user, c);
     await user.click(plus());
     const menu = screen.getByRole('menu', { name: 'New session' });
-    const local = within(menu).getByRole('menuitem', { name: 'New local session' }) as HTMLButtonElement;
-    const cloud = within(menu).getByRole('menuitem', { name: 'New cloud session' }) as HTMLButtonElement;
+    const local = within(menu).getByRole('menuitem', { name: 'Existing local session' }) as HTMLButtonElement;
+    const cloud = within(menu).getByRole('menuitem', { name: 'Cloud session' }) as HTMLButtonElement;
     expect(local.disabled).toBe(!c.local);
     expect(cloud.disabled).toBe(!c.cloud);
     // The reason is in words, on the entry itself, and only for the entry that cannot start.
-    expect(within(menu).queryByText(LOCAL_NEEDS_FOLDER) !== null).toBe(!c.local);
-    expect(within(menu).queryByText(CLOUD_NEEDS_REPOSITORY) !== null).toBe(!c.cloud);
-    expect(local.getAttribute('aria-describedby') !== null).toBe(!c.local);
+    expect(within(menu).queryAllByText(NEEDS_FOLDER).length > 0).toBe(!c.local);
+    expect(within(menu).queryAllByText(NEEDS_REPOSITORY).length > 0).toBe(!c.cloud);
+    // Temporary local sessions need the repository too, never a folder.
+    expect((within(menu).getByRole('menuitem', { name: 'Temporary local session' }) as HTMLButtonElement).disabled).toBe(!c.cloud);
     // The fix is one click away: the project settings.
     const fix = c.fix ? within(menu).getByRole('menuitem', { name: c.fix }) : null;
     expect(within(menu).queryAllByRole('menuitem', { name: /^Add a / })).toHaveLength(c.fix ? 1 : 0);
@@ -81,8 +83,7 @@ describe('the + menu', () => {
     await user.click(screen.getByRole('button', { name: /^Atlas API(,|$)/ }));
     await user.click(plus());
     const items = within(screen.getByRole('menu', { name: 'New session' })).getAllByRole('menuitem').map((i) => i.textContent);
-    expect(items[0]).toBe('New local session');
-    expect(items[1]).toBe('New cloud session');
+    expect(items.slice(0, 3).map((t) => t?.startsWith('Cloud session') ? 'cloud' : t?.startsWith('Temporary local session') ? 'temporary' : t?.startsWith('Existing local session') ? 'existing' : t)).toEqual(['cloud', 'temporary', 'existing']);
     expect(items.at(-1)).toMatch(/^f0e1d2c3, WSL \(Ubuntu\)/);
   });
 });
@@ -96,7 +97,7 @@ describe('local and cloud are never swapped', () => {
     const calls = vi.spyOn(app.demo, 'call');
     await openProject(app, user, COMBOS[3]);
     await user.click(plus());
-    await user.click(screen.getByRole('menuitem', { name: 'New local session' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Existing local session' }));
     await waitFor(() => expect(startCalls(calls)).toHaveLength(1));
     expect(startCalls(calls)[0][1]).toMatchObject({ body: { mode: 'new', rootId: expect.stringContaining('_root') } });
     expect(fake.native.claudeWeb!.navigate).not.toHaveBeenCalled();
@@ -113,7 +114,8 @@ describe('local and cloud are never swapped', () => {
     const calls = vi.spyOn(app.demo, 'call');
     await openProject(app, user, COMBOS[3]);
     await user.click(plus());
-    await user.click(screen.getByRole('menuitem', { name: 'New cloud session' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Cloud session' }));
+    await user.click(await screen.findByRole('button', { name: 'Start in Claude Code on the web instead' }));
     await waitFor(() => expect(fake.native.claudeWeb!.navigate).toHaveBeenCalledWith(START('acme/both')));
     expect(START('acme/both')).toBe('https://claude.ai/code?repositories=acme/both'); // only the repository is preselected, nothing is submitted
     expect(startCalls(calls)).toHaveLength(0);
@@ -129,7 +131,7 @@ describe('local and cloud are never swapped', () => {
     const calls = vi.spyOn(app.demo, 'call');
     await openProject(app, user, COMBOS[2]); // a repository, no folder
     await user.click(plus());
-    await user.click(screen.getByRole('menuitem', { name: 'New local session' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Existing local session' }));
     expect(startCalls(calls)).toHaveLength(0);
     expect(screen.queryByText(/Add a repository folder first/)).toBeNull(); // no toast any more
     expect(fake.native.claudeWeb!.navigate).not.toHaveBeenCalled();
@@ -144,7 +146,7 @@ describe('local and cloud are never swapped', () => {
     await openProject(app, user, COMBOS[1]); // a folder, no repository
     expect(inClaude().queryByRole('tab', { name: /^Cloud/ })).toBeNull();
     await user.click(plus());
-    await user.click(screen.getByRole('menuitem', { name: 'New cloud session' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Cloud session' }));
     expect(fake.native.claudeWeb!.navigate).not.toHaveBeenCalled();
     expect(inClaude().queryByRole('tab', { name: /^Cloud/ })).toBeNull();
   });
@@ -156,8 +158,8 @@ describe('local and cloud are never swapped', () => {
     const calls = vi.spyOn(app.demo, 'call');
     await user.click(screen.getByRole('button', { name: /^Trading dashboard(,|$)/ }));
     await user.click(plus());
-    await user.click(screen.getByRole('menuitem', { name: 'New local session' }));
-    const dialog = await screen.findByRole('dialog', { name: 'New local session' });
+    await user.click(screen.getByRole('menuitem', { name: 'Existing local session' }));
+    const dialog = await screen.findByRole('dialog', { name: 'New Claude session' });
     expect(startCalls(calls)).toHaveLength(0);
     await user.click(within(dialog).getByRole('button', { name: 'Start session' }));
     await waitFor(() => expect(startCalls(calls)).toHaveLength(1));
@@ -173,8 +175,8 @@ describe('a Claude pane with no session tab', () => {
     const body = claude().querySelector('.ms-claude__empty') as HTMLElement;
     expect(body).toBeTruthy();
     expect(primaries()).toHaveLength(1);
-    const local = within(body).queryByRole('button', { name: 'New local session' }) as HTMLButtonElement | null;
-    const cloud = within(body).queryByRole('button', { name: 'New cloud session' }) as HTMLButtonElement | null;
+    const local = within(body).queryByRole('button', { name: 'Existing local session' }) as HTMLButtonElement | null;
+    const cloud = within(body).queryByRole('button', { name: 'Cloud session' }) as HTMLButtonElement | null;
     if (!c.local && !c.cloud) {
       expect(local).toBeNull();
       expect(cloud).toBeNull();
@@ -185,10 +187,10 @@ describe('a Claude pane with no session tab', () => {
     }
     expect(local!.disabled).toBe(!c.local);
     expect(cloud!.disabled).toBe(!c.cloud);
-    expect(primaries()).toEqual([c.local ? 'New local session' : 'New cloud session']); // local when there is a folder, else cloud
+    expect(primaries()).toEqual([c.local ? 'Existing local session' : 'Cloud session']); // local when there is a folder, else cloud
     const why = body.querySelector('.ms-claude__why');
     if (c.fix) {
-      expect(why?.textContent).toContain(c.local ? CLOUD_NEEDS_REPOSITORY : LOCAL_NEEDS_FOLDER);
+      expect(why?.textContent).toContain(c.local ? NEEDS_REPOSITORY : NEEDS_FOLDER);
       await user.click(within(body).getByRole('button', { name: c.fix }));
       expect(await screen.findByRole('dialog', { name: `${c.name} settings` })).toBeTruthy();
     } else {
@@ -204,7 +206,7 @@ describe('a Claude pane with no session tab', () => {
     const body = claude().querySelector('.ms-claude__empty') as HTMLElement;
     expect((body.textContent ?? '').length).toBeLessThan(170);
     expect(body.querySelectorAll('p').length).toBeLessThanOrEqual(2);
-    expect(body.querySelectorAll('button').length).toBeLessThanOrEqual(3);
+    expect(body.querySelectorAll('button').length).toBeLessThanOrEqual(4);
   });
 
   it('opens the Cloud tab on the start page from "New cloud session", and starts nothing locally', async () => {
@@ -214,7 +216,8 @@ describe('a Claude pane with no session tab', () => {
     const app = await renderApp({ native: fake });
     const calls = vi.spyOn(app.demo, 'call');
     await openProject(app, user, COMBOS[3]);
-    await user.click(within(claude().querySelector('.ms-claude__empty') as HTMLElement).getByRole('button', { name: 'New cloud session' }));
+    await user.click(within(claude().querySelector('.ms-claude__empty') as HTMLElement).getByRole('button', { name: 'Cloud session' }));
+    await user.click(await screen.findByRole('button', { name: 'Start in Claude Code on the web instead' }));
     expect(startCalls(calls)).toHaveLength(0);
     await waitFor(() => expect(fake.native.claudeWeb!.navigate).toHaveBeenCalledWith(START('acme/both')));
     expect(cloudTab().getAttribute('aria-selected')).toBe('true');
@@ -228,7 +231,7 @@ describe('a Claude pane with no session tab', () => {
     const app = await renderApp({ native: fake });
     const calls = vi.spyOn(app.demo, 'call');
     await openProject(app, user, COMBOS[3]);
-    await user.click(within(claude().querySelector('.ms-claude__empty') as HTMLElement).getByRole('button', { name: 'New local session' }));
+    await user.click(within(claude().querySelector('.ms-claude__empty') as HTMLElement).getByRole('button', { name: 'Existing local session' }));
     await waitFor(() => expect(startCalls(calls)).toHaveLength(1));
     expect(startCalls(calls)[0][1]).toMatchObject({ body: { mode: 'new' } });
     expect(fake.native.claudeWeb!.navigate).not.toHaveBeenCalled();
@@ -721,7 +724,8 @@ describe('the page each project was last on', () => {
     await waitFor(() => expect(fake.native.claudeWeb!.navigate).toHaveBeenLastCalledWith(SESSION));
     act(() => fake.emitClaudeView({ url: SESSION }));
     await user.click(plus());
-    await user.click(screen.getByRole('menuitem', { name: 'New cloud session' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Cloud session' }));
+    await user.click(await screen.findByRole('button', { name: 'Start in Claude Code on the web instead' }));
     await waitFor(() => expect(fake.native.claudeWeb!.navigate).toHaveBeenLastCalledWith(START('acme/git-manager')));
     expect(app.runtime.route.getState().cloudStart[IDS.gitManager]).toBeUndefined(); // asked once, done once
     act(() => fake.emitClaudeView({ url: SESSION })); // still the page being left

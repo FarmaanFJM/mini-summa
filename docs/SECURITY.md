@@ -136,6 +136,19 @@ These are product rules the code enforces, and tests pin each of them.
 * The optional browser extension uses the tabs and windows APIs only. It has no content scripts and no access to page
   contents.
 
+## Cloud dispatch and temporary workspaces
+
+Details: [CLOUD_SESSIONS.md](CLOUD_SESSIONS.md), [TEMP_WORKSPACES.md](TEMP_WORKSPACES.md). The boundaries:
+
+* **Only the official CLI.** Mini-Summa starts the `claude` you installed with documented options. It calls no claude.ai endpoint, reads no cookie or token, does not touch the embedded page (no script, no click, no typing) and never sends anything to ChatGPT. Login state comes from `claude auth status`; the answer is read for "logged in", the method and the provider, nothing else.
+* **Prompts.** The prompt is one argument of an argument array (no shell). It is never logged, never written to the database or to disk, never put in a URL, and never committed. The dispatch journal holds ids, phases and times only. The tail of the CLI's output that is shown has the prompt and any line that repeats part of it blanked (best effort: a terminal can wrap text in ways that escape this). Drafts live in the window's memory only and are gone when Mini-Summa quits. While the CLI runs, the argument is visible in the process list to programs running as you.
+* **Output is untrusted.** A session is recorded only for a complete session address on claude.ai (https, the code path, a session segment) that passes the same parser as the Cloud tab (https, claude.ai, no credentials, no port, a session path). A link cut by a chunk boundary is not accepted until it is complete, and a line break is never joined into an address.
+* **Keys.** A dispatch terminal accepts only Enter, Up, Down, Esc, y, n, 1, 2, 3 from the interface. It is not a general terminal.
+* **Consent.** The CLI starts only after the person accepts the note that the task runs on Anthropic's servers from GitHub and that Claude Code may upload local content. The cloud mode never falls back to local, and the local modes never fall back to the cloud.
+* **Git.** Argument arrays, no terminal prompts, `ext::`/`file::` remotes refused, clone address built from a validated name, branch names validated, no hooks or setup scripts run, no LFS download, no submodules, no history rewrite and no force-push by Mini-Summa. A remote that carries a token has the token ignored (only the repository name is read).
+* **Deletion.** Only inside a folder Mini-Summa made (uuid under its own folder, marker file, row agree), never a project folder or a folder that contains or lies inside one, never while anything runs there, only after a fresh inspection, only after typing the repository name, to the Recycle Bin or Trash by default. Permanent deletion needs a separate choice and exists only where there is no Recycle Bin.
+* **Electron.** No new sandbox exception: the main process gained one validated native method (`trashItem`, used by the core only for a folder under the workspaces folder) and the embedded view only gained observation (HTTP status, timers), no script or access to the page.
+
 ## The Claude Code on the web view
 
 The Cloud tab of the Claude pane shows the page of Claude Code on the web (`https://claude.ai/code`) in a second embedded view.

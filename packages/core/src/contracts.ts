@@ -228,6 +228,8 @@ export interface StartSessionRequest {
   resumeKey?: SessionKey;
   env?: EnvId;
   rootId?: string;
+  /** A temporary workspace of the project to run in, instead of one of its folders. */
+  workspaceId?: string;
   name?: string;
   remoteControl?: boolean;
   cols?: number;
@@ -597,6 +599,14 @@ export interface CoreOptions {
     spoolPollMs?: number;
     pushEndpoint?: string;
     homeDir?: string;
+    /** Seams for the cloud and workspace services (tests). */
+    cloud?: {
+      run?: import('./claude/commandRunner.ts').CommandRunner;
+      spawner?: import('./claude/ptyHost.ts').PtySpawner;
+      platform?: NodeJS.Platform;
+      quietMs?: number;
+    };
+    workspaces?: Partial<Pick<import('./workspaces/service.ts').WorkspacesDeps, 'root' | 'repoSize' | 'freeBytes' | 'trash' | 'clone'>> & { git?: import('./git/git.ts').GitFn };
   };
 }
 
@@ -608,6 +618,7 @@ export interface Core {
     settings: SettingsService; projects: ProjectsService; sessions: SessionsService; environments: EnvironmentsService;
     activity: ActivityService; notifications: NotificationsService; reports: ReportsService; deliveries: DeliveriesService;
     actions: ActionsService; devices: DevicesService; hooks: HooksService; tailscale: TailscaleService; data: DataService;
+    cloud: import('./cloud/service.ts').CloudService; workspaces: import('./workspaces/service.ts').WorkspacesService;
   };
   counts(): Counts;
   start(): Promise<void>;

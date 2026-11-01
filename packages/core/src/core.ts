@@ -20,6 +20,10 @@ import { createDataService, createDevicesService, createFcmProvider, createProje
 import { hostFolderCheck } from './infra/folders.ts';
 import { detectEnv } from '@minisumma/claude-integration';
 import { createHooksService } from './infra/hooks.ts';
+import { createCloudService } from './cloud/service.ts';
+import { defaultCommandRunner } from './claude/commandRunner.ts';
+import { createGit } from './git/git.ts';
+import { createWorkspacesService } from './workspaces/service.ts';
 import { createOrchestrator } from './orchestrator.ts';
 import type { Orchestrator } from './orchestrator.ts';
 import { createActionsService, createActivityService, createDeliveriesService, createNotificationsService, createReportsService } from './workflow/index.ts';
@@ -134,6 +138,7 @@ export function composeNative(host: NativeBridge, settings: Pick<SettingsService
     notify: (n) => host.notify(n),
     openExternal: (url) => host.openExternal(url),
     saveTextFile: (o) => host.saveTextFile(o),
+    ...(host.trashItem ? { trashItem: (p: string) => host.trashItem!(p) } : {}),
   };
 }
 
@@ -159,7 +164,17 @@ export async function createCore(options: CoreOptions): Promise<Core> {
   });
   const environments = createEnvironmentsService({ base, settings, overrides });
   const managed = createManagedManager({ base, environments, overrides });
-  const sessions = createSessionsService({ base, settings, projects, environments, managed, overrides });
+  const run = overrides.cloud?.run ?? defaultCommandRunner;
+  const git = overrides.workspaces?.git ?? createGit(run);
+  const workspaces = createWorkspacesService({
+    base, projects, git, root: overrides.workspaces?.root, repoSize: overrides.workspaces?.repoSize, freeBytes: overrides.workspaces?.freeBytes,
+    trash: overrides.workspaces?.trash ?? (host.trashItem ? (target) => host.trashItem!(target) : undefined), clone: overrides.workspaces?.clone,
+  });
+  // Cleanup must never remove a folder a running Claude session works in.
+  workspaces.registerBusy((dir) => managed.list()
+    .filter((m) => m.status === 'running' && (() => { const r = path.relative(dir, m.cwd); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); })())
+    .map((m) => `a Claude session${m.name ? ` (${m.name})` : ''}`));
+  const sessions = createSessionsService({ base, settings, projects, environments, managed, overrides, workspaces });
   const devices = createDevicesService({ base });
   const push = createFcmProvider({ base, settings, overrides });
 
@@ -177,6 +192,10 @@ export async function createCore(options: CoreOptions): Promise<Core> {
   const actions = createActionsService({ base, settings, sessions, activity, devices, deliveries, reports, recordPermissionActivity: false });
   orchestrator = createOrchestrator({ base, settings, sessions, reports, deliveries, activity, notifications, actions });
   const hooks = createHooksService({ base, environments });
+  const cloud = createCloudService({
+    base, projects, environments, workspaces, native, run, git, spawner: overrides.cloud?.spawner, platform: overrides.cloud?.platform, quietMs: overrides.cloud?.quietMs,
+  });
+  workspaces.registerBusy((dir) => cloud.busyIn(dir));
 
   let port = 0;
   const tailscale = createTailscaleService({ base, settings, getPort: () => port, overrides });
@@ -225,7 +244,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
 
   const buildServer = (listenPort: number): HttpServer => createHttpServer({
     base, port: listenPort, uiDir: options.uiDir, counts: countsNow, system, native,
-    services: { settings, projects, sessions, environments, activity, notifications, reports, deliveries, actions, devices, hooks, tailscale, data, push },
+    services: { settings, projects, sessions, environments, activity, notifications, reports, deliveries, actions, devices, hooks, tailscale, data, cloud, workspaces, push },
   });
 
   async function listen(): Promise<{ port: number; baseUrl: string }> {
@@ -253,7 +272,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     get baseUrl() { return baseUrl; },
     get desktopToken() { return devices.desktopToken; },
     base,
-    services: { settings, projects, sessions, environments, activity, notifications, reports, deliveries, actions, devices, hooks, tailscale, data },
+    services: { settings, projects, sessions, environments, activity, notifications, reports, deliveries, actions, devices, hooks, tailscale, data, cloud, workspaces },
     counts: countsNow,
 
     async start() {
@@ -261,6 +280,8 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       started = true;
       stopOrchestrator = orchestrator!.start();
       await sessions.init();
+      workspaces.init();
+      cloud.init();
       restrictPermissions(dataDir);
       orchestrator!.reconcile();
       deliveries.recoverAfterRestart();
@@ -283,6 +304,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       try { await server?.stop(); } catch (err) { log.warn('http server did not stop cleanly', { error: String(err) }); }
       try { await tailscale.shutdown(); } catch (err) { log.warn('tailscale did not shut down cleanly', { error: String(err) }); }
       actions.shutdown();
+      cloud.shutdown();
       stopOrchestrator?.();
       try { await sessions.shutdown(); } catch (err) { log.warn('sessions did not shut down cleanly', { error: String(err) }); }
       (environments as { dispose?: () => void }).dispose?.();

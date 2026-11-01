@@ -2,30 +2,67 @@
 
 Read this before relying on anything about the cloud in Mini-Summa. It separates what Anthropic documents from what is assumed or unknown, and says plainly what Mini-Summa does with each.
 
-**Method and date.** Researched on 2026-10-30 from Anthropic's published pages (code.claude.com, platform.claude.com, support.claude.com, anthropic.com legal) and from `claude --help` of the installed Claude Code 2.1.314. Page text was read through a fetch tool that summarises pages, so quote exact wording from the live page before repeating it elsewhere. No private endpoint, no reverse engineering, no credential or cookie reading was used. **No cloud session was started and no claude.ai subscription login was available in the test environment, so nothing below about the cloud has been exercised against the real service.** The automated tests use a local stand-in for claude.ai, which proves what Mini-Summa does with a page (which address it opens, that it never types or submits), not how claude.ai behaves.
+**Method and date.** Researched on 2026-10-30 (the rest of this page, and the table below); the CLI probes in the section above were run on 2026-11-01. Original research: from Anthropic's published pages (code.claude.com, platform.claude.com, support.claude.com, anthropic.com legal) and from `claude --help` of the installed Claude Code 2.1.314. Page text was read through a fetch tool that summarises pages, so quote exact wording from the live page before repeating it elsewhere. No private endpoint, no reverse engineering, no credential or cookie reading was used. **No cloud session was started and no claude.ai subscription login was available in the test environment, so nothing below about the cloud has been exercised against the real service.** The automated tests use a local stand-in for claude.ai, which proves what Mini-Summa does with a page (which address it opens, that it never types or submits), not how claude.ai behaves.
 
-## What Mini-Summa does
+## What Mini-Summa does (since the cloud dispatch work)
 
-Per project, in the Claude pane:
+Per project, in the Claude pane, **plus button, Cloud session**:
 
-* **Cloud tab (browser based).** If the project has a GitHub repository, the tab shows Claude Code on the web (`claude.ai/code`) in an isolated browser view inside Mini-Summa, opened on the documented new-session address with the repository preselected: `https://claude.ai/code?repositories=owner/repo`. Opening that address starts nothing; the person writes the task and submits on the page.
-* **Remembered page.** The last `claude.ai/code` address the person was on in each project is remembered (without query string or fragment) and opened again next time. This is a bookmark. The session itself lives on Anthropic's side and keeps running whether or not Mini-Summa is open.
-* **Continue in a terminal.** On a session page, one button copies the documented command `claude --teleport <session id>`.
-* **Open in your browser.** Always available. It is the fallback when the page refuses the embedded view or the person prefers their own browser.
-* **Local sessions stay local.** "New local session" starts Claude in a project folder, as before. "New cloud session" opens the Cloud tab. Neither is ever substituted for the other: when a choice is impossible (no folder, no repository) the menu says why and offers the fix.
+1. **Checks** (all read-only): the installed `claude` (`--version`, and `--help` for the `--cloud` option), its login (`claude auth status`; Mini-Summa reads only whether it says logged in and how), that the project has a GitHub repository, and which local folder the CLI will run in: it must be a Git repository whose `origin` is the project's repository. It shows the branch, warns about local commits GitHub does not have, and about uncommitted changes. Anything that blocks says what and why; nothing is launched against an unknown repository.
+2. **Disclosure and consent.** The cloud session runs on Anthropic's servers from the repository **on GitHub**, not from your working tree. Claude Code may upload parts of a local repository when GitHub access is not set up (documented behaviour is not specific; Mini-Summa cannot see whether it happens). The send button stays disabled until you accept this.
+3. **Dispatch.** The CLI is started with `claude --cloud "<your prompt>"` in a terminal Mini-Summa owns (a PTY), because **creating a session needs a terminal** (verified below). Phases shown: Preparing, Waiting for you (the CLI asked a question, answered with Enter/Up/Down/Esc/y/n), Submitting, **Session created** (a validated claude.ai/code session link was printed), Failed, **Result unknown**.
+4. **Record.** A validated link is stored in `cloud_sessions` (project, repository, the branch git reported in the folder before dispatch, session id, URL, time, method, last result, title). It survives restarts. A saved record is never shown as "running".
+5. **Afterwards.** Open in your browser, Copy link, Show in Cloud tab, follow-up messages (below), and the Cloud tab keeps listing the sessions started here.
 
-What this is not: **it is browser navigation, not native session control.** Mini-Summa shows a web page. It cannot list the person's cloud sessions, cannot tell whether one is working, finished, failed or waiting for input, cannot start one by itself, and cannot approve anything in one.
+### Verified on Claude Code 2.1.316 (2026-11-01, this machine, read-only probes)
+
+| Fact | How it was checked |
+| --- | --- |
+| `claude --help` lists `--cloud [description\|session_id\|url]` and `--environment <ccpool_...>` | `claude --help` |
+| **`claude -p "<task>" --cloud` is refused: "--cloud cannot be combined with --print. Starting a new cloud session with --cloud is interactive only"** | ran it in an empty directory |
+| **`claude --cloud "<task>"` without a terminal is refused**: "--cloud can only send the prompt to an existing cloud session ... To start a new cloud session, run from a TTY" | ran it with no TTY |
+| In a terminal, the first thing a fresh CLI asks is the theme, the security note and **"Is this a project you created or one you trust?" (default "No, exit")** before anything else | drove it through a PTY, stopped there |
+| `claude auth status` prints JSON with `loggedIn`, `authMethod`, `apiProvider` | ran it |
+| Follow-up form `claude -p ... --cloud <id> --output-format json` returns `{"ok":false,"session_id":...,"error":...}` on failure (here: "Session expired. Please run /login") and accepts the message as an argument **or** with no argument (stdin) | ran it against a fake id; **no session or message was created** |
+
+What the probes **could not** show, and is therefore **NOT TESTED**: what the CLI prints on a successful creation, whether it exits afterwards or stays attached, whether the link appears on its own line, whether it uploads a bundle, and that a follow-up message reaches a real session. The sandbox login could not create cloud sessions, and starting a real one would act on your account. The output reader is built from the documented link shape and accepts a session only when a complete, validated claude.ai session address appears; otherwise the result is "unknown", which is true.
+
+### Long prompts
+
+The CLI takes the task as **one command-line argument** (nothing else is documented), so:
+
+* The whole prompt goes into that argument when it can be passed whole and unchanged: on Linux/macOS up to 100,000 bytes (one argument is limited to 128 KiB); on Windows up to 24,000 characters for a native `claude.exe` or WSL (the CreateProcess limit is 32,767 for the whole line).
+* A Windows `.cmd` launcher (the npm install) goes through `cmd.exe`, which has an 8,191 character limit and cannot carry a quote, a percent sign or a line break safely, so such prompts are limited to 6,000 characters without those characters.
+* A prompt that starts with a dash would be read as an option, a NUL cannot be in a command line, and an empty prompt is refused.
+* **Otherwise the browser route**: the full prompt is copied to the clipboard and `https://claude.ai/code?repositories=owner/repo` opens in your browser; you paste and submit there, then paste the session address back so it is kept. Mini-Summa cannot see whether you submitted. This needs your explicit tick. **The prompt is never shortened and never put in an address.**
+* Prompts over 250,000 characters are refused with a message to split them.
+* The argument is visible to other programs running as you while the process lives (process listings). Do not rely on it for secrets.
+* Windows with a native `claude.exe` and a multi-line prompt is **NOT TESTED**.
+
+### Follow-ups
+
+`claude -p "<message>" --cloud <session id> --output-format json`, the documented form. The result is shown as **accepted** (`ok: true`; not that Claude acted), **rejected** (`ok: false`, with the CLI's reason) or **unknown** (timeout or unreadable output). The same limits as above apply; a message that cannot be passed whole is not sent, and you are told to send it on claude.ai.
+
+### The blank Cloud tab
+
+*Observed:* on Windows the Cloud tab showed its toolbar and sentence and an empty area, and "Open in your browser" worked.
+
+*Cause found in the code (not reproduced; no Windows machine or claude.ai access was available here):* the view reported **"ready"** for any main-frame load that did not raise `did-fail-load`. Chromium treats an HTTP response with an error status and a body (a 403 from a bot check, a 429, a 5xx page) as a successful load, so a refused or empty page produced no error, no note and a native view drawn over the area, hiding everything the renderer could say. The view also had no limit on a load that never finishes, and no way to tell a loaded-but-empty page from a working one.
+
+*Changes:* the view now records the HTTP status of the main page (`did-navigate`) and reports **blocked** (401/403/429, with the number) or **error** (5xx). A security check page the person can complete (the "Just a moment" title) stays a page, as before. A load running longer than 25 s is **stalled**. A load that finishes with no title and still has none 4 s later is **blank** (a guess from the title only; a title that arrives late clears it). In those four states the renderer hides the native view and shows a native panel instead: what failed, the repository, Retry, Open in your browser, Copy session link, New cloud task (the CLI path, which does not need the page), Temporary local session, the sessions started here, and "Show the page anyway" for the two uncertain cases. The log gets one line per settled page with the HTTP status, whether it had a title, the native bounds and visibility (never an address) so the next real run shows which cause it was. Cause candidates **not** ruled out without a Windows run: claude.ai refusing the Electron identity, a challenge the view cannot show, a renderer problem, or bounds on a scaled display. The tests prove the new states with a fake page; they do not prove what claude.ai does.
+
+The page failing never disables CLI dispatch, and Mini-Summa never redirects its window to a browser by itself.
 
 ## What is documented
 
 | Capability | Documented? | What Mini-Summa does |
 | --- | --- | --- |
-| Start a cloud session from the CLI: `claude --cloud "<task>"` (flag shown by `claude --help` 2.1.314: `--cloud [description\|session_id\|url]`) | Yes | Nothing. It needs a local clone and the person's claude.ai login. The person can run it in any terminal. |
+| Start a cloud session from the CLI: `claude --cloud "<task>"` (flag shown by `claude --help`: `--cloud [description\|session_id\|url]`) | Yes; interactive only (verified, 2.1.316) | Runs it in a managed terminal after the checks and consent described above. |
 | Start in the browser, repository preselected by URL parameter (`repositories`, alias `repo`; also `prompt`/`q`, `prompt_url`, `environment`) | Yes (web quickstart, "pre-fill sessions") | Opens that address, repository only, never a prompt of its own. |
 | Branch selection in the address | Not documented | Not offered. The branch is chosen on the page. |
 | Associate a session with a GitHub repository | Yes: the session is created for the repository chosen at creation. The Claude GitHub App or a GitHub connection is needed for private repositories | Preselects the project's repository. Mini-Summa never touches GitHub. |
-| Start without a local clone | Yes, from the browser. The CLI path has no documented option without a clone | A GitHub-only project can open the Cloud tab without a folder. |
-| Follow up on a running session: `claude -p "<message>" --cloud <session id> --output-format json` (the result is `{ok, session_id, url}`, the send result only) | Yes | Not used. |
+| Start without a local clone | Yes, from the browser. The CLI path has no documented option without a clone | A GitHub-only project can open the Cloud tab without a folder, and can dispatch through the CLI: Mini-Summa then makes a shallow checkout only so the CLI has a repository to run in ([TEMP_WORKSPACES.md](TEMP_WORKSPACES.md)). |
+| Follow up on a running session: `claude -p "<message>" --cloud <session id> --output-format json` (the result is `{ok, session_id, url}`, the send result only) | Yes | Used for follow-ups; the result is accepted, rejected or unknown, never completion. |
 | Continue a cloud session in a terminal: `claude --teleport [session id]` | Yes (clean git state, a checkout of the same repository, the branch pushed, the same claude.ai account; it makes a copy, not a sync) | Copies the command. |
 | Move a local session to the cloud | Desktop app only ("Open in", "Cloud"), carried over as a summary. From the CLI the handoff is one way | Not offered. |
 | Trigger a saved routine over HTTP (`/fire`) | Yes, experimental; claude.ai users only; a per-routine token; it neither streams output nor waits for completion | Not used. It cannot list, watch or start arbitrary sessions. |

@@ -9,6 +9,7 @@ import type {
   RouteInput, RouteName, RouteOutput, ServerMessage, SessionKey, SessionView, StateSnapshot, TailscaleStatus,
 } from '@minisumma/shared';
 import { isAwaitingHandoff } from '../../app/selectors';
+import { cloudDemoState, installCloudHandlers } from './cloud-handlers';
 import { installFeatureHandlers } from './features-handlers';
 import { createSeed, IDS } from './seed';
 import type { DemoData } from './seed';
@@ -98,6 +99,7 @@ export class DemoServer {
       },
     });
     installFeatureHandlers(this, this.handlers); // reports, activity, settings and onboarding routes (features-handlers.ts)
+    installCloudHandlers(this, this.handlers); // cloud sessions and temporary workspaces (cloud-handlers.ts)
   }
 
   // ------------------------------------------------------------------------------------------ plumbing
@@ -478,14 +480,16 @@ export class DemoServer {
     'sessions.list': (i) => this.data.sessions.filter((s) => (!i.query?.projectId || s.projectId === i.query.projectId)),
     'sessions.get': (i) => this.session(i.params.key),
     'sessions.start': (i) => {
-      const body = parseBody('sessions.start', i.body) as { mode: 'new' | 'resume'; resumeKey?: SessionKey; env?: EnvId; rootId?: string; name?: string };
+      const body = parseBody('sessions.start', i.body) as { mode: 'new' | 'resume'; resumeKey?: SessionKey; env?: EnvId; rootId?: string; workspaceId?: string; name?: string };
       const p = this.project(i.params.id);
       let previous: SessionView | undefined;
       if (body.mode === 'resume') {
         previous = this.session(body.resumeKey ?? '');
         if (!previous.resumable || previous.availability === 'live') throw new ApiError(409, 'not_resumable', 'That session cannot be resumed right now.');
       }
-      const chosen = body.rootId ? p.roots.find((r) => r.id === body.rootId) : p.roots.find((r) => r.env === previous?.env) ?? p.roots[0];
+      const work = body.workspaceId ? cloudDemoState(this.data).workspaces.find((w) => w.id === body.workspaceId && w.projectId === p.id && w.status === 'ready') : undefined;
+      if (body.workspaceId && !work) throw new ApiError(422, 'workspace_not_ready', 'This workspace is not ready.');
+      const chosen = work ? { id: null, env: 'win' as EnvId, path: work.path } : body.rootId ? p.roots.find((r) => r.id === body.rootId) : p.roots.find((r) => r.env === previous?.env) ?? p.roots[0];
       if (!chosen) throw new ApiError(409, 'no_folder', 'Add a repository folder to this project first.');
       const env = body.env ?? chosen.env;
       const sessionId = crypto.randomUUID();

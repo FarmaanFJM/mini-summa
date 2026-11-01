@@ -10,6 +10,10 @@ export interface ViewObservation {
   loading: boolean;
   /** Set by did-fail-load for the main frame. It stays until a new page actually commits (did-navigate), because a cancelled or failed retry leaves the error page on screen. */
   failure: { code: number; description: string } | null;
+  /** Claude view only: the HTTP status of the last main frame navigation (did-navigate), and the two watchdog results. */
+  httpStatus?: number | null;
+  stalled?: boolean;
+  settledBlank?: boolean;
 }
 
 export interface NavigationFlags { canGoBack: boolean; canGoForward: boolean }
@@ -114,12 +118,19 @@ const CLAUDE_NOTES = {
   googleRefused: `Google refused to sign in inside an embedded browser. That is Google's decision, and Mini-Summa does not work around it.`,
   blocked: (description: string) => `The page was blocked (${description || 'refused by a policy'}). Some sites refuse embedded browsers.`,
   error: (description: string) => `The page could not be loaded (${description || 'unknown error'}).`,
+  http: (status: number) => status === 401 || status === 403 || status === 429
+    ? `claude.ai answered the embedded view with HTTP ${status} (refused). A site can refuse an embedded browser, or ask for a check this window cannot show. Mini-Summa does not work around it.`
+    : `claude.ai answered with HTTP ${status}, so no page was shown.`,
+  stalled: 'The page has been loading for a long time without finishing.',
+  blank: 'The page finished loading but has no title, so it is probably empty. Mini-Summa does not read the page, so this is a guess from the title only.',
 } as const;
 
 export function deriveClaudeViewState(obs: ViewObservation, nav: NavigationFlags): ClaudeWebViewState {
   const base = { url: obs.url, title: obs.title, canGoBack: nav.canGoBack, canGoForward: nav.canGoForward };
-  const make = (status: ClaudeWebViewStatus, note: string | null): ClaudeWebViewState => ({ ...base, status, note });
+  const make = (status: ClaudeWebViewStatus, note: string | null): ClaudeWebViewState => ({ ...base, status, note, ...(obs.httpStatus != null ? { httpStatus: obs.httpStatus } : {}) });
 
+  // A load that has run too long is reported as that, not as an endless spinner over an empty panel.
+  if (obs.loading && obs.stalled) return make('stalled', CLAUDE_NOTES.stalled);
   // A retry in progress is "loading" even if the last attempt failed.
   if (obs.loading) return make('loading', null);
   if (obs.failure) {
@@ -130,6 +141,13 @@ export function deriveClaudeViewState(obs: ViewObservation, nav: NavigationFlags
   }
   if (!obs.url || obs.url === 'about:blank') return make('idle', null);
   if (looksLikeGoogleRefusal(obs.url)) return make('blocked', CLAUDE_NOTES.googleRefused);
+  // Chromium treats an HTTP 403 with a body as a successful load: no did-fail-load, a URL and a title. Without looking at the status
+  // such a page is reported "ready" and the pane stays empty, which is the blank Cloud tab.
+  // A security check the person can complete in the view (it is served with HTTP 403 as well) is a page, not a refusal: it stays "ready".
+  const status = obs.httpStatus ?? null;
+  const check = looksLikeChallenge(obs.url, obs.title);
+  if (status !== null && status >= 400 && !check) return make(status >= 500 ? 'error' : 'blocked', CLAUDE_NOTES.http(status));
   if (looksLikeClaudeLogin(obs.url)) return make('login_required', CLAUDE_NOTES.login);
+  if (obs.settledBlank) return make('blank', CLAUDE_NOTES.blank);
   return make('ready', null);
 }

@@ -113,6 +113,12 @@ Mini-Summa receives hook events from sessions on this computer only. **A cloud s
   own Claude settings are not read by cloud sessions. Details and sources: `docs/CLOUD_SESSIONS.md`.
 * Mini-Summa does not poll the claude.ai page, does not read its content and does not infer "finished" from it. The Cloud tab shows a
   web page; it is not session control.
+* **Dispatching a task through the CLI changes none of this.** "Session created" means the CLI printed a validated session link. It does not
+  mean Claude started, is working, is waiting for you or finished, and Mini-Summa shows no such state for a cloud session at any time: not from the
+  elapsed time, not from whether the process is still open, not from the browser tab. A follow-up shown as "accepted" means the CLI took the
+  message. A pull request or workflow on GitHub is a separate signal that you can look at; Mini-Summa does not equate it with the session.
+* Local sessions started in a temporary workspace are ordinary managed sessions: hooks, reports and notifications work as for any local session.
+* If Anthropic documents a status mechanism later, it would be added behind its own capability check; there is none today.
 * A cloud session keeps working on Anthropic's side while this PC is off or Mini-Summa is closed. That it keeps working is a different
   question from whether anything tells you it finished.
 * Anthropic's own apps document some notifications (Remote Control push for a local session driven from the phone, and an operating

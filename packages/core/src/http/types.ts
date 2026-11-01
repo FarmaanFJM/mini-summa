@@ -8,6 +8,8 @@
 import type {
   ActorRef, Counts, HandlerInput, NativeBridge, RouteName, RouteOutput, SystemInfo,
 } from '@minisumma/shared';
+import type { CloudService } from '../cloud/service.ts';
+import type { WorkspacesService } from '../workspaces/service.ts';
 import type {
   ActionsService, ActivityService, CoreBase, DataService, DeliveriesService, DevicesService, EnvironmentsService,
   ExtensionBridge, HooksService, NotificationsService, Principal, ProjectsService, PushProvider, ReportsService,
@@ -28,6 +30,8 @@ export interface HttpServices {
   hooks: HooksService;
   tailscale: TailscaleService;
   data: DataService;
+  cloud: CloudService;
+  workspaces: WorkspacesService;
   /** null when the build has no push provider; the push routes then answer 503. */
   push: PushProvider | null;
 }

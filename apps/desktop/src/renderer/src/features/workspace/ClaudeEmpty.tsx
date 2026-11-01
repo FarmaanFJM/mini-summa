@@ -1,6 +1,7 @@
 import type { Project } from '@minisumma/shared';
 import { Button, EmptyState } from '../../ui';
-import { claudeStart } from './claudeCloud';
+import { MODE_LABEL, modesFix, primaryMode, sessionModes } from './sessionModes';
+import type { SessionMode } from './sessionModes';
 
 export interface ClaudeEmptyProps {
   project: Pick<Project, 'name' | 'roots' | 'githubRepo'>;
@@ -8,30 +9,32 @@ export interface ClaudeEmptyProps {
   starting: boolean;
   /** Another main button is on screen (a report waits for its handoff), so none here is the emphasised one. */
   quiet: boolean;
-  onLocal: () => void;
-  onCloud: () => void;
+  onChoose: (mode: SessionMode) => void;
   /** Open the project settings, where a folder or a repository is added. */
   onFix: () => void;
 }
 
+const ICON = { cloud: 'cloud', temporary: 'download', existing: 'terminal' } as const;
+
 /**
- * A Claude pane with no session tab: the two ways to start one, local on this computer and cloud on GitHub. At most one of them is
- * the main button (Local when there is a folder, else Cloud when there is a repository). One that cannot start says why in words,
- * with the way to fix it beside the reason; the other is never started in its place.
+ * A Claude pane with no session tab: the three ways to start one. At most one is the main button (the existing folder when there is one,
+ * else the cloud). One that cannot start says why in words, with the way to fix it beside the reason; another is never started in its place.
  */
-export function ClaudeEmpty({ project, starting, quiet, onLocal, onCloud, onFix }: ClaudeEmptyProps) {
-  const choices = claudeStart(project);
-  if (choices.primary === null) {
+export function ClaudeEmpty({ project, starting, quiet, onChoose, onFix }: ClaudeEmptyProps) {
+  const primary = primaryMode(project);
+  const modes = sessionModes(project);
+  const fix = modesFix(project);
+  if (primary === null) {
     return (
       <div className="ms-claude__body ms-claude__empty">
-        <EmptyState center action={<Button variant={quiet ? 'secondary' : 'primary'} icon="settings" onClick={onFix}>{choices.fix}</Button>}>
-          Local sessions need a folder on this computer, cloud sessions a GitHub repository.
+        <EmptyState center action={<Button variant={quiet ? 'secondary' : 'primary'} icon="settings" onClick={onFix}>{fix}</Button>}>
+          Existing sessions need a folder on this computer. Cloud and temporary sessions need a GitHub repository.
         </EmptyState>
       </div>
     );
   }
-  const variant = (which: 'local' | 'cloud') => (choices.primary === which && !quiet ? 'primary' : 'secondary');
-  const missing = !choices.local.available ? choices.local.reason : !choices.cloud.available ? choices.cloud.reason : null;
+  const variant = (m: SessionMode) => (primary === m && !quiet ? 'primary' : 'secondary');
+  const missing = (['existing', 'cloud'] as const).map((m) => modes[m].reason).find((r) => r !== null) ?? null;
   return (
     <div className="ms-claude__body ms-claude__empty">
       <EmptyState
@@ -39,13 +42,14 @@ export function ClaudeEmpty({ project, starting, quiet, onLocal, onCloud, onFix 
         action={(
           <>
             <div className="ms-ws-starts">
-              <Button variant={variant('local')} icon="terminal" loading={starting} disabled={!choices.local.available} onClick={onLocal}>New local session</Button>
-              <Button variant={variant('cloud')} icon="cloud" disabled={!choices.cloud.available} onClick={onCloud}>New cloud session</Button>
+              {(['existing', 'cloud', 'temporary'] as const).map((m) => (
+                <Button key={m} variant={variant(m)} icon={ICON[m]} loading={starting && m === 'existing'} disabled={!modes[m].available} onClick={() => onChoose(m)}>{MODE_LABEL[m]}</Button>
+              ))}
             </div>
             {missing ? (
               <p className="ms-claude__why">
                 {missing}{' '}
-                <button type="button" className="ms-ws-link" onClick={onFix}>{choices.fix}</button>
+                <button type="button" className="ms-ws-link" onClick={onFix}>{fix}</button>
               </p>
             ) : null}
           </>

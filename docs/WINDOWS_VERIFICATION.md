@@ -40,7 +40,7 @@ and hash you have not compared.
 The installer installs for your user only and asks for no administrator rights. Alternatively build it yourself: Node.js 22.12 or newer,
 `git clone https://github.com/FarmaanFJM/mini-summa`, `git checkout feat/mini-summa-full-base`, `npm ci`, `npm run dist:win`.
 
-## Tier 2: what only you can check (about 45 minutes, in this order)
+## Tier 2: what only you can check (about 65 minutes, in this order; section D is the cloud and temporary workspace work)
 
 You need: Windows 10 1809 or newer, or Windows 11, as a normal user; Claude Code installed and logged in (`claude --version` works in PowerShell); Git for Windows; a ChatGPT account with **at least two ChatGPT Projects and a few conversations in them**. Stop at the first step that fails, write its number and what you saw, and send `%APPDATA%\Mini-Summa\logs\main.log` and `%APPDATA%\Mini-Summa\data\logs\core.log` (no tokens in them). Do not paste tokens, pairing codes or report text.
 
@@ -71,8 +71,23 @@ You need: Windows 10 1809 or newer, or Windows 11, as a normal user; Claude Code
    *Send:* window size, scaling, which setting overlaps, one screenshot.
 11. **View modes (R5).** Write half a message in ChatGPT, switch to Claude and back to Split. *Expect:* the half message and the scroll position are still there; nothing reloads.
 
+### D. Cloud dispatch, browser fallback and temporary workspaces (20 minutes; needs a claude.ai plan with Claude Code on the web and a GitHub repository you may test on)
+Use a **throwaway repository**, never a project you care about. None of this has been run against the real services (see [CLOUD_SESSIONS.md](CLOUD_SESSIONS.md), [TEMP_WORKSPACES.md](TEMP_WORKSPACES.md)).
+12. **The blank Cloud tab (the reported defect).** Open the Cloud tab of a project that has a repository. *Expect:* either the Claude Code page, or, if it cannot be shown, a Mini-Summa panel that says what failed (with an HTTP number if there was one) and offers New cloud task, Temporary local session, Retry, Open in your browser. Never an empty black area under the toolbar.
+   *Send:* which of the two you saw; if the panel, its sentence; the lines `claude web view settled` and `claude web view status` of `%APPDATA%\Mini-Summa\logs\main.log` (they hold the HTTP status, no addresses).
+13. **Checks before a dispatch.** Plus button, **Cloud session**. *Expect:* your Claude Code version, "signed in", the repository, the branch of the folder, and the warnings (cloud works from GitHub not your working tree; local content may be uploaded). Make a local commit without pushing and reopen: *Expect:* a warning that names the commit.
+14. **A real dispatch.** Paste a short one-line task ("add a comment to README.md"), tick the consent, **Send to Claude cloud**. *Expect:* the dialog may stop at "Waiting for you" (folder trust, first run): answer with the buttons; then "Session created" with a claude.ai/code link. **Open in your browser** shows the session. Quit and start Mini-Summa: the Cloud tab menu still lists it. *Report:* what the terminal tail showed, the exact phases, whether the CLI stayed open ("Close Claude Code" visible), whether anything was uploaded as a bundle (the CLI may say so).
+   *Do not expect* any "working" or "finished" state: there is none.
+15. **A long prompt.** Paste a multi-line prompt of about 30 lines (quotes, percent signs) into the composer. *Expect:* if your Claude is the npm `.cmd` install, a note that it goes the browser route; ticking it copies the whole prompt and opens claude.ai/code with the repository chosen; paste with Ctrl+V and check **nothing is missing at the end**; paste the session address back and **Keep link**. With a native `claude.exe` the whole prompt should instead reach the CLI: say which you have and whether the pasted text arrived intact in the session.
+16. **A follow-up** (only if 14 worked). In the Cloud tab, the sessions menu (clock icon), **Follow-up message to ...**. Send a short line. *Expect:* "Accepted by the CLI" with the sentence that it does not mean Claude has acted; check on claude.ai that the message arrived.
+17. **Embedded failure with working dispatch.** If step 12 showed the panel, repeat 14 from it (New cloud task).
+18. **Temporary local session.** Plus button, **Temporary local session** on the throwaway repository. *Expect:* access "Reachable with your Git login", the size, free space, branches. Add a new branch name and a one-line prompt. **Download and start Claude.** *Expect:* a terminal in `%APPDATA%\Mini-Summa\data\workspaces\<uuid>\repo`; the prompt is on your clipboard; paste it yourself. Let Claude change a file.
+19. **Review and clean up.** Plus button, **Temporary workspaces**, **Review and clean up**. *Expect:* it refuses while the session runs; after you stop it, it names the uncommitted file; after you commit it says the commit exists only here; after you push the branch it says published and offers **Clean up workspace**, which asks for `owner/repo` and moves the folder to the **Recycle Bin**. Restore it from the Bin once to check. *Also check:* leave a file open in an editor inside the workspace and try again: it should say the folder is in use and remove nothing.
+20. **Your real checkout is safe.** On a project that has a permanent folder (for example `C:\Projects\CaissaTrainer`) also open a temporary workspace of the same repository. *Expect:* the permanent folder is never listed, offered or touched, and no second project appears.
+   *Send:* pass/fail per step and the logs.
+
 ### Not on this list on purpose
-Cloud tab (needs a Claude Code on the web plan; read the six steps in [CLOUD_SESSIONS.md](CLOUD_SESSIONS.md) if you use it), WSL2, the phone, SmartScreen after you have verified the installer, a standard-user install on a normal Windows edition. They are in Tier 3.
+WSL2, the phone, SmartScreen after you have verified the installer, a standard-user install on a normal Windows edition. They are in Tier 3.
 
 ## Tier 3: optional and extended
 

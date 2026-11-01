@@ -56,6 +56,10 @@ export interface ClaudeViewHandle {
   setVisible(visible: boolean): void;
 }
 
+/** A load running longer than this is "stalled"; a finished load whose title is still empty after the settle time is "blank". */
+export const STALL_MS = 25_000;
+export const BLANK_SETTLE_MS = 4_000;
+
 export interface ClaudeWebViewDeps {
   /** Creates the native view and attaches it to the window. Called at most once. */
   createView(): ClaudeViewHandle;
@@ -87,7 +91,9 @@ export class ClaudeWebView {
   private rect: Rect | null = null;
   private overlay = false;
   private applied: { bounds: Rect | null; visible: boolean } = { bounds: null, visible: false };
-  private obs: ViewObservation = { url: null, title: null, loading: false, failure: null };
+  private obs: ViewObservation = { url: null, title: null, loading: false, failure: null, httpStatus: null, stalled: false, settledBlank: false };
+  private stallTimer: ReturnType<typeof setTimeout> | null = null;
+  private blankTimer: ReturnType<typeof setTimeout> | null = null;
   /** The address of a load that navigate() started and that has not ended yet, so asking for the same page twice does not restart it. */
   private pending: string | null = null;
   private state: ClaudeWebViewState = EMPTY_CLAUDE_VIEW_STATE;
@@ -149,6 +155,9 @@ export class ClaudeWebView {
     if (this.isShowingPage(url) || (this.obs.loading && this.pending !== null && samePage(this.pending, url))) return;
     this.pending = url;
     this.obs.loading = true;
+    this.obs.httpStatus = null;
+    this.obs.settledBlank = false;
+    this.armStall();
     this.refresh();
     view.contents.loadURL(url).catch(() => { /* failures arrive as did-fail-load */ });
   }
@@ -212,6 +221,41 @@ export class ClaudeWebView {
   private loadEnded(): void {
     this.pending = null;
     this.obs.loading = false;
+    this.obs.stalled = false;
+    if (this.stallTimer) { clearTimeout(this.stallTimer); this.stallTimer = null; }
+  }
+
+  private armStall(): void {
+    if (this.stallTimer) clearTimeout(this.stallTimer);
+    this.stallTimer = setTimeout(() => {
+      this.stallTimer = null;
+      if (!this.obs.loading) return;
+      this.obs.stalled = true;
+      this.refresh();
+    }, STALL_MS);
+    this.stallTimer.unref?.();
+  }
+
+  /**
+   * After a load finished: if the page still has no title a moment later, it is probably empty. This looks at the title Chromium reports,
+   * never at the page. Logged with the HTTP status and the native bounds, so the next real run shows which of the causes it was.
+   */
+  private armBlank(): void {
+    if (this.blankTimer) clearTimeout(this.blankTimer);
+    this.blankTimer = setTimeout(() => {
+      this.blankTimer = null;
+      const c = this.view?.contents;
+      if (!c || c.isDestroyed()) return;
+      this.syncFromContents();
+      const titled = (c.getTitle() || '').trim() !== '';
+      this.obs.settledBlank = !titled && this.obs.url !== null && this.obs.url !== 'about:blank' && !this.obs.loading;
+      this.deps.log.info('claude web view settled', {
+        httpStatus: this.obs.httpStatus ?? null, titled, visible: this.applied.visible, bounds: this.applied.bounds, overlay: this.overlay,
+        failure: this.obs.failure?.description ?? null,
+      });
+      this.refresh();
+    }, BLANK_SETTLE_MS);
+    this.blankTimer.unref?.();
   }
 
   private openOutside(url: string): void {
@@ -240,12 +284,21 @@ export class ClaudeWebView {
       else this.deps.log.info('claude web new window refused', { scheme: schemeOf(details.url) });
       return { action: 'deny' };
     });
-    c.on('did-start-loading', () => { this.obs.loading = true; this.refresh(); });
+    c.on('did-start-loading', () => { this.obs.loading = true; this.armStall(); this.refresh(); });
     c.on('did-stop-loading', () => { this.loadEnded(); this.syncFromContents(); this.refresh(); });
-    c.on('did-finish-load', () => { this.loadEnded(); this.syncFromContents(); this.refresh(); });
-    c.on('did-navigate', (_e: unknown, url: string) => { this.obs.url = url; this.obs.failure = null; this.refresh(); });
+    c.on('did-finish-load', () => { this.loadEnded(); this.syncFromContents(); this.refresh(); this.armBlank(); });
+    c.on('did-navigate', (_e: unknown, url: string, httpResponseCode?: number) => {
+      this.obs.url = url; this.obs.failure = null;
+      this.obs.httpStatus = typeof httpResponseCode === 'number' && httpResponseCode > 0 ? httpResponseCode : null;
+      this.refresh();
+    });
     c.on('did-navigate-in-page', (_e: unknown, url: string, isMainFrame: boolean) => { if (isMainFrame) { this.obs.url = url; this.refresh(); } });
-    c.on('page-title-updated', (_e: unknown, title: string) => { this.obs.title = title; this.refresh(); });
+    c.on('page-title-updated', (_e: unknown, title: string) => {
+      this.obs.title = title;
+      // A title that arrives late (a single page app sets it after loading) shows the page was not empty after all.
+      if (title.trim() !== '') this.obs.settledBlank = false;
+      this.refresh();
+    });
     c.on('did-fail-load', (_e: unknown, code: number, description: string, validatedUrl: string, isMainFrame: boolean) => {
       if (!isMainFrame) return;
       if (classifyFailure(code, description) === 'aborted') {

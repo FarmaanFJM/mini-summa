@@ -27,7 +27,7 @@ const attached = (app: RenderedApp, k: string, text: string) => until(() => adap
 
 async function newSession(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'New session' }));
-  await user.click(screen.getByRole('menuitem', { name: 'New local session' }));
+  await user.click(screen.getByRole('menuitem', { name: 'Existing local session' }));
 }
 
 /** Atlas API has one folder, so "New session" starts at once. With the trust prompt on, it stays "Starting" until answered. */
@@ -154,7 +154,7 @@ describe('opening, resuming, closing and stopping', () => {
     const calls = vi.spyOn(app.demo, 'call');
     await user.click(project('Trading dashboard'));
     await newSession(user);
-    const dialog = await screen.findByRole('dialog', { name: 'New local session' });
+    const dialog = await screen.findByRole('dialog', { name: 'New Claude session' });
     expect(calls.mock.calls.some((c) => c[0] === 'sessions.start')).toBe(false);
     await user.click(within(dialog).getByRole('button', { name: 'Start session' }));
     await waitFor(() => expect(calls).toHaveBeenCalledWith('sessions.start', expect.objectContaining({ body: expect.objectContaining({ mode: 'new', rootId: expect.stringContaining(IDS.dashboard) }) })));

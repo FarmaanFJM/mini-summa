@@ -65,8 +65,11 @@ notifications that navigate) come from `window.miniSumma`, exposed by the preloa
    conversations used as report destinations, and Claude sessions. A project with only a GitHub repository is complete. A project is a
    persistent workspace, not a chat: opening or creating a ChatGPT conversation never creates a project or maps a destination, and the
    project reopens on the last ChatGPT page used in it (tracked locally; the newest conversation of a ChatGPT Project cannot be found). Where a
-   Claude session runs is decided when the session starts: Local needs a local folder, Cloud needs the GitHub repository. One is
-   never substituted for the other; when the chosen one is impossible the interface says why and what to add.
+   Claude session runs is decided when the session starts, in one of three ways: **Cloud** (the official `claude --cloud`, from the GitHub
+   repository; `packages/core/src/cloud`), **Temporary local** (a checkout Mini-Summa owns, found again by uuid; `packages/core/src/workspaces`) or
+   **Existing local** (a project folder). One is never substituted for another; when the chosen one is impossible the interface says why and
+   what to add. A project can have any number of sessions of each kind; none of them creates or renames a project, and none changes the
+   remembered ChatGPT conversation or the report destination.
 
 ## Data flow: a report
 
@@ -170,3 +173,15 @@ restart recovery, the four-project routing scenario) → renderer component test
 Playwright → a few confirmation runs against the real Claude Code CLI. Results are reported separately per layer and per
 environment; Windows, WSL2, real devices, real push and the real ChatGPT site are reported **NOT TESTED** unless
 actually exercised there.
+
+## Session lifecycle by kind
+
+| | Cloud | Temporary local | Existing local |
+| --- | --- | --- | --- |
+| Started by | `claude --cloud "<task>"` in a short-lived dispatch PTY | `sessions.start` with a `workspaceId` | `sessions.start` with a `rootId` |
+| Lives | on Anthropic's servers; independent of Mini-Summa | the managed PTY ends with Mini-Summa; the checkout stays | the managed PTY ends with Mini-Summa; the folder is yours |
+| Record | `cloud_sessions` (link, repo, ref, method, last result) | `temp_workspaces` (uuid, path, status, branches) plus the managed session | the managed session |
+| Status Mini-Summa shows | dispatch phase only (preparing, waiting for you, submitting, created, failed, unknown) | hook-derived state, as for any local session | hook-derived state |
+| Ends | never by Mini-Summa: closing the CLI or the window does not end it | stop the session; cleanup only when verified safe | stop the session |
+| After a restart | record kept; an unfinished dispatch becomes "unknown" | workspace listed, "Continue with Claude" resumes in it | session resumable with `claude --resume` |
+| Notifications | none (no documented signal) | hooks | hooks |

@@ -19,6 +19,8 @@ export interface NativeBridgeDeps {
   showSaveDialog(opts: { defaultPath: string }): Promise<{ canceled: boolean; filePath?: string }>;
   writeFile(file: string, text: string): Promise<void>;
   documentsDir(): string;
+  /** Electron's shell.trashItem. */
+  trashItem?(path: string): Promise<void>;
 }
 
 const RESERVED_WINDOWS_NAMES = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
@@ -64,6 +66,8 @@ export function createNativeBridge(deps: NativeBridgeDeps): NativeBridge {
     async openExternal(url) {
       await deps.openExternal(validateExternalUrl(url));
     },
+
+    ...(deps.trashItem ? { trashItem: (target: string) => deps.trashItem!(target) } : {}),
 
     async saveTextFile({ suggestedName, text }) {
       if (typeof text !== 'string' || text.length > 50_000_000) throw new Error('Invalid file contents.');

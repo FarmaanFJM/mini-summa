@@ -114,6 +114,8 @@ export interface SessionsDeps {
   projects: ProjectsPort;
   environments: EnvironmentsService;
   managed: ManagedManager;
+  /** Temporary workspaces: a session may start in one instead of in a project folder. */
+  workspaces?: { resolveForSession(id: string, projectId: string): Promise<string> };
   rawStore?: RawStore;
   /** Replaces `claude agents --json` (tests). */
   run?: AgentsRunner;
@@ -701,8 +703,14 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
         throw badRequest('A new session cannot name a session to resume.', undefined, 'resume_key_unexpected');
       }
 
+      let workspaceCwd: string | null = null;
+      if (req.workspaceId) {
+        if (!deps.workspaces) throw unprocessable('Temporary workspaces are not available in this build.', 'workspaces_unavailable');
+        workspaceCwd = await deps.workspaces.resolveForSession(req.workspaceId, projectId);
+      }
       const wantedEnv = req.env ?? resumeTarget?.env ?? project.defaultEnv;
-      const root = pickRoot(project, req, wantedEnv);
+      // A temporary workspace has no project folder: the session is bound to the project by its record, not by a root.
+      const root = workspaceCwd ? { id: null as string | null, path: workspaceCwd, env: environments.hostEnv() } : pickRoot(project, req, wantedEnv);
       const env = root.env;
       if (resumeTarget && resumeTarget.env !== env) {
         throw unprocessable(`That session ran in ${envLabel(resumeTarget.env)}, so it can only be resumed there. Choose a folder in ${envLabel(resumeTarget.env)}.`, 'resume_env_mismatch');
@@ -720,7 +728,7 @@ export function createSessionsService(deps: SessionsDeps): ObserverSessionsServi
       }
 
       const record = await managed.start({
-        projectId, rootId: root.id, env: info.id,
+        projectId, rootId: root.id ?? null, env: info.id,
         // Claude finds a transcript through the directory it runs in, so a resume goes back to where the session ran.
         cwd: resumeTarget?.cwd ?? root.path,
         name: req.name?.trim() ? req.name.trim() : null,

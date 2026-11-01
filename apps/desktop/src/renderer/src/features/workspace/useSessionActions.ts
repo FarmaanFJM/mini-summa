@@ -7,6 +7,8 @@ export interface StartOptions {
   mode: 'new' | 'resume';
   resumeKey?: SessionKey;
   rootId?: string;
+  /** Start in a temporary workspace of the project instead of one of its folders. */
+  workspaceId?: string;
   name?: string;
 }
 
@@ -46,7 +48,7 @@ export function useSessionActions(project: Project): SessionActions {
       const size = terminals.suggestedSize();
       const session = await api.call('sessions.start', {
         params: { id: project.id },
-        body: { mode: options.mode, resumeKey: options.resumeKey, rootId: options.rootId, name: options.name || undefined, cols: size.cols, rows: size.rows },
+        body: { mode: options.mode, resumeKey: options.resumeKey, rootId: options.rootId, workspaceId: options.workspaceId, name: options.name || undefined, cols: size.cols, rows: size.rows },
       });
       // A resumed session continues the earlier one, so its tab takes the old tab's place.
       if (options.resumeKey) ui.getState().replaceTab(project.id, options.resumeKey, session.key);
